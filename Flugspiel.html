@@ -1004,7 +1004,13 @@ function spawnFire(){
 }
 // nächste Wasserstelle (für "erst Wasser holen"): aktuelle Pos wenn schon über Meer, sonst radial
 function nearestWaterXZ(x, z){
-  if(!isOnLand(x, z)) return { x, z };
+  // Schon über Wasser? -> Zielpunkt WEIT VORAUS (in Flugrichtung), nicht die eigene Position,
+  // damit der Leitstrahl eine echte Strecke nach vorne zeigt (sonst kollabiert die Kurve).
+  if(!isOnLand(x, z)){
+    const f = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    const fl = Math.hypot(f.x, f.z) || 1;
+    return { x: x + f.x/fl*400, z: z + f.z/fl*400 };
+  }
   for(let r=80; r<=700; r+=70) for(let a=0; a<8; a++){
     const px=x+Math.cos(a/8*6.283)*r, pz=z+Math.sin(a/8*6.283)*r;
     if(!isOnLand(px, pz)) return { x:px, z:pz };
@@ -1142,9 +1148,16 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
   const GS = opts.glideTo || null;
   const touch = GS ? new THREE.Vector3(GS.tx, GS.ty, GS.tz) : null;
   const climb = GS ? Math.tan(GS.angle) * GS.len : 0;
-  const pEnd = GS
+  let pEnd = GS
     ? new THREE.Vector3(GS.tx - GS.dirX*GS.len, GS.ty + climb, GS.tz - GS.dirZ*GS.len)
     : new THREE.Vector3(goal.x, goal.y, goal.z);
+  // Robustheit: liegt der (Kurven-)Endpunkt zu nah am Flieger, würde die Kurve kollabieren und die
+  // Pfeile klumpen. Dann Endpunkt auf eine Mindeststrecke NACH VORNE schieben -> sichtbarer Leitstrahl.
+  let dxz = Math.hypot(pEnd.x-p0.x, pEnd.z-p0.z);
+  if(dxz < 200){
+    const fl = new THREE.Vector3(fwd.x,0,fwd.z); if(fl.lengthSq()<1e-4) fl.set(0,0,-1); fl.normalize();
+    pEnd = new THREE.Vector3(p0.x + fl.x*260, pEnd.y, p0.z + fl.z*260);
+  }
   const dist2 = p0.distanceTo(pEnd);
   const toGoal = new THREE.Vector3(pEnd.x-p0.x,0,pEnd.z-p0.z);
   if(toGoal.lengthSq()<1e-4) toGoal.copy(flat); else toGoal.normalize();
