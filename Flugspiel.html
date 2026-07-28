@@ -75,6 +75,16 @@
     <div class="hrow"><span>T / G</span><b>Aufgaben / Leitfaden an-aus</b></div>
     <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
   </div>
+  <div class="hcol">
+    <div class="htitle">🎯 Aufgaben</div>
+    <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
+    <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, über Ziel-Insel B = abwerfen</b></div>
+    <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um</b></div>
+    <div class="hrow"><span>🧭 Leitweg</span><b>rot = leer/hin · gelb = voll · grün = jetzt!</b></div>
+    <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
+    <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt</b></div>
+    <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
+  </div>
 </div>
 <script src="three.min.js"></script>
 <script src="GLTFLoader.js"></script>
@@ -2163,6 +2173,31 @@ addEventListener('gamepaddisconnected', ()=>{ gamepadIndex=null;
   document.getElementById('pad').textContent='Controller getrennt.'; });
 function deadzone(v, dz=0.15){ return Math.abs(v)<dz ? 0 : (v-Math.sign(v)*dz)/(1-dz); }
 
+// Controller-Vibration (Gamepad Haptics API). Läuft nur, wo unterstützt (Chrome/Edge, X-Input);
+// sonst still ignoriert. strong = tiefes Wummern, weak = feines Rattern (je 0..1).
+function rumble(durMs, strong, weak){
+  if(gamepadIndex===null) return;
+  const gp = navigator.getGamepads()[gamepadIndex];
+  const act = gp && (gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]));
+  if(!act || !act.playEffect) return;
+  try{ act.playEffect('dual-rumble', { duration:durMs, strongMagnitude:strong, weakMagnitude:(weak==null?strong:weak) }); }catch(e){}
+}
+// Vibration an Ereignisse koppeln (Flankenerkennung): Crash stark, Landung sanft, Stall zittern.
+let _rumPrevCrashed=false, _rumPrevGround=true, _rumStallT=0;
+function updateRumble(dt){
+  // CRASH: sobald crashed neu true wird -> kräftiger Stoß
+  if(state.crashed && !_rumPrevCrashed) rumble(400, 1.0, 0.9);
+  _rumPrevCrashed = state.crashed;
+  // LANDUNG: sobald er neu aufsetzt (Boden), sanft — aber NICHT beim Crash und nicht am Reset-Stillstand
+  if(state.onGround && !_rumPrevGround && !state.crashed && state.vel.length() > 4) rumble(160, 0.25, 0.4);
+  _rumPrevGround = state.onGround;
+  // STALL: solange gestallt -> leichtes Dauer-Zittern (alle ~0,25 s neu anstoßen)
+  if(state.stalling && !state.crashed){
+    _rumStallT -= dt;
+    if(_rumStallT <= 0){ rumble(260, 0.15, 0.35); _rumStallT = 0.22; }
+  } else _rumStallT = 0;
+}
+
 let btnPrev = {};
 let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
 let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
@@ -2666,7 +2701,16 @@ function loop(now){
     }
   }
   const inp=readInput();
+  // PAUSE: solange die Hilfe/Anleitung (Overlay) sichtbar ist, steht das Spiel still.
+  // readInput() lief bereits -> D-Pad ↑ / H kann das Overlay wieder schließen (weiter geht's).
+  const hintEl = document.getElementById('hint');
+  if(hintEl && hintEl.classList.contains('show')){
+    renderer.render(scene,camera);
+    requestAnimationFrame(loop);
+    return;
+  }
   stepPhysics(dt,inp);
+  updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
   updateEngineSound();
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
   updateWaterDrop(dt);       // Wasserabwurf-Animation
