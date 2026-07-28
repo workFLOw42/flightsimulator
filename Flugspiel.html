@@ -1170,10 +1170,10 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
   const N = arrows.length;
   const split = GS ? 0.62 : 1.0;   // letzten ~38 % = gerader Gleitpfad zur Schwelle
   // Pfeilgröße MIT der Distanz (weit weg = größer/sichtbar, nah = kleiner -> verdeckt die Sicht NICHT).
-  const scl = Math.max(0.8, Math.min(1.9, dist2/500));
-  // Vorderen Bereich AUSBLENDEN: je näher das Ziel, desto mehr Pfeile vorm Flieger weglassen, damit
-  // sich bei nahem Ziel kein Pfeil-Klumpen vor die Kamera schiebt. (Ziel weit -> fast alle sichtbar.)
-  const hideFront = Math.max(0.10, Math.min(0.7, 1 - dist2/700));
+  const scl = Math.max(0.8, Math.min(1.9, dist2/800));
+  // Vorderen Bereich AUSBLENDEN: je näher das Ziel, desto mehr Pfeile vorm Flieger weglassen. Beginnt
+  // FRÜH (ab ~1200 m), damit sich schon lange vor dem Ziel kein Klumpen vor die Kamera schiebt.
+  const hideFront = Math.max(0.10, Math.min(0.7, 1 - dist2/1200));
   for(let i=0;i<N;i++){
     const ar = arrows[i];
     const t = ((i/N) + arrowPhase) % 1;
