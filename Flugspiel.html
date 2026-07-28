@@ -55,6 +55,7 @@
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
     <div class="hrow"><span>B</span><b>Aktion (Wasser/Kiste/Schleudersitz)</b></div>
     <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
+    <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>LB / RB</span><b>Leitfaden / Aufgaben an-aus</b></div>
     <div class="hrow"><span>D-Pad ↑</span><b>diese Hilfe an-aus</b></div>
     <div class="hrow"><span>D-Pad ↓</span><b>Kamera</b></div>
@@ -69,6 +70,7 @@
     <div class="hrow"><span>W / S</span><b>Schub ±10 %</b></div>
     <div class="hrow"><span>Leertaste</span><b>Vollgas</b></div>
     <div class="hrow"><span>C (halten)</span><b>Bremse</b> · <span>X</span> Motor aus</div>
+    <div class="hrow"><span>Shift (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera</div>
     <div class="hrow"><span>T / G</span><b>Aufgaben / Leitfaden an-aus</b></div>
     <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
@@ -1980,7 +1982,7 @@ function placeAtStart(name){
     state.quat.setFromEuler(new THREE.Euler(0, s.yaw, 0, 'YXZ'));
   }
   state.vel.set(0,0,0); state.throttle=0; state.onGround=true;
-  state.crashed=false; state.crashTimer=0; state.ejected=false; state.falling=false; state.stalling=false;
+  state.crashed=false; state.crashTimer=0; state.ejected=false; state.falling=false; state.stalling=false; boosting=false;
   wasSupersonic=false; if(vaporCone) vaporCone.visible=false; vaporT=0;
   clearRescue(); clearParachute();
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
@@ -2162,6 +2164,8 @@ function deadzone(v, dz=0.15){ return Math.abs(v)<dz ? 0 : (v-Math.sign(v)*dz)/(
 let btnPrev = {};
 let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
 let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
+let xPrev = false, kbBoostPrev = false;   // X/Shift-Halten fuer Boost
+let boosting = false;   // Boost aktiv -> extra Beschleunigung (Physik liest das)
 function edge(gp, i){ const now = gp.buttons[i] && gp.buttons[i].pressed;
   const was = btnPrev[i]; btnPrev[i]=now; return now && !was; }
 
@@ -2192,6 +2196,11 @@ function readInput() {
   // C HALTEN = Umkehrschub -20 % (Bremse), Tastatur-Pendant zu "A halten" am Controller.
   if(keys['KeyC']) state.throttle = -0.2; else if(cPrev) state.throttle = 0;
   cPrev = !!keys['KeyC'];
+  // SHIFT HALTEN = BOOST (Tastatur-Pendant zu X): sofort 100 %, losgelassen -> 50 %.
+  const kbBoost = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+  if(kbBoost){ state.throttle = 1; boosting = true; }
+  else { if(!(gamepadIndex!==null)) boosting = false; if(kbBoostPrev) state.throttle = 0.5; }
+  kbBoostPrev = kbBoost;
 
   // ---- Gamepad ----
   if(gamepadIndex!==null){
@@ -2215,6 +2224,12 @@ function readInput() {
       if(aDown) state.throttle = -0.2;
       else if(aPrev) state.throttle = 0;   // A gerade losgelassen -> Motor aus
       aPrev = aDown;
+
+      // X HALTEN = BOOST: sofort 100 % Schub + extra Beschleunigung; beim LOSLASSEN -> 50 % Schub.
+      const xDown = gp.buttons[2] && gp.buttons[2].pressed;
+      if(xDown){ state.throttle = 1; boosting = true; }
+      else { boosting = false; if(xPrev) state.throttle = 0.5; }
+      xPrev = xDown;
 
       if(edge(gp,3)) cycleModel();    // Y = Modell
       if(edge(gp,1)) buttonB();       // B: Canadair Wasser · AlphaJet Schleudersitz
@@ -2345,7 +2360,8 @@ function stepPhysics(dt, inp){
   const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
   const fwdSpeed = state.vel.dot(forward);                     // aktuelle Fahrt in Nasenrichtung
   const dv = targetV - fwdSpeed;
-  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), spec.accel);  // m/s², begrenzt
+  const aMax = boosting ? spec.accel*1.6 : spec.accel;         // Boost (X/Shift): extra Beschleunigung
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), aMax);  // m/s², begrenzt
   const accel = new THREE.Vector3();
   accel.addScaledVector(forward, push);                        // Vortrieb entlang Nase (sanft an Ziel)
   accel.y -= GRAV;                                             // Schwerkraft (immer -Y)
