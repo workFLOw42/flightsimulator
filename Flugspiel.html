@@ -2611,10 +2611,19 @@ function updateCamera(){
     camera.lookAt(state.pos);
     return;
   }
-  const back=new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
-  const upV =new THREE.Vector3(0,1,0).applyQuaternion(state.quat);
-  const desired=state.pos.clone().addScaledVector(back,cfg.dist*cc.dist).addScaledVector(upV,cfg.height*cc.hgt);
+  // Verfolgerkamera folgt GIEREN + NICKEN (beim Looping sieht man, wohin es geht), ignoriert aber
+  // das ROLLEN komplett -> kein Überschlagen/Auf-den-Kopf. Nicken sanft begrenzt (kein Flip am Scheitel).
+  const camE = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  const yaw = camE.y;
+  const pitch = Math.max(-0.9, Math.min(0.9, camE.x));   // ~±51°, Roll (camE.z) verworfen
+  const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  const back = new THREE.Vector3(0,0,1).applyQuaternion(camQ);   // hinter dem Flieger (mit Nicken)
+  const upV  = new THREE.Vector3(0,1,0).applyQuaternion(camQ);   // Kamera-Oben (rollt nie mit)
+  const desired = state.pos.clone()
+    .addScaledVector(back, cfg.dist*cc.dist)
+    .addScaledVector(upV,  cfg.height*cc.hgt);
   if(desired.y < 2) desired.y = 2; // Kamera nicht unter den Boden
+  camera.up.copy(upV);
   camera.position.lerp(desired, cfg.lerp);
   camera.lookAt(state.pos);
 }
