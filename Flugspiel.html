@@ -1875,22 +1875,22 @@ function buildModel(name) {
 }
 
 // ---------- Flugeigenschaften pro Modell ----------
-// vTO = Abhebe-Geschwindigkeit (m/s). Kräfte so, dass v_terminal(t)=sqrt(maxThrust*t/dragK).
-// liftK wird aus vTO berechnet (Auftrieb=Gewicht bei vTO). Schwere/schnelle Flieger
-// (Airbus) haben hohes vTO + trägere Steuerung; leichte (SuperCup/Slowfly) niedriges vTO + wendig.
+// vMax = Höchstgeschwindigkeit (m/s) bei 100 % Schub. Schub setzt die ZIEL-Geschwindigkeit linear
+// (30 % Schub -> 30 % vMax). accel = wie schnell er sich der Zielgeschwindigkeit nähert (m/s²) —
+// klein = träge (Airbus), groß = spritzig. vTO = Abhebe-/Stall-Geschwindigkeit.
 const PLANE_SPECS = {
-  SuperCup:   { vTO: 32, maxThrust: 34, dragK: 0.011, pitch: 1.3, roll: 2.4, turn: 1.2 },
-  Mustang:    { vTO: 40, maxThrust: 60, dragK: 0.0031, pitch: 1.6, roll: 3.0, turn: 1.3, aero:true, maxAlt: 1400 },  // P-51: ~500 km/h, Looping+Rolle
-  Transall:   { vTO: 42, maxThrust: 50, dragK: 0.010, pitch: 1.0, roll: 1.6, turn: 0.85, aero:false, maxAlt: 600, maxBank: 0.7 }, // Transporter, ruhig
-  Pitts:      { vTO: 38, maxThrust: 46, dragK: 0.011, pitch: 1.6, roll: 3.0, turn: 1.3 },
-  Bf109:      { vTO: 46, maxThrust: 52, dragK: 0.010, pitch: 1.2, roll: 2.4, turn: 1.0 },
-  CurtissR3C: { vTO: 44, maxThrust: 50, dragK: 0.010, pitch: 1.2, roll: 2.3, turn: 1.0 },
-  Airbus:     { vTO: 62, maxThrust: 84, dragK: 0.0075, pitch: 0.8, roll: 1.4, turn: 0.7, aero:false, maxAlt: 800, maxBank: 0.6 },  // Gleitflug: <30% Schub -> Auftrieb reicht nicht -> sinkt
-  Canadair:   { vTO: 40, maxThrust: 44, dragK: 0.011, pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 },
-  // Alpha-Jet: sau schnell + sehr wendig. Hoher Schub, wenig Widerstand -> hohe Top-Speed.
-  AlphaJet:   { vTO: 55, maxThrust: 120, dragK: 0.000936, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },  // Überschall NUR bei 100% (90% knapp drunter)
+  SuperCup:   { vTO: 32, vMax: 55,  accel: 8,  pitch: 1.3, roll: 2.4, turn: 1.2 },
+  Mustang:    { vTO: 40, vMax: 139, accel: 14, pitch: 1.6, roll: 3.0, turn: 1.3, aero:true, maxAlt: 1400 },  // P-51: ~500 km/h, Looping+Rolle
+  Transall:   { vTO: 42, vMax: 71,  accel: 7,  pitch: 1.0, roll: 1.6, turn: 0.85, aero:false, maxAlt: 600, maxBank: 0.7 }, // Transporter, träge
+  Pitts:      { vTO: 38, vMax: 64,  accel: 10, pitch: 1.6, roll: 3.0, turn: 1.3 },
+  Bf109:      { vTO: 46, vMax: 90,  accel: 11, pitch: 1.2, roll: 2.4, turn: 1.0 },
+  CurtissR3C: { vTO: 44, vMax: 85,  accel: 10, pitch: 1.2, roll: 2.3, turn: 1.0 },
+  Airbus:     { vTO: 62, vMax: 106, accel: 9,  pitch: 0.8, roll: 1.4, turn: 0.7, aero:false, maxAlt: 800, maxBank: 0.6 },  // ~380 km/h, träge
+  Canadair:   { vTO: 40, vMax: 63,  accel: 8,  pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 }, // ~228 km/h
+  // Alpha-Jet: sau schnell + sehr wendig. Überschall bei 100 % (~1300 km/h). Beschleunigt gemächlich.
+  AlphaJet:   { vTO: 55, vMax: 361, accel: 16, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },
 };
-const DEFAULT_SPEC = { vTO: 44, maxThrust: 48, dragK: 0.010, pitch: 1.2, roll: 2.2, turn: 1.0 };
+const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 10, pitch: 1.2, roll: 2.2, turn: 1.0 };
 let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
 
 // ---------- Flugzustand (muss VOR buildModel stehen) ----------
@@ -2336,29 +2336,29 @@ function stepPhysics(dt, inp){
   const forward = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
   const upV      = new THREE.Vector3(0,1,0).applyQuaternion(state.quat);
 
-  // --- Echtes Kräftemodell: Schub, Schwerkraft, Auftrieb (∝v²), Luftwiderstand ---
-  // Dadurch: Sturz -> Schwerkraft entlang Bewegung -> beschleunigt; Steigflug -> bremst.
-  // Auftrieb=Gewicht genau bei vTO -> darunter sinkt er, darüber steigt er.
-  // Kräfte je Modell (spec): schwere Flieger vTO/Schub höher.
-  const GRAV=9.81, maxThrust=spec.maxThrust, dragK=spec.dragK, liftK=GRAV/(spec.vTO*spec.vTO);
-  const vMax = Math.sqrt(maxThrust / dragK);                   // Vollgas-Grenzgeschwindigkeit
+  // --- Intuitives Flugmodell: Schub = ZIELGESCHWINDIGKEIT (linear), sanft angeregelt. ---
+  // 30 % Schub -> ~30 % vMax und BLEIBT dort (kein Weiterbeschleunigen). Auftrieb auf 1 g
+  // gedeckelt -> kein Selbst-Steigen; Höhe kommt aus der Nase (Pitch). Sturz beschleunigt,
+  // Steigflug bremst (über die Vektorzerlegung von Schwerkraft/Nase).
+  const GRAV=9.81, vMax=spec.vMax;
   const speed = state.vel.length();
+  const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
+  const fwdSpeed = state.vel.dot(forward);                     // aktuelle Fahrt in Nasenrichtung
+  const dv = targetV - fwdSpeed;
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), spec.accel);  // m/s², begrenzt
   const accel = new THREE.Vector3();
-  accel.addScaledVector(forward, maxThrust * state.throttle);   // Schub entlang Nase
-  accel.y -= GRAV;                                              // Schwerkraft (immer -Y)
-  // Auftrieb ⟂ Flügel, ∝ v² — trägt das Gewicht ab vTO. Bei Langsamflug (v<vTO) bricht er
-  // zunehmend weg (Stall) -> Flieger sinkt, gewinnt im Sinken Fahrt -> Auftrieb kehrt zurück.
-  accel.addScaledVector(upV, liftK * speed * speed);
-  accel.addScaledVector(state.vel, -dragK * speed);             // Luftwiderstand ∝ v²
+  accel.addScaledVector(forward, push);                        // Vortrieb entlang Nase (sanft an Ziel)
+  accel.y -= GRAV;                                             // Schwerkraft (immer -Y)
+  // Auftrieb ⟂ Flügel, GEDECKELT auf 1 g: ab vTO hält er das Gewicht (waagerecht = Höhe halten),
+  // darunter reicht er nicht -> Flieger sinkt (Gleitflug/Stall). Nie mehr als 1 g -> kein Hochschießen.
+  const liftF = Math.min(1, (speed*speed)/(spec.vTO*spec.vTO));
+  accel.addScaledVector(upV, GRAV * liftF);
   state.vel.addScaledVector(accel, dt);
 
-  // Schub-abhängige Obergrenze: im Horizontal-/Steigflug ist bei ~vMax*sqrt(throttle) Schluss,
-  // damit z.B. der AlphaJet Überschall NUR bei 100 % erreicht (bei 80/90 % drunter) und nach
-  // Schubwegnahme SOFORT abbremst, statt weiter zu beschleunigen. Im Sturzflug (Nase unten)
-  // darf er darüber (Höhe -> Fahrt = Gleitflug), aber nie über den harten Deckel vMax*1.15.
+  // Harte Obergrenze: Normalflug knapp über der Zielgeschwindigkeit, im Sturz etwas mehr (Gleitflug).
   const vNow = state.vel.length();
-  const diving = state.vel.y < -2;                 // sinkt spürbar -> Sturz erlaubt Mehrspeed
-  const vCap = diving ? vMax*1.15 : Math.max(vMax*Math.sqrt(state.throttle), spec.vTO*0.6);
+  const diving = state.vel.y < -2;
+  const vCap = diving ? vMax*1.25 : vMax*1.03;
   if(vNow > vCap) state.vel.multiplyScalar(vCap / vNow);
 
   // Höhen-Deckel: sanft abriegeln (kein hartes Ruckeln, kein "Anstoßen"/Crash). In den letzten
