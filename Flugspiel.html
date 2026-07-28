@@ -59,7 +59,7 @@
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>LB / RB</span><b>Leitfaden / Aufgaben an-aus</b></div>
     <div class="hrow"><span>D-Pad ↑</span><b>diese Hilfe an-aus</b></div>
-    <div class="hrow"><span>D-Pad ↓</span><b>Kamera</b></div>
+    <div class="hrow"><span>D-Pad ↓</span><b>Ton an/aus</b></div>
     <div class="hrow"><span>D-Pad ←→</span><b>Ansicht von links/rechts</b></div>
     <div class="hrow"><span>Start</span><b>Reset</b></div>
   </div>
@@ -72,7 +72,7 @@
     <div class="hrow"><span>Leertaste</span><b>Vollgas</b></div>
     <div class="hrow"><span>C (halten)</span><b>Bremse</b> · <span>X</span> Motor aus</div>
     <div class="hrow"><span>Shift (halten)</span><b>Boost (100 % Schub)</b></div>
-    <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera</div>
+    <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera · <span>N</span> Ton</div>
     <div class="hrow"><span>T / G</span><b>Aufgaben / Leitfaden an-aus</b></div>
     <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
   </div>
@@ -1169,13 +1169,15 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
       pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.15, midY,
       pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.15);
   }
-  // Pfeile langsamer laufen lassen (weniger hektisch), v.a. im tiefen Anflug (lowRoute).
-  arrowPhase = (arrowPhase + dt*(lowRoute?0.07:0.10)) % 1;
+  // Pfeile durchgehend RUHIG laufen lassen (nicht hektisch) — für alle Zustände gleich langsam.
+  arrowPhase = (arrowPhase + dt*0.06) % 1;
   const N = arrows.length;
   const split = GS ? 0.62 : 1.0;   // letzten ~38 % = gerader Gleitpfad zur Schwelle
   // Pfeilgröße adaptiv: nahe Ziele -> größere Pfeile (gut sichtbar), weite -> etwas kleiner.
   const scl = Math.max(0.9, Math.min(1.8, 900/Math.max(200,dist2)));
-  const hideFront = lowRoute ? 0.14 : 0.10;   // weniger Pfeile ausblenden -> Kette wirkt näher/dichter
+  // Bei KURZEN Routen (nahes Ziel, rot/grün) den Kettenanfang weiter nach vorne schieben, damit die
+  // Pfeile nicht direkt am Cockpit kleben/flackern. Je kürzer die Route, desto mehr vorne ausblenden.
+  const hideFront = Math.max(0.18, Math.min(0.5, 260/Math.max(120,dist2)));
   for(let i=0;i<N;i++){
     const ar = arrows[i];
     const t = ((i/N) + arrowPhase) % 1;
@@ -2090,7 +2092,7 @@ function updateEngineSound() {
   }
   if (!engineGain || !engineSrc) return;
   // Während des Crash-Einsatzes: Motor stumm (nur Sirene)
-  if (state.crashed) { engineGain.gain.value = 0; return; }
+  if (!soundOn || state.crashed) { engineGain.gain.value = 0; return; }   // Ton aus -> Motor stumm
   const t = state.throttle;
   // Lautstärke steigt MONOTON (Vollgas bleibt am lautesten), aber deutlich FLACHER als früher,
   // damit es insgesamt nicht zu laut wird: 0 % -> 0.05, 100 % -> 0.23.
@@ -2099,7 +2101,7 @@ function updateEngineSound() {
   engineSrc.playbackRate.value = 0.7 + t * 0.9; // Tonhöhe ∝ Schub
 }
 function playCrash() {
-  if (!audioCtx || !crashBuf) return;
+  if (!soundOn || !audioCtx || !crashBuf) return;
   const s = audioCtx.createBufferSource();
   s.buffer = crashBuf;
   const g = audioCtx.createGain(); g.gain.value = 0.9;
@@ -2108,7 +2110,7 @@ function playCrash() {
 }
 // Überschallknall: kurzer, tiefer Rausch-Impuls (synthetisch, kein Sample nötig).
 function playSonicBoom(){
-  if(!audioCtx) return;
+  if(!soundOn || !audioCtx) return;
   const dur = 0.5, sr = audioCtx.sampleRate;
   const buf = audioCtx.createBuffer(1, Math.floor(sr*dur), sr);
   const d = buf.getChannelData(0);
@@ -2126,7 +2128,7 @@ function playSonicBoom(){
 // ---- Sirene (Tatütata) synthetisch: zwei abwechselnde Töne ----
 let sirenOsc = null, sirenGain = null, sirenTimer = null;
 function startSiren() {
-  if (!audioCtx || sirenOsc) return;
+  if (!soundOn || !audioCtx || sirenOsc) return;
   sirenOsc = audioCtx.createOscillator();
   sirenOsc.type = 'square';
   sirenGain = audioCtx.createGain();
@@ -2151,6 +2153,13 @@ addEventListener('keydown', armAudio, { once:true });
 addEventListener('pointerdown', armAudio, { once:true });
 // Gamepad: beim ersten Tastendruck (im Loop) aktivieren
 let audioArmed = false;
+let soundOn = false;   // Ton standardmäßig AUS (nervt auf Dauer); D-Pad ↓ / N schaltet um
+function toggleSound(){
+  soundOn = !soundOn;
+  if(soundOn) armAudio();                        // beim Einschalten Audio initialisieren
+  if(engineGain) engineGain.gain.value = 0;      // Motor sofort anpassen (wird im Loop nachgezogen)
+  showToggle(soundOn ? '🔊' : '🔇');
+}
 
 // ---------- Flugzustand ----------
 function resetPlane() {
@@ -2178,6 +2187,7 @@ addEventListener('keydown', e => {
   if(e.code==='KeyT') toggleMissions();   // RB-Ersatz: Minispiele an/aus
   if(e.code==='KeyG') toggleLead();       // LB-Ersatz: Leitfaden an/aus
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
+  if(e.code==='KeyN') toggleSound();      // Ton an/aus (Standard: aus)
 
   if(e.code==='Space') e.preventDefault();
 });
@@ -2306,9 +2316,9 @@ function readInput() {
       if(edge(gp,5)) toggleMissions();// RB: Minispiele an/aus
       if(edge(gp,4)) toggleLead();    // LB: Leitfaden (Pfeile) an/aus
       if(edge(gp,9)) resetPlane();    // Start/Menu = Reset
-      // D-Pad: oben(12)=Hilfe an/aus, unten(13)=Kamera, links(14)/rechts(15)=Seitenansicht (gehalten).
+      // D-Pad: oben(12)=Hilfe, unten(13)=Ton an/aus, links(14)/rechts(15)=Seitenansicht (gehalten).
       if(edge(gp,12)) toggleHelp();
-      if(edge(gp,13)) cycleView();
+      if(edge(gp,13)) toggleSound();  // D-Pad unten = Ton an/aus
       const dLeft  = gp.buttons[14] && gp.buttons[14].pressed;
       const dRight = gp.buttons[15] && gp.buttons[15].pressed;
       sideView = dLeft ? -1 : (dRight ? 1 : 0);
@@ -2721,7 +2731,7 @@ function updateRadar(){
     const head=Math.atan2(fwd.x, fwd.z);       // Kurs (Weltwinkel)
     // Zielwinkel relativ zum Kurs; im Radar zeigt "oben" = vorn
     const worldAng=Math.atan2(dx, dz);
-    const rel=worldAng-head;
+    const rel=head-worldAng;   // korrigiert: Ziel rechts -> Blip rechts (nicht spiegelverkehrt)
     const dist=Math.hypot(dx,dz);
     const rr=Math.min(R-8, dist/2500*(R-8)+10);  // Distanz auf Radarradius mappen
     const bx=cx + Math.sin(rel)*rr;
