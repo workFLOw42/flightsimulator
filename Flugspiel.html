@@ -1152,13 +1152,16 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
   const sideSign = (side.x*toGoal.x + side.z*toGoal.z) >= 0 ? 1 : -1;
   side.multiplyScalar(sideSign);
   const lowRoute = !!opts.lowRoute;
-  const midY   = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.4);
-  const startY = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.1);
+  // Die Kurve beginnt IMMER auf aktueller Flughöhe (p0.y) -> nahtlos beim Flieger, Pfeile sichtbar
+  // (nicht unter den Flieger gelegt). Bei "rot"/tiefem Anflug sinkt sie ERST zum Ziel hin ab (midY tief),
+  // bleibt aber am Start hoch -> der weite Vorwärtsbogen bleibt erhalten.
+  const startY = p0.y;
+  const midY   = lowRoute ? (p0.y*0.55 + Math.max(ISLAND_Y+15, pEnd.y)*0.45)
+                          : (p0.y + (pEnd.y-p0.y)*0.4);
   // IMMER eine WEICHE Kurve (ruhig, kinderfreundlich, keine 90°-Knicke):
-  // P1 startet in Flugrichtung nach vorne (weicher Einlauf), P2 nähert das Ziel von der Seite an.
-  // Liegt das Ziel seitlich/hinter mir (facing klein/negativ), wird der Bogen GROSS und ruhig
-  // (weite Runde), statt scharf abzuknicken. Bei Ziel voraus ist der Bogen fast gerade.
-  const lead = Math.max(220, dist2*0.55);
+  // P1 startet in Flugrichtung nach vorne (weiter Einlauf-Bogen), P2 nähert das Ziel von der Seite an.
+  // Liegt das Ziel seitlich/hinter mir, wird der Bogen GROSS und ruhig (weite Runde) statt scharf.
+  const lead = Math.max(260, dist2*0.6);            // etwas weiterer Vorwärtsbogen
   const turnAmt = (1 - facing) / 2;                 // 0 (voraus) .. 1 (genau hinter mir)
   const p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
   const sideAmt = dist2 * (0.15 + 0.55*turnAmt);    // je weiter hinten, desto weiter außen = große Runde
