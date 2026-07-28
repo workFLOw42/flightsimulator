@@ -1701,11 +1701,27 @@ function updateLoadBar(){
     if(l){ l.style.opacity = '0'; setTimeout(()=>{ l.style.display='none'; }, 600); }
   }
 }
+// Sichtbares Fehler-Overlay (am Handy gibt es keine Konsole) — sammelt GLB-/JS-Fehler.
+function showErr(msg){
+  let e = document.getElementById('errbox');
+  if(!e){
+    e = document.createElement('div');
+    e.id = 'errbox';
+    e.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;z-index:99;'+
+      'background:rgba(120,0,0,0.85);color:#fff;font:12px monospace;padding:8px;white-space:pre-wrap;';
+    document.body.appendChild(e);
+  }
+  e.textContent += msg + '\n';
+}
+window.addEventListener('error', ev=>{ showErr('JS: '+(ev.message||ev.error||ev)); });
+window.addEventListener('unhandledrejection', ev=>{ showErr('PROMISE: '+(ev.reason&&ev.reason.message||ev.reason)); });
 // Ein Modell per URL laden (Draco-dekomprimiert), normalisieren, als Vorlage cachen.
 function loadModel(url, onReady, onErr){
   glbTotal++;
-  gltfLoader().load(url, (gltf)=>{ onReady(gltf); glbProgress(); },
-    undefined, (err)=>{ console.warn('GLB-Ladefehler '+url+':', err); glbProgress(); if(onErr) onErr(err); });
+  gltfLoader().load(url,
+    (gltf)=>{ try{ onReady(gltf); }catch(e){ showErr('VERARB '+url+': '+e.message); } glbProgress(); },
+    undefined,
+    (err)=>{ const m=(err&&err.message)||err; showErr('LADEN '+url+': '+m); glbProgress(); if(onErr) onErr(err); });
 }
 function preloadGLB(name){
   const cfg = GLB_CONFIG[name];
