@@ -2439,7 +2439,8 @@ function stepPhysics(dt, inp){
   // --- STALL: zu wenig Fahrt -> Nase kippt nach unten (übersteuert Looping/Input), Flieger fällt.
   // WICHTIG: die normale Physik + Schub laufen WEITER -> mit Nase-runter/Vollgas gewinnt man Fahrt
   // und kommt wieder raus. Bodenkontakt im Stall = IMMER Crash. Ausstieg sobald Fahrt >= vStall.
-  const vStall = spec.vTO * 0.55;
+  const vStall = spec.vTO * 0.20;   // NUR geschwindigkeitsabhaengig (nicht vom Schub): Stall erst bei fast
+                                    // keiner Fahrt. Langsamflug/Landen mit wenig Schub bleibt moeglich.
   if(!state.onGround && speed < vStall){
     state.stalling = true;
     // Nase konsequent nach unten zwingen (bis ~ -75° Pitch), Querlage rausnehmen -> kein Trudeln.
