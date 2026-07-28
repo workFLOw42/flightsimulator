@@ -1,0 +1,2700 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#87b8e8">
+<title>Flugspiel</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #87b8e8; font-family: Arial, sans-serif;
+    touch-action: none; -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  canvas { display: block; }
+  /* Ladebildschirm (Web-Version: Modelle werden per Netz geladen) */
+  #loader { position: fixed; inset: 0; background: #87b8e8; color: #fff; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: Arial, sans-serif; transition: opacity .5s; }
+  #loader .ico { font-size: 64px; margin-bottom: 18px; }
+  #loader .bar { width: 220px; height: 14px; background: rgba(255,255,255,0.3); border-radius: 7px; overflow: hidden; }
+  #loader .fill { height: 100%; width: 0%; background: #fff; transition: width .2s; }
+  #loader .txt { margin-top: 10px; font-size: 15px; text-shadow: 1px 1px 2px rgba(0,0,0,0.4); }
+  #hud {
+    position: absolute; top: 10px; left: 12px; color: #fff;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.7); font-size: 18px; line-height: 1.5;
+    pointer-events: none; user-select: none;
+  }
+  #big {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: #fff; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); font-size: 42px; font-weight: bold;
+    pointer-events: none; user-select: none; text-align: center; opacity: 0; transition: opacity 0.4s;
+  }
+  #hint {
+    position: absolute; bottom: 12px; left: 12px; color: #fff;
+    display: none; gap: 26px;
+    background: rgba(10,25,40,0.72); border-radius: 10px; padding: 12px 16px;
+    font-size: 13px; line-height: 1.55; pointer-events: none; user-select: none;
+  }
+  #hint.show { display: flex; }
+  #hint .hcol { min-width: 210px; }
+  #hint .htitle { font-weight: bold; font-size: 14px; margin-bottom: 5px; color: #cfe; }
+  #hint .hrow { display: flex; justify-content: space-between; gap: 10px; }
+  #hint .hrow span { color: #9cf; white-space: nowrap; }
+  #hint .hrow b { text-align: right; }
+  #pad { position: absolute; bottom: 12px; left: 12px; color: #cfe;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.7); font-size: 14px; pointer-events: none; user-select: none; }
+</style>
+</head>
+<body>
+<div id="loader">
+  <div class="ico">🛩️</div>
+  <div class="bar"><div class="fill" id="loaderFill"></div></div>
+  <div class="txt" id="loaderTxt">Lädt …</div>
+</div>
+<div id="hud">
+  <div>Modell: <span id="mdl">SuperCup</span></div>
+  <div>Höhe: <span id="alt">0</span> m</div>
+  <div>Speed: <span id="spd">0</span> km/h</div>
+  <div>Schub: <span id="thr">0</span> %</div>
+  <div id="status" style="color:#ffd">am Boden</div>
+</div>
+<div id="big"></div>
+<canvas id="radar" width="130" height="130" style="position:absolute;top:12px;right:12px;pointer-events:none;"></canvas>
+
+<div id="pad">Controller: verbinde & drücke eine Taste …</div>
+<div id="hint">
+  <div class="hcol">
+    <div class="htitle">🎮 Controller</div>
+    <div class="hrow"><span>L-Stick ←→</span><b>Lenken</b></div>
+    <div class="hrow"><span>L-Stick ↕</span><b>Nase hoch/runter</b></div>
+    <div class="hrow"><span>LT / RT</span><b>Rollen</b></div>
+    <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 %</b></div>
+    <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
+    <div class="hrow"><span>B</span><b>Aktion (Wasser/Kiste/Schleudersitz)</b></div>
+    <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
+    <div class="hrow"><span>LB / RB</span><b>Leitfaden / Aufgaben an-aus</b></div>
+    <div class="hrow"><span>D-Pad ↑</span><b>diese Hilfe an-aus</b></div>
+    <div class="hrow"><span>D-Pad ↓</span><b>Kamera</b></div>
+    <div class="hrow"><span>D-Pad ←→</span><b>Ansicht von links/rechts</b></div>
+    <div class="hrow"><span>Start</span><b>Reset</b></div>
+  </div>
+  <div class="hcol">
+    <div class="htitle">⌨️ Tastatur</div>
+    <div class="hrow"><span>← →</span><b>Lenken</b></div>
+    <div class="hrow"><span>↑ ↓</span><b>Nase hoch/runter</b></div>
+    <div class="hrow"><span>Q / E</span><b>Rollen</b></div>
+    <div class="hrow"><span>W / S</span><b>Schub ±10 %</b></div>
+    <div class="hrow"><span>Leertaste</span><b>Vollgas</b></div>
+    <div class="hrow"><span>C (halten)</span><b>Bremse</b> · <span>X</span> Motor aus</div>
+    <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera</div>
+    <div class="hrow"><span>T / G</span><b>Aufgaben / Leitfaden an-aus</b></div>
+    <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
+  </div>
+</div>
+<script src="three.min.js"></script>
+<script src="GLTFLoader.js"></script>
+<script src="DRACOLoader.js"></script>
+<script src="sounds.js"></script>
+<script>
+// ============================================================
+//  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87b8e8);
+scene.fog = new THREE.Fog(0x87b8e8, 900, 3000);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 8000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x557755, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+sun.position.set(200, 400, 100); scene.add(sun);
+
+// ---------- Meer (große Ebene mit sanft animierten Wellen, folgt dem Flieger) ----------
+const SEA_SIZE = 6000;
+const SEA_SEG = 80;   // Segmente pro Seite -> Wellen-Auflösung (80x80 = leicht & flüssig)
+const seaGeo = new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, SEA_SEG, SEA_SEG);
+seaGeo.rotateX(-Math.PI/2);
+const ground = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+ground.position.y = 0;
+scene.add(ground);
+// Ausgangs-Höhen merken (für die Wellen-Animation) + Vertexfarben-Puffer
+const seaPos = seaGeo.attributes.position;
+const seaBaseX = new Float32Array(seaPos.count), seaBaseZ = new Float32Array(seaPos.count);
+for(let i=0;i<seaPos.count;i++){ seaBaseX[i]=seaPos.getX(i); seaBaseZ[i]=seaPos.getZ(i); }
+seaGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(seaPos.count*3), 3));
+const seaCol = seaGeo.attributes.color;
+const seaDeep = new THREE.Color(0x1a5a94);   // Wellental (dunkelblau)
+const seaMid  = new THREE.Color(0x2f8fd0);   // mittlere Höhe (helleres Blau)
+const seaFoam = new THREE.Color(0xdff2ff);   // Wellenkamm/Gischt (fast weiß)
+const AMP = 1.6;    // größere Wellen -> mehr Kontrast/Höhenreferenz fürs Kind
+let seaTime = 0;
+const _c = new THREE.Color();
+function updateSea(dt){
+  seaTime += dt;
+  const ox = ground.position.x, oz = ground.position.z;   // Meer folgt dem Flieger
+  for(let i=0;i<seaPos.count;i++){
+    const x=seaBaseX[i], z=seaBaseZ[i];
+    if(isOnLand(x+ox, z+oz)){
+      seaPos.setY(i, -1);                     // unter Inseloberfläche -> unter dem Land verborgen
+      seaCol.setXYZ(i, seaMid.r, seaMid.g, seaMid.b);
+    } else {
+      // mehrere überlagerte Wellen -> lebendige, deutlich sichtbare Dünung
+      const y = Math.sin(x*0.02 + seaTime*1.2)*AMP*0.55
+              + Math.sin(z*0.028 + seaTime*0.9)*AMP*0.35
+              + Math.sin((x+z)*0.05 + seaTime*1.8)*AMP*0.15;
+      seaPos.setY(i, y);
+      // Farbe nach Höhe: Tal dunkel -> Kamm hell/Gischt (starker Kontrast)
+      const f = (y/AMP + 1) / 2;              // 0 (Tal) .. 1 (Kamm)
+      if(f < 0.75){ _c.copy(seaDeep).lerp(seaMid, f/0.75); }
+      else        { _c.copy(seaMid).lerp(seaFoam, (f-0.75)/0.25); }  // oberste 25% -> Gischt
+      seaCol.setXYZ(i, _c.r, _c.g, _c.b);
+    }
+  }
+  seaPos.needsUpdate = true;
+  seaCol.needsUpdate = true;
+  seaGeo.computeVertexNormals();   // damit das Licht auf den Wellen schimmert
+}
+
+// ---------- Insel-System (endloses, ortsfestes Zellen-Raster) ----------
+// Jede Rasterzelle CELL×CELL enthält deterministisch (per Hash) evtl. eine Insel.
+// Zelle (0,0) ist IMMER die Start-Insel mit Landebahn.
+const CELL = 850;          // Rastergröße
+const VIEW_CELLS = 3;      // Radius in Zellen, die um den Flieger sichtbar sind
+const ISLAND_Y = 0.3;      // Höhe der Inseloberfläche über dem Meer
+// Flugzeugträger (schwimmende Landebahn) + Hafen — Maße/Größen
+const FORD_LEN = 280;      // Trägerlänge (m); Flugdeck entlang seiner Längsachse (Z) — 15% kleiner
+const FORD_DECK_HALF_X = 19;   // halbe Deckbreite (X) für Kollision/Landefläche
+const FORD_DECK_FRAC = 0.32;   // Deckhöhe = Anteil der Modell-Gesamthöhe (Flugdeck, nicht Mastspitze)
+const HARBOR_SIZE = 60;    // Kantenlänge Hafen-GLB (Wharf Fishing Harbor) - 15% kleiner
+
+// deterministischer Zufall je Zelle (mulberry32)
+function cellRnd(cx, cz, salt) {
+  let seed = (Math.imul(cx|0, 73856093) ^ Math.imul(cz|0, 19349663) ^ Math.imul(salt|0, 83492791)) >>> 0;
+  let t = seed += 0x6D2B79F5;
+  t = Math.imul(t ^ t >>> 15, t | 1);
+  t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+
+const sandMat  = new THREE.MeshLambertMaterial({ color: 0xd9c98f });
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x5fa048 });
+const wallMats = [0xe8ddc8, 0xd8c0a0, 0xcfe0ec, 0xf0d0c0].map(c => new THREE.MeshLambertMaterial({ color: c }));
+const roofMats = [0xb04030, 0x8a5a3a, 0x6a6a72, 0x9a4a4a].map(c => new THREE.MeshLambertMaterial({ color: c }));
+const runwayMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+const lineMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const hillMat = new THREE.MeshLambertMaterial({ color: 0x4e8a3a });   // Hügel (grün)
+const rockMat = new THREE.MeshLambertMaterial({ color: 0x8a7860 });   // Fels-/Steingipfel (braun)
+const towerMats = [0x8fa5c0, 0x9db4c8, 0xa8b8c4, 0x7f97b5].map(c => new THREE.MeshLambertMaterial({ color: c }));
+const towerGlass = new THREE.MeshLambertMaterial({ color: 0x66ccee });
+
+// baut ein Haus an (x,z). rnd steuert Größe/Farbe. Gibt {mesh, w, d, h} zurück (für Kollision).
+function makeHouse(x, z, rnd, rnd2) {
+  const g = new THREE.Group();
+  // deutlich variablere Häuser: breit 5–16, tief 5–14, hoch 4–16
+  const w = 5 + rnd*11, d = 5 + rnd2*9, h = 4 + rnd*rnd2*12 + rnd*4;
+  const wi = Math.floor(rnd * wallMats.length) % wallMats.length;
+  const ri = Math.floor(rnd2 * roofMats.length) % roofMats.length;
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMats[wi]);
+  wall.position.y = h/2; g.add(wall);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.72, Math.min(h*0.5,4), 4), roofMats[ri]);
+  roof.position.y = h + Math.min(h*0.25,2); roof.rotation.y = Math.PI/4; g.add(roof);
+  g.position.set(x, ISLAND_Y, z);
+  return { mesh:g, w:Math.max(w,d), d:Math.max(w,d), h: h + Math.min(h*0.5,4) };
+}
+
+// baut einen Wolkenkratzer an (x,z). Gibt {mesh, w, d, h} zurück.
+function makeTower(x, z, rnd, rnd2) {
+  const g = new THREE.Group();
+  const w = 14 + rnd*10, d = 14 + rnd2*10, h = 70 + rnd*90;   // hoch: 70–160 m
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), towerMats[Math.floor(rnd*towerMats.length)%towerMats.length]);
+  body.position.y = h/2; g.add(body);
+  // ein paar Glas-Bänder (Etagen) andeuten
+  for(let k=1;k<=3;k++){
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w*1.02, h*0.06, d*1.02), towerGlass);
+    band.position.y = h*(0.25*k); g.add(band);
+  }
+  g.position.set(x, ISLAND_Y, z);
+  return { mesh:g, w:Math.max(w,d), d:Math.max(w,d), h };
+}
+
+// baut einen Hügel an (x,z) mit steinigem Gipfel. Gibt {mesh, w, d, h} zurück.
+function makeHill(x, z, rnd, rnd2) {
+  const g = new THREE.Group();
+  const r = 30 + rnd*50, h = 20 + rnd2*40;
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(r, h, 16), hillMat);
+  hill.position.y = h/2; g.add(hill);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(r*0.45, h*0.35, 16), rockMat);  // brauner Gipfel
+  cap.position.y = h*0.82; g.add(cap);
+  g.position.set(x, ISLAND_Y, z);
+  return { mesh:g, w:r*2, d:r*2, h, isHill:true };
+}
+
+// deterministische Insel-Daten je Zelle (ohne Geometrie) -> auch für isOnLand nutzbar
+function islandInfo(cx, cz) {
+  const isStart = (cx === 0 && cz === 0);
+  if (!isStart && cellRnd(cx, cz, 1) > 0.55) return null;   // ~55% Inseln
+  const jx = (cellRnd(cx, cz, 2) - 0.5) * CELL * 0.5;
+  const jz = (cellRnd(cx, cz, 3) - 0.5) * CELL * 0.5;
+  const wx = cx * CELL + (isStart ? 0 : jx);
+  const wz = cz * CELL + (isStart ? 0 : jz);
+  const radius = isStart ? 260 : (170 + cellRnd(cx, cz, 4) * 160);
+  return { isStart, wx, wz, radius };
+}
+
+// Deterministische Flugzeugträger-Daten je Zelle: nur auf OFFENEM MEER (keine Insel in der Zelle),
+// ~10% Häufigkeit (wie Städte). Ortsfest. Rückgabe {wx,wz,rot} oder null.
+function carrierInfo(cx, cz){
+  if(cx===0 && cz===0) return null;             // Startzelle frei halten
+  if(islandInfo(cx, cz)) return null;           // eigene Zelle muss Wasser sein
+  if(cellRnd(cx, cz, 42) >= 0.10) return null;  // ~10%
+  const wx = cx*CELL + (cellRnd(cx,cz,43)-0.5)*CELL*0.3;
+  const wz = cz*CELL + (cellRnd(cx,cz,44)-0.5)*CELL*0.3;
+  // Der lange Träger darf keine Insel überlappen: kein Inselrand näher als FORD_LEN/2+Puffer.
+  const CLEAR = FORD_LEN*0.5 + 40;
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const info = islandInfo(cx+dx, cz+dz); if(!info) continue;
+    if(Math.hypot(wx-info.wx, wz-info.wz) < info.radius + CLEAR) return null;
+  }
+  const rot = cellRnd(cx,cz,45)*Math.PI*2;      // zufällige Ausrichtung
+  return { wx, wz, rot };
+}
+
+// Liegt Weltposition (x,z) auf einer Insel-Grasfläche?
+function isOnLand(x, z) {
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const info = islandInfo(pcx + dx, pcz + dz);
+    if (info && Math.hypot(x - info.wx, z - info.wz) < info.radius) return true;
+  }
+  return false;
+}
+
+// Liegt (x,z) auf der Landebahn einer Insel? (Bahn: 24 breit in X, rwLen lang in Z,
+// zentriert auf der Inselmitte — gleiche Maße wie in buildIsland.)
+function isOnRunway(x, z) {
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const info = islandInfo(pcx + dx, pcz + dz);
+    if (!info) continue;
+    const rwLen = Math.min(260, info.radius * 1.4);
+    if (Math.abs(x - info.wx) <= 12 && Math.abs(z - info.wz) <= rwLen/2) return true;
+  }
+  return false;
+}
+
+// Liegt (x,z) auf dem Flugdeck eines Trägers? Gibt {info,cx,cz} oder null.
+// Deck: FORD_DECK_HALF_X breit (X'), FORD_LEN/2 lang (Z') im gedrehten Träger-System.
+function carrierAt(x, z){
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const info = carrierInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const rx = x-info.wx, rz = z-info.wz;
+    // Welt->lokal (Inverse der three.js rotation.y): x_l=rx*cos-rz*sin, z_l=rx*sin+rz*cos
+    const cs = Math.cos(info.rot), sn = Math.sin(info.rot);
+    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+    if(Math.abs(lx) <= FORD_DECK_HALF_X && Math.abs(lz) <= FORD_LEN*0.5)
+      return { info, cx:pcx+dx, cz:pcz+dz };
+  }
+  return null;
+}
+function isOnCarrier(x, z){ return !!carrierAt(x, z); }
+
+// Darf das aktuelle Modell hier landen? (sonst = Crash, auch bei sanftem Aufsetzen)
+//  Mustang/Transall: Insel (Gras+Bahn), NICHT Wasser.
+//  Airbus/AlphaJet: NUR Landebahn (Insel) — AlphaJet zusätzlich Trägerdeck.
+//  Mustang zusätzlich Trägerdeck. Canadair (Löschflugboot): Wasser ODER Landebahn.
+function canLandHere(x, z) {
+  const model = MODEL_NAMES[currentModel];
+  const onLand = isOnLand(x, z);
+  const onRunway = isOnRunway(x, z);
+  const onCarrier = isOnCarrier(x, z);
+  if (model === 'AlphaJet') return onRunway || onCarrier;   // Jet: Bahn oder Trägerdeck
+  if (model === 'Mustang')  return onLand   || onCarrier;   // Warbird: ganze Insel oder Trägerdeck
+  if (model === 'Airbus')   return onRunway;
+  if (model === 'Canadair') return (!onLand && !onCarrier) || onRunway;  // Wasser oder Bahn, nicht Träger
+  return onLand;                                            // Transall: Insel
+}
+
+// Deterministische Bauwerks-Liste einer Insel (lokale x/z relativ zur Inselmitte).
+// Genutzt von buildIsland (zeichnen) UND der Kollision. Ergebnis wird gecacht.
+const _bldgCache = new Map();
+function islandBuildings(cx, cz) {
+  const key = cx+','+cz;
+  if(_bldgCache.has(key)) return _bldgCache.get(key);
+  const info = islandInfo(cx, cz);
+  if(!info){ _bldgCache.set(key, null); return null; }
+  const { radius } = info;
+  const rwLen = Math.min(260, radius * 1.4);
+  // Jede 10. Insel (deterministisch) ist eine Wolkenkratzer-Stadt
+  const isCity = (cellRnd(cx, cz, 99) < 0.10);
+  const list = [];
+
+  if(isCity){
+    // Wolkenkratzer-STADT: dichtes Turm-Raster über die GANZE Insel.
+    // Die mittlere Spalte (x≈0) bleibt frei = durchgehende Flugschneise entlang Z
+    // (dieselbe Achse wie die Landebahn) -> Airbus fliegt durch, ohne zu landen.
+    const STEP = 46;              // Rasterabstand (Gassenbreite ~46-24=22 seitlich)
+    const AISLE = 26;             // halbe Breite der zentralen Flugschneise (frei)
+    let idx=0;
+    for(let gx=-radius; gx<=radius; gx+=STEP){
+      for(let gz=-radius; gz<=radius; gz+=STEP){
+        if(Math.hypot(gx,gz) >= radius*0.94) continue;      // nur auf der Insel
+        if(Math.abs(gx) < AISLE) continue;                  // zentrale Schneise frei lassen
+        idx++;
+        list.push({ x:gx, z:gz, r1:cellRnd(cx,cz,70+idx), r2:cellRnd(cx,cz,300+idx), type:'tower' });
+      }
+    }
+  } else {
+    const nB = 8 + Math.floor(cellRnd(cx, cz, 5) * 10);   // 8–18 Bauwerke
+    for(let i=0;i<nB;i++){
+      const side = (i % 2 === 0) ? -1 : 1;
+      const hx = side * (40 + cellRnd(cx, cz, 30 + i) * (radius * 0.55));
+      const hz = (cellRnd(cx, cz, 50 + i) - 0.5) * radius * 1.3;
+      if(Math.hypot(hx, hz) >= radius * 0.9) continue;     // außerhalb Gras -> weglassen
+      const r1 = cellRnd(cx, cz, 70 + i), r2 = cellRnd(cx, cz, 130 + i);
+      const type = (cellRnd(cx, cz, 200 + i) < 0.12) ? 'hill' : 'house';  // gelegentlich Hügel
+      // tatsächliche Halbbreite abschätzen (wie in makeHill/makeHouse), damit auch BREITE
+      // Hügel/Häuser NEBEN der Bahn diese nicht überragen -> Bahn (±12 X) bleibt garantiert frei.
+      const hw = (type==='hill') ? (30 + r1*50) : Math.max(5 + r1*11, 5 + r2*9)/2;
+      if(Math.abs(hx) - hw < 22 && Math.abs(hz) - hw < rwLen/2 + 10) continue;  // Bahn+Rand freihalten
+      list.push({ x:hx, z:hz, r1, r2, type });
+    }
+  }
+  _bldgCache.set(key, list);
+  return list;
+}
+
+// Trifft das Flugzeug an Weltposition (x,y,z) ein Gebäude? (Türme/Häuser, keine Hügel-Extra).
+// Nutzt dieselbe deterministische Bauwerks-Liste wie buildIsland.
+function hitsBuilding(x, y, z) {
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) {
+    const info = islandInfo(pcx+dx, pcz+dz);
+    if(!info) continue;
+    const list = islandBuildings(pcx+dx, pcz+dz);
+    if(!list) continue;
+    const lx = x - info.wx, lz = z - info.wz;        // lokal zur Inselmitte
+    for(const b of list){
+      const ay = y - ISLAND_Y;
+      if(b.type === 'hill'){
+        // Berg = Kegel (Maße wie makeHill: r=30+r1*50, h=20+r2*40; unabhängig von buildIsland).
+        const rBase = 30 + b.r1*50, hh = 20 + b.r2*40;
+        if(ay > hh) continue;                        // über dem Gipfel -> drüberfliegen ok
+        const rHere = rBase * (1 - ay/hh);           // Kegel wird nach oben schmaler
+        if(Math.hypot(lx - b.x, lz - b.z) < rHere + 3) return true;
+        continue;
+      }
+      const hh = b.hh || 12;                         // Haus/Turm-Höhe
+      if(ay > hh) continue;                          // über dem Dach -> kein Treffer
+      const hw = b.hw || 8;                          // halbe Breite
+      if(Math.abs(lx - b.x) < hw+3 && Math.abs(lz - b.z) < hw+3) return true;
+    }
+    // Hafen: solide Struktur am Inselrand -> Treffer bis ~20 m Höhe (Kräne/Masten)
+    const hb = harborLocal(pcx+dx, pcz+dz);
+    if(y - ISLAND_Y < harborHeight + 3 && Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.45) return true;
+  }
+  // Flugzeugträger: seitlich in den Rumpf/Aufbau fliegen = Treffer. Das Flugdeck (oben, landbar)
+  // ist frei -> Treffer nur UNTERHALB der Deckhöhe (Bordwand) oder am Turm knapp über Deck.
+  return _hitsBuildingCarrier(x, y, z);
+}
+// Schiebt (x,z) radial aus einem getroffenen Berg-Grundriss heraus an den Hangfuß (+Puffer),
+// damit ein an einem Berg abgestürztes Flugzeug AUSSEN am Hang herunterrutscht (nicht durchfällt).
+function pushOutOfHill(x, z){
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const list = islandBuildings(pcx+dx, pcz+dz); if(!list) continue;
+    for(const b of list){
+      if(b.type !== 'hill') continue;
+      const cxw = info.wx + b.x, czw = info.wz + b.z;    // Bergmitte (Welt)
+      const rBase = 30 + b.r1*50;
+      const d = Math.hypot(x - cxw, z - czw);
+      if(d < rBase + 4){
+        const nx = d>0.001 ? (x-cxw)/d : 1, nz = d>0.001 ? (z-czw)/d : 0;
+        return { x: cxw + nx*(rBase+4), z: czw + nz*(rBase+4) };  // an den Hangfuß nach außen
+      }
+    }
+  }
+  return null;
+}
+function _hitsBuildingCarrier(x, y, z){
+  const car = carrierAt(x, z);
+  if(car){
+    if(y < fordDeckY - 1.5) return true;                       // unter dem Deck = in die Bordwand
+    // Turm (Insel-Aufbau) steht seitlich auf dem Deck -> kleiner Sperrblock knapp über Deck
+    const info=car.info, rx=x-info.wx, rz=z-info.wz;
+    const cs=Math.cos(info.rot), sn=Math.sin(info.rot);
+    const lx2=rx*cs - rz*sn, lz2=rx*sn + rz*cs;
+    if(y < fordDeckY + 16 && Math.abs(lx2-(FORD_DECK_HALF_X-4)) < 8 && Math.abs(lz2-FORD_LEN*0.28) < 12) return true;
+  }
+  return false;
+}
+// Ist (x,z) am Boden frei von Hindernissen (Gebäude, Hafen, Trägerdeck)? Für die Rettungsfahrzeuge,
+// die weder durch Häuser noch durch Hafen/Carrier fahren dürfen und deren Wasserstrahl frei sein muss.
+function spotFreeOfBuildings(x, z, pad){
+  pad = pad || 6;
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const list = islandBuildings(pcx+dx, pcz+dz); if(!list) continue;
+    const lx = x - info.wx, lz = z - info.wz;
+    for(const b of list){
+      // Berge zählen für die Feuerwehr/den Wasserstrahl AUCH als Hindernis (rund, breit).
+      if(b.type === 'hill'){
+        const hr = 30 + b.r1*50;                     // Basisradius (wie makeHill), robust ohne buildIsland
+        if(Math.hypot(lx - b.x, lz - b.z) < hr + pad) return false;
+        continue;
+      }
+      const hw = b.hw || 8;
+      if(Math.abs(lx - b.x) < hw+pad && Math.abs(lz - b.z) < hw+pad) return false;
+    }
+    // Hafen (steht am Inselrand) als runde Sperrzone
+    const hb = harborLocal(pcx+dx, pcz+dz);
+    if(Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.5 + pad) return false;
+  }
+  // Trägerdeck (schwimmende Insel) ist ebenfalls tabu
+  if(isOnCarrier(x, z)) return false;
+  return true;
+}
+// Nächste gebäudefreie Stelle um (x,z) herum suchen (für Feuerwehr-Standplatz).
+function freeSpotNear(x, z){
+  if(spotFreeOfBuildings(x, z)) return { x, z };
+  for(let r=18; r<=80; r+=14){
+    for(let a=0; a<8; a++){
+      const px = x + Math.cos(a/8*6.283)*r, pz = z + Math.sin(a/8*6.283)*r;
+      if(spotFreeOfBuildings(px, pz)) return { x:px, z:pz };
+    }
+  }
+  return { x:x+22, z:z+8 };   // Fallback (alte feste Position)
+}
+// Freie Sichtlinie zwischen (x1,z1) und (x2,z2)? (kein Gebäude dazwischen -> Wasserstrahl frei)
+function lineOfSightFree(x1, z1, x2, z2){
+  const steps = Math.max(4, Math.ceil(Math.hypot(x2-x1, z2-z1) / 6));
+  for(let i=1; i<steps; i++){
+    const f = i/steps;
+    if(!spotFreeOfBuildings(x1+(x2-x1)*f, z1+(z2-z1)*f, 2)) return false;
+  }
+  return true;
+}
+// Rettungs-Standplatz nahe dem Wrack: hindernisfrei (Häuser/Hafen/Carrier) UND mit freier Sicht
+// zum Wrack (Strahl geht durch nichts). onLand -> Stelle muss Land sein (Auto); sonst Wasser (Boot).
+function rescueSpotNear(wx, wz, onLand){
+  for(let r=16; r<=90; r+=10){
+    for(let a=0; a<12; a++){
+      const px = wx + Math.cos(a/12*6.283)*r, pz = wz + Math.sin(a/12*6.283)*r;
+      if((onLand ? isOnLand(px,pz) : !isOnLand(px,pz))
+         && spotFreeOfBuildings(px, pz) && lineOfSightFree(px, pz, wx, wz)) return { x:px, z:pz };
+    }
+  }
+  return freeSpotNear(wx+22, wz+8);   // Fallback
+}
+
+// baut eine Insel für Zelle (cx,cz). Gibt eine Group zurück (oder null = kein Land).
+function buildIsland(cx, cz) {
+  const info = islandInfo(cx, cz);
+  if (!info) return null;
+  const { radius, wx, wz } = info;
+  const g = new THREE.Group();
+
+  // Sandrand (etwas größer) + Grasfläche
+  const sand = new THREE.Mesh(new THREE.CircleGeometry(radius * 1.12, 24), sandMat);
+  sand.rotation.x = -Math.PI/2; sand.position.y = ISLAND_Y - 0.05;
+  g.add(sand);
+  const grass = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), grassMat);
+  grass.rotation.x = -Math.PI/2; grass.position.y = ISLAND_Y;
+  g.add(grass);
+
+  // ---- Landebahn (Flughafen) auf JEDER Insel ----
+  const rwLen = Math.min(260, radius * 1.4);
+  const rw = new THREE.Mesh(new THREE.PlaneGeometry(24, rwLen), runwayMat);
+  rw.rotation.x = -Math.PI/2; rw.position.y = ISLAND_Y + 0.02;
+  g.add(rw);
+  for (let z = -rwLen/2 + 15; z <= rwLen/2 - 15; z += 20) {
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 8), lineMat);
+    dash.rotation.x = -Math.PI/2; dash.position.set(0, ISLAND_Y + 0.04, z);
+    g.add(dash);
+  }
+
+  // ---- Bauwerke (Häuser / Wolkenkratzer / Hügel) aus der deterministischen Liste ----
+  for(const b of islandBuildings(cx, cz)){
+    let built;
+    if(b.type === 'tower') built = makeTower(b.x, b.z, b.r1, b.r2);
+    else if(b.type === 'hill') built = makeHill(b.x, b.z, b.r1, b.r2);
+    else built = makeHouse(b.x, b.z, b.r1, b.r2);
+    g.add(built.mesh);
+    b.hw = built.w/2; b.hh = built.h;    // Kollisionsmaße in die Liste zurückschreiben
+  }
+
+  // ---- Hafen am Inselrand (auf jeder Insel einer), quer zur Landebahn (X-Seite) ----
+  const hb = harborLocal(cx, cz);   // lokale Position/Ausrichtung relativ zur Inselmitte
+  if(harborTemplate){
+    const h = harborTemplate.clone(true);
+    h.position.set(hb.x, ISLAND_Y, hb.z);
+    h.rotation.y = hb.rot;
+    g.add(h);
+    g.userData.harbor = h;   // fürs spätere Ersetzen, falls GLB später fertig lädt
+  }
+
+  g.position.set(wx, 0, wz);
+  return g;
+}
+// Hafen liegt am Rand (Sandkante) auf der +X-Seite, mit dem Steg zum Wasser gedreht.
+function harborLocal(cx, cz){
+  const info = islandInfo(cx, cz);
+  const r = info.radius;
+  const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // seitlich (nicht auf der Bahn-Achse Z)
+  const rr = r * 1.02;                                    // knapp an der Sandkante
+  return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang + Math.PI/2 };
+}
+
+// Pool aktiver Insel-Zellen: Key "cx,cz" -> Group (oder null wenn Wasser)
+const islandCells = new Map();
+function updateIslands() {
+  const pcx = Math.round(state.pos.x / CELL);
+  const pcz = Math.round(state.pos.z / CELL);
+  const needed = new Set();
+  for (let dz = -VIEW_CELLS; dz <= VIEW_CELLS; dz++) {
+    for (let dx = -VIEW_CELLS; dx <= VIEW_CELLS; dx++) {
+      const cx = pcx + dx, cz = pcz + dz;
+      const key = cx + ',' + cz;
+      needed.add(key);
+      if (!islandCells.has(key)) {
+        const isl = buildIsland(cx, cz);
+        if (isl) scene.add(isl);
+        islandCells.set(key, isl); // null merken = keine Insel, nicht neu würfeln
+      }
+    }
+  }
+  // nicht mehr benötigte Zellen entfernen
+  for (const [key, isl] of islandCells) {
+    if (!needed.has(key)) {
+      if (isl) scene.remove(isl);
+      islandCells.delete(key);
+    }
+  }
+  updateCarriers(pcx, pcz, needed);
+}
+// Alle aktuell gebauten Inseln neu erzeugen (z.B. nachdem das Hafen-GLB spät geladen wurde).
+function refreshIslands(){
+  for(const [key, isl] of islandCells){
+    if(isl) scene.remove(isl);
+    const [cx,cz] = key.split(',').map(Number);
+    const ni = buildIsland(cx, cz);
+    if(ni) scene.add(ni);
+    islandCells.set(key, ni);
+  }
+}
+
+// ---------- Flugzeugträger (schwimmende Landebahn) ----------
+// Platzhalter-Deck (graues Rechteck), bis das echte GLB geladen ist. Baut ein sichtbares
+// Flugdeck + Turm, damit man auch ohne/vor GLB landen kann.
+function makeCarrier(info){
+  const g = new THREE.Group();
+  if(fordTemplate){
+    g.add(fordTemplate.clone(true));
+  } else {
+    // Fallback: einfacher grauer Rumpf + Deck auf Deckhöhe
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(FORD_DECK_HALF_X*2+8, fordDeckY, FORD_LEN),
+      new THREE.MeshLambertMaterial({ color:0x555b63 }));
+    hull.position.y = fordDeckY/2; g.add(hull);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(FORD_DECK_HALF_X*2, 1.5, FORD_LEN),
+      new THREE.MeshLambertMaterial({ color:0x3a3f45 }));
+    deck.position.y = fordDeckY; g.add(deck);
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(8,14,18),
+      new THREE.MeshLambertMaterial({ color:0x6a7078 }));
+    tower.position.set(FORD_DECK_HALF_X-4, fordDeckY+7, FORD_LEN*0.28); g.add(tower);
+  }
+  g.position.set(info.wx, 0, info.wz);
+  g.rotation.y = info.rot;
+  return g;
+}
+const carrierCells = new Map();   // Key "cx,cz" -> Group (oder null)
+function updateCarriers(pcx, pcz, needed){
+  for(const key of needed){
+    if(carrierCells.has(key)) continue;
+    const [cx,cz] = key.split(',').map(Number);
+    const info = carrierInfo(cx, cz);
+    const grp = info ? makeCarrier(info) : null;
+    if(grp) scene.add(grp);
+    carrierCells.set(key, grp);
+  }
+  for(const [key, grp] of carrierCells){
+    if(!needed.has(key)){ if(grp) scene.remove(grp); carrierCells.delete(key); }
+  }
+}
+// Nach dem Nachladen des GLB: bereits gebaute Platzhalter-Träger durch echtes Modell ersetzen.
+function refreshCarriers(){
+  for(const [key, grp] of carrierCells){
+    if(!grp) continue;
+    const [cx,cz] = key.split(',').map(Number);
+    const info = carrierInfo(cx, cz);
+    scene.remove(grp);
+    const ng = info ? makeCarrier(info) : null;
+    if(ng) scene.add(ng);
+    carrierCells.set(key, ng);
+  }
+}
+
+// ---------- Feuerwehr (Fahrzeug an Land / Boot auf dem Meer) ----------
+const redMat   = new THREE.MeshLambertMaterial({ color: 0xcc2222 });
+const darkMat  = new THREE.MeshLambertMaterial({ color: 0x222222 });
+const glassMat = new THREE.MeshLambertMaterial({ color: 0x88bbdd });
+const blueMat  = new THREE.MeshLambertMaterial({ color: 0x2255cc, emissive: 0x1133aa });
+const waterJetMat = new THREE.MeshLambertMaterial({ color: 0x9fd8ff, transparent:true, opacity:0.6 });
+
+// Abgerundeter Quader (Box + Zylinder-Kanten + Eck-Kugeln) für weiche Optik
+function roundedBox(w, h, d, r, mat){
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(w, h-2*r, d-2*r), mat));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(w-2*r, h, d-2*r), mat));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(w-2*r, h-2*r, d), mat));
+  // 4 waagerechte Längskanten (entlang X)
+  for(const sy of [-1,1]) for(const sz of [-1,1]){
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w-2*r, 10), mat);
+    c.rotation.z = Math.PI/2; c.position.set(0, sy*(h/2-r), sz*(d/2-r)); g.add(c);
+  }
+  // 4 senkrechte Kanten (entlang Y)
+  for(const sx of [-1,1]) for(const sz of [-1,1]){
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h-2*r, 10), mat);
+    c.position.set(sx*(w/2-r), 0, sz*(d/2-r)); g.add(c);
+  }
+  // 4 Kanten entlang Z
+  for(const sx of [-1,1]) for(const sy of [-1,1]){
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, d-2*r, 10), mat);
+    c.rotation.x = Math.PI/2; c.position.set(sx*(w/2-r), sy*(h/2-r), 0); g.add(c);
+  }
+  // 8 Eck-Kugeln
+  for(const sx of [-1,1]) for(const sy of [-1,1]) for(const sz of [-1,1]){
+    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+    s.position.set(sx*(w/2-r), sy*(h/2-r), sz*(d/2-r)); g.add(s);
+  }
+  return g;
+}
+
+function makeFireTruck() {
+  // Echtes GLB-Auto (Mercedes Atego by Aeroux Games 3D), falls geladen
+  if(truckTemplate){
+    const g = new THREE.Group();
+    const t = truckTemplate.clone(true);
+    t.rotation.y = 0;    // GLB fuhr rückwärts -> 180° gedreht (Front voraus)
+    g.add(t);
+    return g;
+  }
+  const g = new THREE.Group();
+  const body = roundedBox(6, 4, 12, 1, redMat);   body.position.y = 3; g.add(body);
+  const cab  = roundedBox(5.6, 3, 4, 0.9, redMat); cab.position.set(0, 4.5, -5); g.add(cab);
+  // Frontscheibe: flache dunkle Platte an der Kabinenvorderseite (statt Halbkreis)
+  const win = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.8, 0.2), glassMat);
+  win.position.set(0, 5.0, -7.0); g.add(win);
+  for(const [x,z] of [[-3,-4],[3,-4],[-3,4],[3,4]]){
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,1.2,16), darkMat);
+    w.rotation.z = Math.PI/2; w.position.set(x,1.4,z); g.add(w);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.5,8,6), glassMat);
+    hub.position.set(x + (x>0?0.65:-0.65),1.4,z); g.add(hub);
+  }
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,0.9,12), blueMat);
+  beacon.position.set(0,6.3,-5); g.add(beacon); g.userData.beacon = beacon;
+  return g;
+}
+function makeFireBoat() {
+  // Echtes GLB-Boot (by gogiart), falls geladen
+  if(boatTemplate){
+    const g = new THREE.Group();
+    const b = boatTemplate.clone(true);
+    b.rotation.y = Math.PI/2;  // 90° im Uhrzeigersinn gegenüber vorher (Math.PI)
+    g.add(b);
+    return g;                  // kein Blaulicht-Node -> userData.beacon bleibt leer (ok)
+  }
+  const g = new THREE.Group();
+  // Rumpf: halber Zylinder (rund unten) + Bug-Kegel
+  const hull = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 16, 20, 1, false, 0, Math.PI), redMat);
+  hull.rotation.set(0, 0, Math.PI/2);            // Rundung nach unten
+  hull.rotation.x = Math.PI/2;
+  hull.position.y = 2; g.add(hull);
+  // Deckplatte
+  const deckTop = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.4, 16), redMat);
+  deckTop.position.y = 2; g.add(deckTop);
+  // Bug (rundlicher Abschluss)
+  const bow = new THREE.Mesh(new THREE.SphereGeometry(3.2, 16, 10, 0, Math.PI*2, 0, Math.PI/2), redMat);
+  bow.rotation.x = -Math.PI/2; bow.position.set(0, 2, -8); g.add(bow);
+  // Aufbau/Kabine rund
+  const deck = roundedBox(5, 3, 6, 1, glassMat); deck.position.set(0, 4, -1); g.add(deck);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,6,8), darkMat);
+  mast.position.set(0, 7, 3); g.add(mast);
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,0.8,12), blueMat);
+  beacon.position.set(0,6,-1); g.add(beacon); g.userData.beacon = beacon;
+  return g;
+}
+
+// richtet ein Objekt so aus, dass seine Front (-Z) auf (tx,tz) zeigt (Fahrzeuge/Boote)
+function faceTowards(obj, tx, tz){
+  const ang = Math.atan2(tx - obj.position.x, tz - obj.position.z);
+  obj.rotation.y = ang + Math.PI;   // -Z ist die Front
+}
+
+let rescue = null;   // {group, jet, wreck, start, stop, groundY, t}
+function spawnRescue(x, z, onLand) {
+  clearRescue();
+  const g = onLand ? makeFireTruck() : makeFireBoat();
+  const groundY = onLand ? ISLAND_Y : 0;
+  // Zielposition: NAH neben dem Wrack, gebäudefrei UND mit freier Sicht (Wasserstrahl darf nicht
+  // durch ein Haus). Auf Wasser (Boot) ist alles frei -> feste Seitenposition.
+  // Standplatz: nah, hindernisfrei, freie Sicht (Auto auf Land, Boot auf Wasser — beide meiden
+  // Häuser, Hafen und Trägerdeck).
+  const sp = rescueSpotNear(x, z, onLand);
+  const stop  = new THREE.Vector3(sp.x, groundY, sp.z);
+  // Startposition: in Verlängerung Wrack->Stop weiter außen (fährt aus derselben Richtung ins Bild),
+  // ebenfalls hindernisfrei auf der passenden Oberfläche.
+  const ox = sp.x - x, oz = sp.z - z, ol = Math.hypot(ox, oz) || 1;
+  let far = { x: sp.x + ox/ol*120, z: sp.z + oz/ol*120 };
+  if(onLand ? !isOnLand(far.x,far.z) : isOnLand(far.x,far.z) || !spotFreeOfBuildings(far.x,far.z)){
+    const alt = rescueSpotNear(sp.x + ox/ol*120, sp.z + oz/ol*120, onLand);
+    if(alt) far = alt;
+  }
+  const start = new THREE.Vector3(far.x, groundY, far.z);
+  g.position.copy(start);
+  faceTowards(g, x, z);   // Front (-Z) zum Wrack ausrichten
+  scene.add(g);
+  // EIN Wasserstrahl (Kegel), Spitze zeigt zum Wrack – Länge/Winkel in updateRescue
+  const jet = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1, 8), waterJetMat);
+  scene.add(jet);
+  rescue = { group:g, jet, wreck:new THREE.Vector3(x, groundY+1.5, z), start, stop, groundY, t:0 };
+  startSiren();
+}
+function clearRescue(){
+  stopSiren();
+  if(rescue){ scene.remove(rescue.group); scene.remove(rescue.jet); rescue = null; }
+}
+function updateRescue(dt){
+  if(!rescue) return;
+  rescue.t += dt;
+
+  // Phase 1 (0–1,6 s): ins Bild fahren. Phase 2: stehen & löschen.
+  const driveT = Math.min(1, rescue.t / 1.6);
+  const ease = 1 - Math.pow(1 - driveT, 3);   // sanft abbremsen
+  rescue.group.position.lerpVectors(rescue.start, rescue.stop, ease);
+  faceTowards(rescue.group, rescue.wreck.x, rescue.wreck.z);
+
+  // Blaulicht blinkt
+  const beacon = rescue.group.userData.beacon;
+  if(beacon) beacon.material = (Math.floor(rescue.t*6)%2===0) ? blueMat : darkMat;
+
+  // Wasserstrahl erst ab Phase 2 (Fahrzeug steht)
+  const jet = rescue.jet;
+  if(driveT >= 1){
+    jet.visible = (Math.floor(rescue.t*12)%2===0);   // flackern
+    // Düse etwas über dem Fahrzeug
+    const noz = rescue.group.position.clone(); noz.y += 5;
+    const target = rescue.wreck;
+    const mid = noz.clone().lerp(target, 0.5);
+    const len = noz.distanceTo(target);
+    jet.position.copy(mid);
+    jet.scale.set(1, len, 1);                          // Kegel auf Distanz strecken
+    // Kegel: Spitze (+Y) SCHMAL an der Düse, breite Basis (-Y) fächert zum Wrack.
+    // Also -Y-Achse zum Wrack ausrichten (Strahl geht VOM Boot weg).
+    const dir = target.clone().sub(noz).normalize();
+    jet.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0), dir);
+  } else {
+    jet.visible = false;
+  }
+}
+
+// ---------- Löschwasser (nur Canadair) ----------
+// Aufnehmen: 3 s unter 20 m ÜBER WASSER fliegen -> Tank voll. Ablassen: Taste B.
+const dropMat = new THREE.MeshLambertMaterial({ color:0x9fd8ff, transparent:true, opacity:0.7 });
+let waterDrop = null;   // {mesh, t}
+function isCanadair(){ return MODEL_NAMES[currentModel] === 'Canadair'; }
+function isAlphaJet(){ return MODEL_NAMES[currentModel] === 'AlphaJet'; }
+function isTransall(){ return MODEL_NAMES[currentModel] === 'Transall'; }
+function isAirbus(){ return MODEL_NAMES[currentModel] === 'Airbus'; }
+function isMustang(){ return MODEL_NAMES[currentModel] === 'Mustang'; }
+// B-Taste: Canadair -> Wasser, AlphaJet/Mustang -> Schleudersitz, Transall -> Kiste abwerfen
+function buttonB(){
+  if(isCanadair()) dropWater();
+  else if(isAlphaJet() || isMustang()) ejectSeat();
+  else if(isTransall()) dropCrate();
+}
+
+const SCOOP_FULL = 2.0;   // Sekunden über Wasser für vollen Tank (1 s = 50 %)
+const DROP_FULL  = 4.0;   // Sekunden Abwurfdauer bei vollem Tank (halb = 2 s)
+function updateScoop(dt){
+  if(!isCanadair()) return;
+  const alt = state.pos.y - ISLAND_Y;
+  const overWater = !isOnLand(state.pos.x, state.pos.z) && !isOnCarrier(state.pos.x, state.pos.z);
+  // Auffüllen: tief ÜBER Wasser fliegen ODER auf dem Wasser STEHEN (Start im Hafen -> sofort tanken).
+  const tankingFlight = overWater && alt > 0.5 && alt < 20 && !state.onGround;
+  const tankingFloat  = overWater && state.onGround;   // schwimmt am Wasser (z.B. Hafen-Start)
+  if((tankingFlight || tankingFloat) && !waterDrop && state.water < 1){
+    state.water = Math.min(1, state.water + dt / SCOOP_FULL);
+  }
+}
+function dropWater(){
+  if(!isCanadair() || state.water <= 0 || waterDrop) return;
+  // Einmal drücken = kompletter Tank. Abwurfdauer proportional zur Menge.
+  const dur = DROP_FULL * state.water;
+  state.water = 0;
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 3.0, 24, 14, 1, true), dropMat);
+  scene.add(mesh);
+  waterDrop = { mesh, t: dur };
+}
+function updateWaterDrop(dt){
+  if(!waterDrop) return;
+  waterDrop.t -= dt;
+  waterDrop.mesh.position.set(state.pos.x, state.pos.y - 12, state.pos.z);
+  const puls = 0.85 + 0.15*Math.sin(waterDrop.t*20);
+  waterDrop.mesh.scale.set(puls, 1, puls);
+  waterDrop.mesh.material.opacity = 0.65;
+  if(waterDrop.t <= 0){ scene.remove(waterDrop.mesh); waterDrop = null; }
+}
+
+// ---------- Transall: Kisten am Fallschirm abwerfen ----------
+const crateMat = new THREE.MeshLambertMaterial({ color:0x8a6a3a });   // Holzkiste
+const CRATE_MAX = 4;        // max. Kisten
+const CRATE_LOAD_TIME = 2;  // Sekunden auf der Bahn für volle Ladung (4 Kisten)
+let crateLoad = 0;          // geladene Kisten (0..4)
+let crateLoadT = 0;         // Ladefortschritt (Sekunden auf der Bahn)
+const activeCrates = [];    // fallende Kisten
+function makeCrate(){
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(new THREE.BoxGeometry(3,3,3), crateMat);
+  box.position.y = 1.5; g.add(box);
+  // Fallschirm drüber (echtes GLB, falls geladen; sonst einfacher Kegel)
+  if(parachuteTemplate){
+    const pc = parachuteTemplate.clone(true); pc.position.y = 8; g.add(pc);
+  } else {
+    const pc = new THREE.Mesh(new THREE.SphereGeometry(4,16,10,0,Math.PI*2,0,Math.PI/2),
+      new THREE.MeshLambertMaterial({ color:0xff8822, side:THREE.DoubleSide }));
+    pc.position.y = 8; g.add(pc);
+  }
+  return g;
+}
+let crateQueue = 0, crateTimer = 0;    // Abwurf-Warteschlange: Anzahl + Countdown
+function dropCrate(){
+  if(!isTransall() || crateLoad <= 0) return;
+  crateQueue = crateLoad;              // alle geladenen Kisten in die Warteschlange
+  crateLoad = 0;
+  crateTimer = 0;                      // erste Kiste sofort
+}
+function releaseCrate(){
+  const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+  const g = makeCrate();
+  g.position.set(state.pos.x + back.x*6, state.pos.y - 2, state.pos.z + back.z*6);
+  scene.add(g);
+  activeCrates.push({ group:g, vy:-2, vx:state.vel.x*0.3, vz:state.vel.z*0.3 });
+}
+function updateCrates(dt){
+  // Abwurf-Warteschlange: alle 0,3 s eine Kiste hintereinander rauswerfen
+  if(crateQueue > 0){
+    crateTimer -= dt;
+    if(crateTimer <= 0){ releaseCrate(); crateQueue--; crateTimer = 0.3; }
+  }
+  // Graduelles Laden: auf der LANDEBAHN stehen/rollen -> alle 0,5 s eine Kiste (2 s = 4).
+  if(isTransall() && state.onGround && isOnRunway(state.pos.x, state.pos.z) && crateLoad < CRATE_MAX){
+    crateLoadT += dt;
+    crateLoad = Math.min(CRATE_MAX, Math.floor(crateLoadT / (CRATE_LOAD_TIME/CRATE_MAX)));
+  } else if(!isOnRunway(state.pos.x, state.pos.z)){
+    crateLoadT = crateLoad * (CRATE_LOAD_TIME/CRATE_MAX);   // Fortschritt = bereits geladene Kisten
+  }
+  // fallende Kisten animieren (sanft sinken am Fallschirm, dann liegen bleiben)
+  for(let i=activeCrates.length-1; i>=0; i--){
+    const c = activeCrates[i];
+    c.vy = Math.max(c.vy - 4*dt, -6);       // Fallschirm bremst -> gemächliches Sinken
+    c.group.position.x += c.vx*dt;
+    c.group.position.z += c.vz*dt;
+    c.group.position.y += c.vy*dt;
+    c.vx *= 0.98; c.vz *= 0.98;
+    const gy = isOnLand(c.group.position.x, c.group.position.z) ? ISLAND_Y : 0;
+    if(c.group.position.y <= gy+1.5){ c.group.position.y = gy+1.5;
+      if(!c.grounded){ c.grounded=true;
+        // Kiste auf der Zielinsel gelandet? -> Lieferung zählen (fürs Transall-Minispiel)
+        if(cargoTarget && Math.hypot(c.group.position.x-cargoTarget.x, c.group.position.z-cargoTarget.z) < cargoTarget.r+20)
+          cargoTarget.delivered=(cargoTarget.delivered||0)+1;
+      }
+      c.landed=(c.landed||0)+dt;
+      if(c.landed>4){ scene.remove(c.group); activeCrates.splice(i,1); } }  // 4 s liegen, dann weg
+  }
+}
+
+// ---------- Waldbrand-Modus (nur Canadair): Feuer auf Inselwiesen löschen ----------
+const flameMat = new THREE.MeshBasicMaterial({ color:0xff5510, transparent:true, opacity:0.9 });
+const smokeMat = new THREE.MeshBasicMaterial({ color:0x555555, transparent:true, opacity:0.5 });
+const arrowMat   = new THREE.MeshBasicMaterial({ color:0xcc4444, transparent:true, opacity:0.8 }); // rot: Tank leer
+const arrowMatMid= new THREE.MeshBasicMaterial({ color:0xe8c020, transparent:true, opacity:0.85 });// gelb: Wasser im Tank
+const arrowMatOk = new THREE.MeshBasicMaterial({ color:0x33cc44, transparent:true, opacity:0.9 }); // grün: Treffer sicher
+let fire = null;         // {group, x, z, r, flames:[]}
+let fireRespawnT = -1;   // Countdown bis neues Feuer (-1 = inaktiv/erstes Feuer sofort)
+let leadArrows = [];     // Pfeilkette (Cyberpunk-Style) zum Feuer
+let thumbEl = null;      // grüner Daumen (DOM-Overlay)
+
+// ---------- Globale Schalter: Minispiele (RB) & Leitfaden (LB) ----------
+let missionsOn = true;   // RB: alle Aufgaben (Feuer/Fracht/Menschen + Navi) an/aus
+let leadOn = true;       // LB: nur die Pfeilketten-Navigation an/aus (Radar bleibt)
+
+function makeFire(x, z){
+  const g = new THREE.Group();
+  const flames = [];
+  for(let i=0;i<16;i++){
+    const a = Math.random()*Math.PI*2, rr = Math.random()*24;
+    const fl = new THREE.Mesh(new THREE.ConeGeometry(2+Math.random()*2, 7+Math.random()*7, 6), flameMat);
+    fl.position.set(Math.cos(a)*rr, ISLAND_Y+3, Math.sin(a)*rr); g.add(fl); flames.push(fl);
+    const sm = new THREE.Mesh(new THREE.SphereGeometry(3+Math.random()*2, 6, 5), smokeMat);
+    sm.position.set(Math.cos(a)*rr, ISLAND_Y+12, Math.sin(a)*rr); g.add(sm);
+  }
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return { group:g, x, z, r:60, flames };   // großzügiger Löschradius (60 m)
+}
+const FIRE_MAX_DIST = 1100;  // Feuer nur auf Inseln, die näher als das sind
+function spawnFire(){
+  clearFire();
+  const pcx = Math.round(state.pos.x/CELL), pcz = Math.round(state.pos.z/CELL);
+  // Flugrichtung (horizontal) für den 135°-Vorwärtskegel (±67,5°)
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const fdx = fwd.x, fdz = fwd.z;
+  const flen = Math.hypot(fdx, fdz) || 1;
+  const COS_HALF = Math.cos(67.5 * Math.PI/180);     // Grenze des Kegels
+  // nächste WIESEN-Insel VOR dem Flieger (im Kegel) suchen; 2 Ringe weit
+  let best=null, bestCx, bestCz, bestD=1e9;
+  for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+    const cx=pcx+dx, cz=pcz+dz;
+    const info=islandInfo(cx,cz); if(!info) continue;
+    if(cellRnd(cx,cz,99) < 0.10) continue;           // Stadt-Inseln überspringen (brennen nicht)
+    const rx=info.wx-state.pos.x, rz=info.wz-state.pos.z;
+    const d=Math.hypot(rx,rz);
+    if(d < 60) continue;                             // nicht direkt auf dem Flieger
+    // Winkel zur Flugrichtung: nur Inseln im 135°-Kegel nach vorne
+    const dot=(rx*fdx + rz*fdz)/(d*flen);
+    if(dot < COS_HALF) continue;
+    if(d<bestD){bestD=d;best=info;bestCx=cx;bestCz=cz;}
+  }
+  if(!best || bestD > FIRE_MAX_DIST) return false;   // keine Wieseninsel vor mir nah genug
+  // Feuerstelle auf der Wiese finden, die NICHT auf/neben einem Gebäude liegt
+  const buildings = islandBuildings(bestCx, bestCz) || [];
+  let fx, fz, ok=false;
+  for(let tries=0; tries<20 && !ok; tries++){
+    const ang=Math.random()*Math.PI*2, rr=best.radius*(0.35+Math.random()*0.4);
+    const lx=Math.cos(ang)*rr, lz=Math.sin(ang)*rr;
+    ok = true;
+    for(const b of buildings){
+      if(Math.hypot(lx-b.x, lz-b.z) < 40){ ok=false; break; }   // zu nah an Bauwerk
+    }
+    if(ok){ fx=best.wx+lx; fz=best.wz+lz; }
+  }
+  if(!ok) return false;                               // kein freier Wiesenfleck gefunden
+  fire = makeFire(fx, fz);
+  buildLeadArrows();
+  return true;
+}
+// nächste Wasserstelle (für "erst Wasser holen"): aktuelle Pos wenn schon über Meer, sonst radial
+function nearestWaterXZ(x, z){
+  if(!isOnLand(x, z)) return { x, z };
+  for(let r=80; r<=700; r+=70) for(let a=0; a<8; a++){
+    const px=x+Math.cos(a/8*6.283)*r, pz=z+Math.sin(a/8*6.283)*r;
+    if(!isOnLand(px, pz)) return { x:px, z:pz };
+  }
+  return { x, z };
+}
+function buildLeadArrows(){
+  clearArrows();
+  for(let i=0;i<14;i++){
+    const ar = new THREE.Mesh(new THREE.ConeGeometry(3.5, 8, 4), arrowMat);
+    ar.renderOrder = 998;
+    scene.add(ar); leadArrows.push(ar);
+  }
+}
+function clearArrows(){ for(const a of leadArrows) scene.remove(a); leadArrows=[]; }
+function clearFire(){
+  if(fire){ scene.remove(fire.group); fire=null; }
+  clearArrows();
+}
+let thumbT = 0;   // Restanzeigedauer des Daumens
+function showThumb(){
+  if(!thumbEl){
+    thumbEl = document.createElement('div');
+    thumbEl.style.cssText='position:absolute;font-size:60px;opacity:0;transition:opacity .3s;pointer-events:none;transform:translate(-50%,-50%);';
+    thumbEl.textContent='👍';
+    document.body.appendChild(thumbEl);
+  }
+  thumbEl.style.opacity='1';
+  thumbT = 1.8;
+}
+// Daumen über dem Flugzeug positionieren (3D->2D projiziert), solange thumbT läuft
+const _thumbV = new THREE.Vector3();
+function updateThumb(dt){
+  if(!thumbEl || thumbT<=0) return;
+  thumbT -= dt;
+  if(thumbT<=0){ thumbEl.style.opacity='0'; return; }
+  _thumbV.set(state.pos.x, state.pos.y+14, state.pos.z).project(camera);
+  const sx = (_thumbV.x*0.5+0.5)*innerWidth;
+  const sy = (-_thumbV.y*0.5+0.5)*innerHeight;
+  thumbEl.style.left = sx+'px';
+  thumbEl.style.top  = sy+'px';
+}
+
+// Kurzes Umschalt-Symbol mittig oben (🎯/🧭/🚫) – kindgerecht, kein Text.
+let toggleEl = null, toggleT = 0;
+function showToggle(sym){
+  if(!toggleEl){
+    toggleEl = document.createElement('div');
+    toggleEl.style.cssText='position:absolute;left:50%;top:18%;font-size:72px;opacity:0;'+
+      'transition:opacity .2s;pointer-events:none;transform:translate(-50%,-50%);';
+    document.body.appendChild(toggleEl);
+  }
+  toggleEl.textContent = sym;
+  toggleEl.style.opacity = '1';
+  toggleT = 1.2;
+}
+function updateToggleHint(dt){
+
+  if(!toggleEl || toggleT<=0) return;
+  toggleT -= dt;
+  if(toggleT<=0) toggleEl.style.opacity='0';
+}
+// RB: alle Minispiele an/aus. Aus -> aktive Aufgaben aufräumen (Beladen bleibt).
+function toggleMissions(){
+  missionsOn = !missionsOn;
+  if(!missionsOn){ clearFire(); clearCargoTarget(); clearPaxTarget(); }
+  showToggle(missionsOn ? '🎯' : '🚫');
+}
+// LB: nur den Leitfaden (Pfeile) an/aus. Ohne laufendes Minispiel wirkungslos.
+function toggleLead(){
+  if(!missionsOn){ showToggle('🚫'); return; }
+  leadOn = !leadOn;
+  showToggle(leadOn ? '🧭' : '🚫');
+}
+// H / L4: Tastatur-/Controller-Belegung unten ein-/ausblenden (Standard: aus).
+function toggleHelp(){
+  const h = document.getElementById('hint');
+  if(h) h.classList.toggle('show');
+}
+
+// Symbole über dem Flieger beim Aufnehmen/Beladen (gleicher Stil für alle):
+//  Canadair 💧 beim Tanken (tief über Wasser), Transall 📦 beim Kistenladen (steht auf der Bahn).
+let scoopEl = null;
+const _scoopV = new THREE.Vector3();
+function updateScoopHint(dt){
+  const alt = state.pos.y - ISLAND_Y;
+  const overWater = !isOnLand(state.pos.x, state.pos.z) && !isOnCarrier(state.pos.x, state.pos.z);
+  const tanking = isCanadair() && !waterDrop && state.water < 1 && overWater
+                  && ((!state.onGround && alt > 0.5 && alt < 20) || state.onGround);  // fliegend ODER schwimmend
+  const loadingCrates = isTransall() && state.onGround && isOnRunway(state.pos.x, state.pos.z)
+                  && crateLoad < CRATE_MAX;
+  if(!scoopEl){
+    scoopEl = document.createElement('div');
+    scoopEl.style.cssText='position:absolute;font-size:60px;opacity:0;transition:opacity .2s;pointer-events:none;transform:translate(-50%,-50%);white-space:nowrap;';
+    document.body.appendChild(scoopEl);
+  }
+  let sym = null;
+  if(tanking)            sym = '💧'.repeat(Math.max(1, Math.round(state.water*4)));   // 1..4 Tropfen
+  else if(loadingCrates) sym = '📦'.repeat(Math.max(1, crateLoad));                    // 1..4 Kisten
+  if(sym){
+    scoopEl.textContent = sym;
+    _scoopV.set(state.pos.x, state.pos.y+14, state.pos.z).project(camera);
+    scoopEl.style.left = ((_scoopV.x*0.5+0.5)*innerWidth)+'px';
+    scoopEl.style.top  = ((-_scoopV.y*0.5+0.5)*innerHeight)+'px';
+    scoopEl.style.opacity='1';
+  } else {
+    scoopEl.style.opacity='0';
+  }
+}
+
+let arrowPhase = 0;
+const _bez = new THREE.Vector3(), _bezT = new THREE.Vector3(), _upY = new THREE.Vector3(0,1,0);
+function bezier3(p0,p1,p2,p3,t,out){     // kubische Bézier (2 Kontrollpunkte)
+  const u=1-t, uu=u*u, tt=t*t;
+  const a=uu*u, b=3*uu*t, c=3*u*tt, d=tt*t;
+  out.set(
+    a*p0.x + b*p1.x + c*p2.x + d*p3.x,
+    a*p0.y + b*p1.y + c*p2.y + d*p3.y,
+    a*p0.z + b*p1.z + c*p2.z + d*p3.z);
+  return out;
+}
+
+// Gemeinsames Leitsystem: weiche Pfeil-Route (Bézier) zum Ziel; optional mit geradem
+// Gleitpfad-Endanflug (opts.glideTo) für sauberen Anflugwinkel + Sinkflug-Linie.
+//  arrows   = Pfeil-Array (Kegel), goal = {x,y,z}, arMat = Ampelmaterial (rot/gelb/grün)
+//  opts.lowRoute = Kurve tief halten (leerer Tank), opts.glideTo = {tx,ty,tz,dirX,dirZ,len,angle}
+// Bei !leadOn werden alle Pfeile versteckt (LB-Schalter) -> eine Stelle für alle Modelle.
+function drawLeadRoute(arrows, goal, arMat, opts, dt){
+  opts = opts || {};
+  if(!leadOn){ for(const a of arrows) a.visible=false; return; }
+  const p0 = new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z);
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const flat = new THREE.Vector3(fwd.x,0,fwd.z); if(flat.lengthSq()<1e-4) flat.set(0,0,-1); flat.normalize();
+  // Endpunkt des KURVIGEN Teils: bei Gleitpfad = Anfang der Geraden, sonst = Ziel.
+  const GS = opts.glideTo || null;
+  const touch = GS ? new THREE.Vector3(GS.tx, GS.ty, GS.tz) : null;
+  const climb = GS ? Math.tan(GS.angle) * GS.len : 0;
+  const pEnd = GS
+    ? new THREE.Vector3(GS.tx - GS.dirX*GS.len, GS.ty + climb, GS.tz - GS.dirZ*GS.len)
+    : new THREE.Vector3(goal.x, goal.y, goal.z);
+  const dist2 = p0.distanceTo(pEnd);
+  const lead = Math.max(180, dist2*0.9);
+  const toGoal = new THREE.Vector3(pEnd.x-p0.x,0,pEnd.z-p0.z);
+  if(toGoal.lengthSq()<1e-4) toGoal.copy(flat); else toGoal.normalize();
+  const facing = flat.x*toGoal.x + flat.z*toGoal.z;
+  const side = new THREE.Vector3(-flat.z,0,flat.x);
+  const sideSign = (side.x*toGoal.x + side.z*toGoal.z) >= 0 ? 1 : -1;
+  side.multiplyScalar(sideSign);
+  const lowRoute = !!opts.lowRoute;
+  const midY   = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.4);
+  const startY = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.1);
+  const p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
+  const sideAmt = dist2 * (0.35 + 0.5*(1-facing)/2);
+  const p2 = new THREE.Vector3(
+    pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.15, midY,
+    pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.15);
+  arrowPhase = (arrowPhase + dt*0.12) % 1;
+  const N = arrows.length;
+  const split = GS ? 0.62 : 1.0;   // letzten ~38 % = gerader Gleitpfad zur Schwelle
+  for(let i=0;i<N;i++){
+    const ar = arrows[i];
+    const t = ((i/N) + arrowPhase) % 1;
+    if(t < 0.22){ ar.visible=false; continue; }   // erste Pfeile direkt vorm Flieger ausblenden
+    ar.visible = true;
+    if(ar.material !== arMat) ar.material = arMat;
+    if(t < split){
+      const tt = t/split;
+      bezier3(p0,p1,p2,pEnd,tt,_bez);
+      bezier3(p0,p1,p2,pEnd,Math.min(tt+0.02,1),_bezT);
+      const dir = _bezT.sub(_bez).normalize();
+      ar.position.copy(_bez);
+      ar.quaternion.setFromUnitVectors(_upY, dir);
+    } else {
+      const tt = (t-split)/(1-split);
+      _bez.lerpVectors(pEnd, touch, tt);
+      _bezT.subVectors(touch, pEnd).normalize();
+      ar.position.copy(_bez);
+      ar.quaternion.setFromUnitVectors(_upY, _bezT);
+    }
+  }
+}
+let airborneT = 0;   // wie lange schon in der Luft (fürs erste Feuer)
+function updateFire(dt){
+  if(!missionsOn || !isCanadair()){ clearFire(); fireRespawnT=-1; airborneT=0; return; }
+  if(!fire){
+    // Erst 15 s entspannt in der Luft fliegen, bevor das erste Feuer ausbricht.
+    if(state.onGround){ airborneT = 0; return; }
+    airborneT += dt;
+    if(airborneT < 15) return;
+    if(fireRespawnT < 0){ spawnFire(); return; }   // erstes Feuer sobald Insel in Reichweite
+    fireRespawnT -= dt;
+    if(fireRespawnT<=0){ if(!spawnFire()) fireRespawnT = 2; }  // kein Ziel? in 2s neu versuchen
+    return;
+  }
+  for(const fl of fire.flames){ fl.scale.y = 0.7 + Math.random()*0.6; }
+
+  // --- Ballistischer Auftreffpunkt: wohin fällt das Wasser, wenn ich JETZT abwerfe? ---
+  const TARGET_ALT = 28;                             // optimale Überflughöhe über dem Feuer
+  const alt = Math.max(0, state.pos.y - ISLAND_Y);
+  const fallT = Math.sqrt(2*alt/9.81);
+  const impactX = state.pos.x + state.vel.x * fallT;
+  const impactZ = state.pos.z + state.vel.z * fallT;
+  const impactDist = Math.hypot(fire.x-impactX, fire.z-impactZ);   // Abstand Auftreffpunkt<->Feuer
+  const haveWater = (state.water>0 || waterDrop);
+
+  // Ampel: rot = Tank leer, gelb = Wasser da, grün = Treffer sicher
+  const aimOk = haveWater && alt < 120 && impactDist < fire.r + 25;
+  const arMat = aimOk ? arrowMatOk : (haveWater ? arrowMatMid : arrowMat);
+  const onTarget = haveWater && alt < 130 && impactDist < fire.r;
+
+  // Leitroute: mit Wasser -> weiche Kurve zum Feuer (Überflughöhe). Ohne Wasser -> tiefer
+  // Gleitpfad zur nächsten Wasserstelle (zeigt, wie tief man zum Tanken anfliegen muss).
+  const goal = { x:fire.x, z:fire.z, y: ISLAND_Y + TARGET_ALT };
+  let opts;
+  if(haveWater){
+    opts = { lowRoute:false };
+  } else {
+    const w = nearestWaterXZ(state.pos.x, state.pos.z);
+    const toW = new THREE.Vector3(w.x-state.pos.x, 0, w.z-state.pos.z);
+    if(toW.lengthSq()<1e-4) toW.set(0,0,-1); else toW.normalize();
+    goal.x = w.x; goal.z = w.z; goal.y = ISLAND_Y + 12;
+    opts = { lowRoute:true, glideTo:{ tx:w.x, ty:12, tz:w.z, dirX:toW.x, dirZ:toW.z, len:120, angle:0.09 } };
+  }
+  drawLeadRoute(leadArrows, goal, arMat, opts, dt);
+
+  // Löschen: sobald abgeworfenes Wasser (waterDrop läuft) über dem Feuer ist.
+  // Kleine Verzögerung (fire.extT) simuliert das Fallen; an fire gebunden -> sauber pro Feuer.
+  if(waterDrop && onTarget && fire.extT === undefined){
+    fire.extT = fallT + 0.15;          // Wasser fällt ~Fallzeit bis zum Boden
+  }
+  if(fire.extT !== undefined){
+    fire.extT -= dt;
+    if(fire.extT <= 0){
+      clearFire();                     // setzt fire=null -> nächstes Feuer startet frisch
+      showThumb();
+      fireRespawnT = 20 + Math.random()*10;
+    }
+  }
+}
+
+// ================= Gemeinsame Missions-Helfer (Transall & Airbus) =================
+// Pfeilkette erzeugen/verstecken (generisch, mehrere Ketten möglich).
+function makeArrowChain(n){
+  const arr=[];
+  for(let i=0;i<n;i++){
+    const ar=new THREE.Mesh(new THREE.ConeGeometry(3.5,8,4), arrowMat);
+    ar.renderOrder=998; ar.visible=false; scene.add(ar); arr.push(ar);
+  }
+  return arr;
+}
+// Auf welcher Insel-Zelle steht der Flieger gerade? (oder null)
+function currentIslandCell(){
+  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const info=islandInfo(pcx+dx,pcz+dz);
+    if(info && Math.hypot(state.pos.x-info.wx, state.pos.z-info.wz) < info.radius) return {cx:pcx+dx,cz:pcz+dz,info};
+  }
+  return null;
+}
+// Nächste Insel im 135°-Vorwärtskegel, die pred(info,cx,cz) erfüllt (2 Ringe weit).
+function findIslandInCone(pred){
+  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
+  const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const fdx=fwd.x,fdz=fwd.z,flen=Math.hypot(fdx,fdz)||1;
+  const COS_HALF=Math.cos(67.5*Math.PI/180);
+  let best=null,bcx,bcz,bd=1e9;
+  for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+    const cx=pcx+dx,cz=pcz+dz; const info=islandInfo(cx,cz); if(!info) continue;
+    if(!pred(info,cx,cz)) continue;
+    const rx=info.wx-state.pos.x, rz=info.wz-state.pos.z, d=Math.hypot(rx,rz);
+    if(d<60) continue;
+    if((rx*fdx+rz*fdz)/(d*flen) < COS_HALF) continue;
+    if(d<bd){ bd=d; best=info; bcx=cx; bcz=cz; }
+  }
+  return best ? {info:best,cx:bcx,cz:bcz,d:bd} : null;
+}
+// Nächste Insel überhaupt (kein Kegel), die pred erfüllt — Fallback fürs Landen.
+function findNearestIsland(pred){
+  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
+  let best=null,bcx,bcz,bd=1e9;
+  for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+    const cx=pcx+dx,cz=pcz+dz; const info=islandInfo(cx,cz); if(!info) continue;
+    if(!pred(info,cx,cz)) continue;
+    const d=Math.hypot(info.wx-state.pos.x, info.wz-state.pos.z);
+    if(d<bd){ bd=d; best=info; bcx=cx; bcz=cz; }
+  }
+  return best ? {info:best,cx:bcx,cz:bcz,d:bd} : null;
+}
+// Weit entfernte Insel (>= minCells Zellen Abstand) im Vorwärtskegel — damit man wirklich
+// ein Stück FLIEGEN muss, statt sofort auf der Nachbarinsel zu landen (Airbus).
+function findDistantIsland(pred, minCells){
+  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
+  const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const fdx=fwd.x,fdz=fwd.z,flen=Math.hypot(fdx,fdz)||1;
+  const COS_HALF=Math.cos(67.5*Math.PI/180);
+  const R=minCells+4;                 // Suchradius in Zellen
+  let best=null,bcx,bcz,bd=1e9;
+  for(let dz=-R;dz<=R;dz++)for(let dx=-R;dx<=R;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dz)) < minCells) continue;   // Mindest-Zellabstand
+    const cx=pcx+dx,cz=pcz+dz; const info=islandInfo(cx,cz); if(!info) continue;
+    if(!pred(info,cx,cz)) continue;
+    const rx=info.wx-state.pos.x, rz=info.wz-state.pos.z, d=Math.hypot(rx,rz);
+    if((rx*fdx+rz*fdz)/(d*flen) < COS_HALF) continue;              // nur nach vorne
+    if(d<bd){ bd=d; best=info; bcx=cx; bcz=cz; }
+  }
+  // kein Ziel vorne? egal wohin, Hauptsache weit genug (dann darf man wenden)
+  if(!best){
+    for(let dz=-R;dz<=R;dz++)for(let dx=-R;dx<=R;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dz)) < minCells) continue;
+      const cx=pcx+dx,cz=pcz+dz; const info=islandInfo(cx,cz); if(!info) continue;
+      if(!pred(info,cx,cz)) continue;
+      const d=Math.hypot(info.wx-state.pos.x, info.wz-state.pos.z);
+      if(d<bd){ bd=d; best=info; bcx=cx; bcz=cz; }
+    }
+  }
+  return best ? {info:best,cx:bcx,cz:bcz,d:bd} : null;
+}
+// Gleitpfad-Parameter für die Landebahn einer Insel (Anflug entlang Z-Achse zur nahen Schwelle).
+function runwayGlide(info){
+  const rwLen = Math.min(260, info.radius*1.4);
+  const half = rwLen/2;
+  const nearSign = (state.pos.z >= info.wz) ? 1 : -1;   // Schwelle auf der dem Flieger zugewandten Seite
+  const tz = info.wz + nearSign*half;
+  return { tx:info.wx, ty:ISLAND_Y+2, tz:tz, dirX:0, dirZ:-nearSign, len:220, angle:0.10 };
+}
+
+// ================= Transall: Fracht über kleine Insel abwerfen =================
+const cargoRingMat = new THREE.MeshBasicMaterial({ color:0xffcc33, side:THREE.DoubleSide, transparent:true, opacity:0.9 });
+let cargoTarget=null;   // {x,z,r,group,cx,cz,delivered}
+let cargoArrows=[];
+let cargoRespawnT=-1;
+function makeCargoMarker(x,z,r){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.RingGeometry(r*0.75, r, 40), cargoRingMat);
+  ring.rotation.x=-Math.PI/2; ring.position.set(0,0.6,0); g.add(ring);
+  // Kleiner Zielmast in der Mitte (sichtbar von oben)
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,26,10), cargoRingMat);
+  pole.position.set(0,13,0); g.add(pole);
+  g.position.set(x, ISLAND_Y+0.3, z); scene.add(g); return g;
+}
+function clearCargoTarget(){
+  if(cargoTarget){ if(cargoTarget.group) scene.remove(cargoTarget.group); cargoTarget=null; }
+  for(const a of cargoArrows) a.visible=false;
+}
+function spawnCargoTarget(){
+  clearCargoTarget();
+  const cur = currentIslandCell();
+  // nur KLEINE Inseln (radius<230), keine Städte (cellRnd,99>=0.10), nicht die aktuelle Insel
+  const pred=(info,cx,cz)=> info.radius<230 && cellRnd(cx,cz,99)>=0.10 && !(cur&&cx===cur.cx&&cz===cur.cz);
+  const hit = findIslandInCone(pred) || findNearestIsland(pred);
+  if(!hit) return false;
+  const r = Math.min(90, hit.info.radius*0.55);
+  if(!cargoArrows.length) cargoArrows = makeArrowChain(14);
+  cargoTarget={ x:hit.info.wx, z:hit.info.wz, r, cx:hit.cx, cz:hit.cz, group:makeCargoMarker(hit.info.wx,hit.info.wz,r), delivered:0 };
+  return true;
+}
+function updateTransallMission(dt){
+  if(!missionsOn || !isTransall()){ clearCargoTarget(); cargoRespawnT=-1; return; }
+  if(!cargoTarget){
+    if(cargoRespawnT<0){ spawnCargoTarget(); return; }
+    cargoRespawnT-=dt; if(cargoRespawnT<=0){ if(!spawnCargoTarget()) cargoRespawnT=2; }
+    return;
+  }
+  // Erfolg: mind. eine Kiste ist auf der Zielinsel gelandet und alle abgeworfen.
+  if(cargoTarget.delivered>0 && crateQueue<=0){
+    showThumb(); clearCargoTarget(); cargoRespawnT=20+Math.random()*10; return;
+  }
+  // Zielmarker sanft pulsieren
+  const puls=0.9+0.1*Math.sin(arrowPhase*Math.PI*6);
+  if(cargoTarget.group) cargoTarget.group.children[0].scale.set(puls,puls,puls);
+
+  // Ballistik: wo landet die Kiste, wenn ich JETZT werfe?
+  const alt=Math.max(0,state.pos.y-ISLAND_Y);
+  const fallT=Math.sqrt(2*alt/9.81);
+  const impactX=state.pos.x+state.vel.x*fallT, impactZ=state.pos.z+state.vel.z*fallT;
+  const impactDist=Math.hypot(cargoTarget.x-impactX, cargoTarget.z-impactZ);
+  const loaded = crateLoad>0;
+  const aimOk = loaded && alt<160 && impactDist < cargoTarget.r;
+  const arMat = aimOk?arrowMatOk:(loaded?arrowMatMid:arrowMat);
+
+  let goal, opts;
+  if(loaded){
+    // beladen -> gelbe weiche Route direkt zum Abwurfziel (Überflughöhe)
+    goal={x:cargoTarget.x, z:cargoTarget.z, y:ISLAND_Y+30}; opts={lowRoute:false};
+  } else {
+    // leer -> rote Route sanft runter über eine Landebahn (andere Insel) zum Beladen
+    const cur=currentIslandCell();
+    const pred=(info,cx,cz)=> !(cx===cargoTarget.cx&&cz===cargoTarget.cz) && !(cur&&cx===cur.cx&&cz===cur.cz);
+    const rw = findIslandInCone(pred) || findNearestIsland(pred);
+    if(rw){ goal={x:rw.info.wx, z:rw.info.wz, y:ISLAND_Y+2}; opts={lowRoute:true, glideTo:runwayGlide(rw.info)}; }
+    else { goal={x:cargoTarget.x, z:cargoTarget.z, y:ISLAND_Y+30}; opts={lowRoute:true}; }
+  }
+  drawLeadRoute(cargoArrows, goal, arMat, opts, dt);
+}
+
+// ================= Airbus: Menschen zwischen Landebahnen transportieren =================
+// Prinzip GENAU wie Transall-Kisten: auf einer Bahn STEHEN lädt graduell 4 Menschen ein (2 s = 4).
+// Ist der Airbus voll und steht auf der ZIEL-Bahn, steigen sie aus -> 👍, neues Ziel.
+const PAX_MAX = 4;          // max. Passagiere
+const PAX_LOAD_TIME = 2;    // Sekunden Stehen für volle Ladung (4 Menschen)
+let paxLoad = 0;            // eingestiegene Menschen (0..4)
+let paxLoadT = 0;           // Ladefortschritt (Sekunden gestanden)
+let paxTarget=null;         // {info,cx,cz,x,z}
+let paxArrows=[];
+let paxRespawnT=-1;
+function clearPaxTarget(){ paxTarget=null; for(const a of paxArrows) a.visible=false; }
+function spawnPaxTarget(){
+  clearPaxTarget();
+  const cur=currentIslandCell();
+  const pred=(info,cx,cz)=> !(cur&&cx===cur.cx&&cz===cur.cz);   // irgendeine andere Insel (jede hat Bahn)
+  // MIND. 5 Inseln/Zellen Abstand -> man muss ein Stück fliegen, nicht gleich nebenan landen.
+  const hit = findDistantIsland(pred, 5);
+  if(!hit) return false;
+  if(!paxArrows.length) paxArrows = makeArrowChain(14);
+  paxTarget={ info:hit.info, cx:hit.cx, cz:hit.cz, x:hit.info.wx, z:hit.info.wz };
+  return true;
+}
+// "Steht der Airbus?" = am Boden (egal ob Insel, Stadt, Bahn oder Trägerdeck) und ~stillstehend.
+// v wird nie ganz 0 -> Schwelle 3 km/h. Ein-/Aussteigen passiert bei JEDER Landung.
+function airbusStanding(){
+  return state.onGround && state.vel.length()*3.6 < 3;
+}
+// Mission = NUR Navigation + Erfolg (👍). Das Ein-/Aussteigen selbst passiert IMMER beim Landen
+// (in updatePax), egal ob das Minispiel an ist. Hier nur: Ziel anzeigen, bei Ankunft am Ziel loben.
+function updateAirbusMission(dt){
+  if(!missionsOn || !isAirbus()){ clearPaxTarget(); paxRespawnT=-1; return; }
+  if(!paxTarget){
+    if(paxRespawnT<0){ spawnPaxTarget(); return; }
+    paxRespawnT-=dt; if(paxRespawnT<=0){ if(!spawnPaxTarget()) paxRespawnT=2; }
+    return;
+  }
+  const onTargetRunway = airbusStanding() &&
+        Math.hypot(state.pos.x-paxTarget.x, state.pos.z-paxTarget.z) < paxTarget.info.radius;
+  const arMat = (paxLoad>=PAX_MAX) ? arrowMatMid : arrowMat;   // voll = gelb (zum Ziel), sonst rot
+  const arMatOk = onTargetRunway ? arrowMatOk : arMat;         // am Ziel grün
+  drawLeadRoute(paxArrows, {x:paxTarget.x, z:paxTarget.z, y:ISLAND_Y+2}, arMatOk,
+                { lowRoute:true, glideTo:runwayGlide(paxTarget.info) }, dt);
+  // Erfolg: VOLL am Ziel gelandet (paxLoad wird gleich in updatePax beim Aussteigen geleert).
+  if(onTargetRunway && paxLoad>=PAX_MAX){
+    showThumb(); clearPaxTarget(); paxRespawnT=0.1;
+  }
+}
+// ---- Echte kleine Figuren, die seitlich ein-/aussteigen (im 0,3-s-Takt wie die Pakete) ----
+// Figur = dieselbe Bauart wie der Fallschirm-Pilot (Körper-Zylinder + Kugelkopf), aber winzig.
+const activePax = [];       // laufende Figuren {group, phase:'out'|'in', t, sx,sz, dx,dz}
+let paxBoardQueue = 0, paxBoardTimer = 0;   // Einsteige-Warteschlange (Figur läuft rein)
+let paxDropQueue  = 0, paxDropTimer  = 0;   // Aussteige-Warteschlange (Figur läuft raus)
+let paxDropping = false;    // Aussteige-Sequenz am Ziel aktiv
+let lastPaxLoad = 0;        // um Zuwächse beim Einsteigen zu erkennen
+function makePerson(){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.28,1.4,8), pilotMat);
+  body.position.y = 0.7; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.38,10,8), pilotMat);
+  head.position.y = 1.6; g.add(head);
+  return g;
+}
+// Seiten-Punkt am Airbus (Tür) in Weltkoordinaten: rechts quer zur Nase, knapp über Boden.
+function airbusDoorSide(sign){
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
+  const gy = (isOnLand(state.pos.x,state.pos.z)?ISLAND_Y:0);
+  return { x: state.pos.x + right.x*3*sign, z: state.pos.z + right.z*3*sign, y: gy,
+           rx: right.x*sign, rz: right.z*sign };
+}
+function spawnPaxFigure(phase){
+  const d = airbusDoorSide(1);
+  const g = makePerson();
+  const away = 14;  // wie weit seitlich sie laufen
+  if(phase==='out'){ // erscheint an der Tür, läuft seitlich weg
+    g.position.set(d.x, d.y, d.z);
+    activePax.push({ group:g, phase:'out', t:0, x:d.x, z:d.z, dx:d.rx, dz:d.rz, away });
+  } else {           // erscheint seitlich draußen, läuft zur Tür (dann verschwindet sie = eingestiegen)
+    g.position.set(d.x + d.rx*away, d.y, d.z + d.rz*away);
+    activePax.push({ group:g, phase:'in', t:0, x:d.x, z:d.z, dx:d.rx, dz:d.rz, away });
+  }
+  scene.add(g);
+}
+// Ein-/Aussteigen passiert bei JEDER Landung (Insel/Stadt/Bahn/Träger), unabhängig vom Minispiel:
+// 1) beim Aufsetzen zuerst alle an Bord AUSsteigen (Figuren laufen raus), 2) dann bis voll EINsteigen.
+// paxServiced verhindert Wiederholung, solange er steht; beim Abheben Reset für die nächste Landung.
+let paxServiced = false;    // an diesem Standplatz schon aus-/eingestiegen?
+function updatePax(dt){
+  const standing = isAirbus() && airbusStanding();
+  if(standing){
+    // frisch angehalten und noch nicht bedient -> ggf. Aussteige-Sequenz starten
+    if(!paxServiced && !paxDropping && paxBoardQueue<=0 && activePax.length===0){
+      if(paxLoad > 0){ paxDropping = true; paxDropQueue = paxLoad; paxDropTimer = 0; }  // erst raus
+      else { paxServiced = false; }   // niemand an Bord -> direkt einsteigen (unten)
+    }
+    // Einsteigen: wenn nicht (mehr) am Aussteigen und noch nicht voll
+    if(!paxDropping && paxLoad < PAX_MAX){
+      paxLoadT += dt;
+      const nv = Math.min(PAX_MAX, Math.floor(paxLoadT / (PAX_LOAD_TIME/PAX_MAX)));
+      if(nv > lastPaxLoad){ for(let i=0;i<nv-lastPaxLoad;i++) paxBoardQueue++; }  // je +1 = Figur rein
+      paxLoad = nv; lastPaxLoad = nv;
+      if(paxLoad >= PAX_MAX) paxServiced = true;    // voll -> Bedienung an diesem Stopp fertig
+    }
+  } else {
+    // abgehoben/rollt schnell -> Zustand für die nächste Landung zurücksetzen
+    paxServiced = false; paxLoadT = paxLoad * (PAX_LOAD_TIME/PAX_MAX); lastPaxLoad = paxLoad;
+  }
+  // Einsteige-Figuren im 0,3-s-Takt loslaufen lassen
+  if(paxBoardQueue > 0){ paxBoardTimer -= dt;
+    if(paxBoardTimer <= 0){ spawnPaxFigure('in'); paxBoardQueue--; paxBoardTimer = 0.3; } }
+  // Aussteige-Sequenz: Figuren im 0,3-s-Takt raus; danach ist ausgestiegen -> Einsteigen beginnt.
+  if(paxDropping){
+    paxDropTimer -= dt;
+    if(paxDropQueue > 0 && paxDropTimer <= 0){ spawnPaxFigure('out'); paxDropQueue--; paxDropTimer = 0.3; }
+    if(paxDropQueue <= 0 && activePax.length === 0){
+      paxDropping = false; paxLoad = 0; paxLoadT = 0; lastPaxLoad = 0;   // alle raus -> jetzt neu einladen
+    }
+  }
+  // Figuren animieren (laufen seitlich, ~4 s, dann weg)
+  for(let i=activePax.length-1;i>=0;i--){
+    const pfg = activePax[i]; pfg.t += dt;
+    const f = Math.min(1, pfg.t/1.5);               // 1,5 s Laufweg
+    const dist = pfg.phase==='out' ? f*pfg.away : (1-f)*pfg.away;
+    pfg.group.position.set(pfg.x + pfg.dx*dist, pfg.group.position.y, pfg.z + pfg.dz*dist);
+    pfg.group.rotation.y = Math.atan2(pfg.dx*(pfg.phase==='out'?1:-1), pfg.dz*(pfg.phase==='out'?1:-1));
+    if(pfg.t > 1.6){ scene.remove(pfg.group); activePax.splice(i,1); }
+  }
+}
+
+// Höhen-Schatten: sichtbar ab <=20 m. Folgt X/Z, dreht mit dem Kurs mit,
+// wird mit sinkender Höhe kleiner+dunkler (nah am Flieger = klein/scharf).
+const SHADOW_MAXALT = 20;
+function updateShadow(){
+  // Oberfläche: über Land = Inselhöhe, über Wasser = Meer (y=0)
+  const overLand = isOnLand(state.pos.x, state.pos.z);
+  const surfY = overLand ? ISLAND_Y : 0;
+  const alt = state.pos.y - surfY;            // echte Höhe über der jeweiligen Oberfläche
+  if(alt > SHADOW_MAXALT || alt < 0){ planeShadow.visible = false; return; }
+  planeShadow.visible = true;
+  // über Wasser den Schatten über die Wellenberge (~1,3 m) legen, damit er nicht verdeckt wird
+  const shadowY = (overLand ? ISLAND_Y : 1.4) + 0.15;
+  planeShadow.position.set(state.pos.x, shadowY, state.pos.z);
+  // Kurs (Gierwinkel) übernehmen, damit der Umriss in Flugrichtung zeigt
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  planeShadow.rotation.y = Math.atan2(fwd.x, fwd.z) + Math.PI;
+  // je höher, desto größer & blasser (Schatten "wächst" beim Steigen)
+  const f = alt / SHADOW_MAXALT;                 // 0 (am Boden) .. 1 (20 m)
+  const scale = 1 + f * 0.8;
+  planeShadow.scale.set(scale, 1, scale);
+  // nah = dunkel, hoch = blasser, aber Mindest-Deckkraft, damit er auf Wasser sichtbar bleibt
+  shadowMat.opacity = 0.18 + 0.22 * (1 - f);
+}
+
+// ---------- Schleudersitz + Fallschirm (nur AlphaJet) ----------
+const chuteMat = new THREE.MeshLambertMaterial({ color:0xff5522, side:THREE.DoubleSide });
+const pilotMat = new THREE.MeshLambertMaterial({ color:0x223355 });
+let parachute = null;   // {group, vy}
+function makeParachute(){
+  // Selbstgebauter Schirm (Halbkugel + Pilot + Leinen). Der GLB-Fallschirm ist exklusiv
+  // für die Transall-Kisten reserviert -> hier bewusst NICHT parachuteTemplate nutzen.
+  const g = new THREE.Group();
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(4, 20, 12, 0, Math.PI*2, 0, Math.PI/2), chuteMat);
+  canopy.position.y = 6; g.add(canopy);
+  const pilot = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.4,1.8,10), pilotMat);
+  g.add(pilot);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8), pilotMat);
+  head.position.y = 1.2; g.add(head);
+  const lineMatP = new THREE.LineBasicMaterial({ color:0xffffff });
+  for(const [dx,dz] of [[-3,0],[3,0],[0,-3],[0,3]]){
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(dx,5,dz), new THREE.Vector3(0,0.8,0)]);
+    g.add(new THREE.Line(geo, lineMatP));
+  }
+  return g;
+}
+function ejectSeat(){
+  if((!isAlphaJet() && !isMustang()) || state.onGround || state.ejected || state.crashed) return;
+  state.ejected = true;
+  // Fallschirm mit Pilot an aktueller Position, sinkt gemächlich
+  parachute = { group: makeParachute(), vy: -9 };
+  parachute.group.position.copy(state.pos);
+  scene.add(parachute.group);
+  // Flieger wird führerlos: kippt in einen Sturzflug (kein Schub mehr, trudelt)
+  state.throttle = 0;
+}
+function updateParachute(dt){
+  if(!parachute) return;
+  // sanft sinken + leichtes Pendeln
+  parachute.group.position.y += parachute.vy * dt;
+  parachute.group.position.x += Math.sin(parachute.group.position.y*0.1) * 2 * dt;
+  parachute.group.rotation.z = Math.sin(parachute.group.position.y*0.2) * 0.15;
+  // Landefläche ortsabhängig: Trägerdeck > Insel > Wasser. Der Pilot landet OBEN DRAUF,
+  // fällt nicht durch Carrier/Hafen hindurch.
+  const px = parachute.group.position.x, pz = parachute.group.position.z;
+  const surfY = isOnCarrier(px, pz) ? fordDeckY : (isOnLand(px, pz) ? ISLAND_Y : 0);
+  if(parachute.group.position.y <= surfY + 1){
+    parachute.group.position.y = surfY + 1;      // gelandet -> bleibt stehen
+  }
+}
+function clearParachute(){
+  if(parachute){ scene.remove(parachute.group); parachute = null; }
+}
+
+// ---------- Überschall: Knall + weißer Vapor-Cone (nur Kunstflug-Jets, ab Schallgeschwindigkeit) ----------
+const SOUND_SPEED = 343;              // m/s (~1235 km/h)
+let wasSupersonic = false;            // Flanke erkennen (Durchbruch = Übergang unter->über)
+const vaporMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0, side:THREE.DoubleSide, depthWrite:false });
+let vaporCone = null, vaporT = 0;
+function makeVaporCone(){
+  // flacher, nach hinten offener Kegel (Scheibe um den Rumpf), zeigt entgegen der Flugrichtung
+  const c = new THREE.Mesh(new THREE.ConeGeometry(7, 10, 24, 1, true), vaporMat);
+  c.renderOrder = 997;
+  scene.add(c);
+  return c;
+}
+function triggerSonicBoom(){
+  playSonicBoom();
+  if(!vaporCone) vaporCone = makeVaporCone();
+  vaporT = 0.6;                       // sichtbar ~0,6 s
+}
+function updateSonic(dt){
+  const speed = state.vel.length();
+  const canSupersonic = spec.aero && speed >= SOUND_SPEED;   // nur Kunstflug-Jets (AlphaJet)
+  if(canSupersonic && !wasSupersonic && !state.onGround) triggerSonicBoom();  // Flanke: Durchbruch
+  wasSupersonic = canSupersonic;
+  // Vapor-Cone animieren: kurzes Aufblitzen am/hinter dem Flieger
+  if(vaporCone){
+    if(vaporT > 0){
+      vaporT -= dt;
+      vaporMat.opacity = Math.max(0, Math.min(0.5, vaporT));  // ein-/ausblenden
+      const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+      vaporCone.position.set(state.pos.x + back.x*4, state.pos.y + back.y*4, state.pos.z + back.z*4);
+      // Kegelspitze nach vorne (entgegen -Z-Nase): +Y-Achse des Kegels auf Flugrichtung legen
+      const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+      vaporCone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), fwd.clone().negate());
+      vaporCone.visible = true;
+    } else {
+      vaporCone.visible = false;
+    }
+  }
+}
+
+// ---------- Wolken ----------
+const clouds = [];
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+function makeCloud() {
+  const g = new THREE.Group(); const n = 3 + Math.floor(Math.random()*4);
+  for (let i=0;i<n;i++){ const s=20+Math.random()*40;
+    const p=new THREE.Mesh(new THREE.SphereGeometry(s,6,5),cloudMat);
+    p.position.set((Math.random()-0.5)*80,(Math.random()-0.5)*15,(Math.random()-0.5)*80);
+    p.scale.y=0.6; g.add(p);} return g;
+}
+const CLOUD_SPREAD = 2600;
+for (let i=0;i<45;i++){ const c=makeCloud();
+  c.position.set((Math.random()-0.5)*CLOUD_SPREAD, 260+Math.random()*380, (Math.random()-0.5)*CLOUD_SPREAD);
+  clouds.push(c); scene.add(c);}
+
+// ---------- FMS-Modelle bauen ----------
+// "Canadair" ist ein eigengebautes Löschflugzeug (kein FMS-Mesh) und kommt ans Ende.
+// Feste Reihenfolge (Wunsch): Löschflugzeug, Jet, Airbus, Eindecker, Doppeldecker.
+// 'Canadair','AlphaJet' sind eigengebaut; SuperCup=Eindecker, Pitts=Doppeldecker.
+const MODEL_NAMES = ['Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang'];
+const loader = new THREE.TextureLoader();
+const planeGroup = new THREE.Group();  // Container, den wir bewegen
+scene.add(planeGroup);
+const modelHolder = new THREE.Group(); // enthält das aktuelle Mesh, korrekt gedreht/skaliert
+planeGroup.add(modelHolder);
+let propMeshes = [];   // rotierende Propeller (Canadair)
+// Fahrwerk ist bei den FMS-Modellen fest im Mesh enthalten -> kein separates Fahrwerk.
+
+// ---------- Externe GLB-Modelle (Sketchfab) ----------
+//  Canadair CL-215 by AlessioPassera · Dornier Alpha Jet by 42manako
+// Werden beim Start EINMAL geladen (async), normalisiert (Größe/Ausrichtung/Boden)
+// und als Vorlage gecacht. buildModel() klont die Vorlage synchron.
+const glbTemplates = {};       // name -> fertig ausgerichtete Group (Vorlage zum Klonen)
+const GLB_CONFIG = {
+  // url: komprimiertes .glb (Draco). yOff: manueller Höhen-Offset (negativ = tiefer setzen).
+  Canadair: { url: 'models/canadair.glb', span: 18.5, yOff: 0 },
+  AlphaJet: { url: 'models/alphajet.glb', span: 11,   yOff: 0, recolor: 'wbr' },
+  Airbus:   { url: 'models/airbus.glb',   span: 27.1, yOff: 0 },
+  Mustang:  { url: 'models/mustang.glb',  span: 11,   yOff: 0 },
+  Transall: { url: 'models/transall.glb', span: 20,   yOff: 0 },
+};
+// Gemeinsamer GLTF-Loader mit DRACO-Decoder (lokal in draco/). Eine Instanz, von allen genutzt.
+let _dracoLoader = null, _gltfLoader = null;
+function gltfLoader(){
+  if(_gltfLoader) return _gltfLoader;
+  _gltfLoader = new THREE.GLTFLoader();
+  if(THREE.DRACOLoader){
+    _dracoLoader = new THREE.DRACOLoader();
+    _dracoLoader.setDecoderPath('draco/');            // draco_decoder.wasm liegt lokal daneben
+    _gltfLoader.setDRACOLoader(_dracoLoader);
+  }
+  return _gltfLoader;
+}
+// Ladefortschritt (für den Ladebalken): Anzahl erwarteter/fertiger Modelle.
+let glbTotal = 0, glbDone = 0, loaderHidden = false;
+function glbProgress(){ glbDone++; updateLoadBar(); }
+function updateLoadBar(){
+  const fill = document.getElementById('loaderFill'), txt = document.getElementById('loaderTxt');
+  const pct = glbTotal>0 ? Math.round(glbDone/glbTotal*100) : 0;
+  if(fill) fill.style.width = pct + '%';
+  if(txt) txt.textContent = 'Lädt … ' + pct + '%';
+  // Loader ausblenden, sobald die WICHTIGSTEN Modelle (mind. das Startmodell) da sind.
+  if(!loaderHidden && glbDone >= glbTotal && glbTotal > 0){
+    loaderHidden = true;
+    const l = document.getElementById('loader');
+    if(l){ l.style.opacity = '0'; setTimeout(()=>{ l.style.display='none'; }, 600); }
+  }
+}
+// Ein Modell per URL laden (Draco-dekomprimiert), normalisieren, als Vorlage cachen.
+function loadModel(url, onReady, onErr){
+  glbTotal++;
+  gltfLoader().load(url, (gltf)=>{ onReady(gltf); glbProgress(); },
+    undefined, (err)=>{ console.warn('GLB-Ladefehler '+url+':', err); glbProgress(); if(onErr) onErr(err); });
+}
+function preloadGLB(name){
+  const cfg = GLB_CONFIG[name];
+  if(!cfg || !THREE.GLTFLoader) return;
+  loadModel(cfg.url, (gltf)=>{
+    const obj = gltf.scene;
+    // auf Ziel-Spannweite normieren (größere Horizontalachse = Spannweite)
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(cfg.span / Math.max(size.x, size.z));
+    // X/Z zentrieren, Unterseite auf y=0 (+ manueller Offset pro Modell)
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z;
+    obj.position.y -= box2.min.y - (cfg.yOff || 0);
+    if(cfg.recolor === 'wbr') recolorWBR(obj);   // zivile weiß-blau-rot Lackierung
+    const wrap = new THREE.Group(); wrap.add(obj);
+    glbTemplates[name] = wrap;
+    if(MODEL_NAMES[currentModel] === name) buildModel(name);  // sofort ersetzen wenn aktiv
+  });
+}
+// Weiß-Blau-Rot in Höhenzonen: obere Hälfte weiß, schmaler roter Streifen, untere Hälfte blau.
+// Ersetzt Textur durch Vertex-Farben (getrennte Materialinstanz je Mesh).
+function recolorWBR(root){
+  root.updateMatrixWorld(true);                   // Weltmatrizen sicher aktuell
+  const box = new THREE.Box3().setFromObject(root);
+  const yMin = box.min.y, h = Math.max(0.001, box.max.y - yMin);
+  const white = new THREE.Color(0xf2f2f2), blue = new THREE.Color(0x1e50c8), red = new THREE.Color(0xcc2222);
+  const v = new THREE.Vector3();
+  root.traverse(o=>{
+    if(!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const g = o.geometry, pos = g.attributes.position;
+    const cols = new Float32Array(pos.count*3);
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);   // in Weltkoordinaten
+      const f = (v.y - yMin) / h;                                  // 0 unten .. 1 oben
+      const c = f > 0.55 ? white : (f > 0.42 ? red : blue);
+      cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    o.material = new THREE.MeshLambertMaterial({ vertexColors:true });
+  });
+}
+function preloadAllGLB(){ Object.keys(GLB_CONFIG).forEach(preloadGLB); }
+
+// Feuerwehrboot-GLB (by gogiart) separat laden — kein fliegbares Modell.
+let boatTemplate = null;
+function preloadBoat(){
+  loadModel('models/boat.glb', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(16 / Math.max(size.x, size.z));   // ~16 m lang
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
+    const wrap = new THREE.Group(); wrap.add(obj);
+    boatTemplate = wrap;
+  });
+}
+
+// Feuerwehrauto-GLB (Mercedes Atego by Aeroux Games 3D) separat laden.
+let truckTemplate = null;
+function preloadTruck(){
+  loadModel('models/firetruck.glb', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(12 / Math.max(size.x, size.z));   // ~12 m lang
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
+    const wrap = new THREE.Group(); wrap.add(obj);
+    truckTemplate = wrap;
+  });
+}
+
+// Fallschirm-GLB (by stroodledoodle) laden — für Transall-Kistenabwurf.
+let parachuteTemplate = null;
+function preloadParachute(){
+  loadModel('models/parachute.glb', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(8 / Math.max(size.x, size.y, size.z));   // ~8 m groß
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.sub(c);           // zentrieren
+    const wrap = new THREE.Group(); wrap.add(obj);
+    parachuteTemplate = wrap;
+  });
+}
+
+// Flugzeugträger-GLB (Gerald R. Ford by Usman Zia) — schwimmende Landebahn auf dem Meer.
+let fordTemplate = null, fordDeckY = 12;   // Deckhöhe über Wasser (nach Normierung gesetzt)
+function preloadFord(){
+  loadModel('models/ford.glb', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(FORD_LEN / Math.max(size.x, size.z));   // ~280 m langer Träger
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;  // Rumpf-Unterkante auf y=0
+    const box3 = new THREE.Box3().setFromObject(obj);
+    // Flugdeck-Höhe EXAKT per Raycast: von oben auf mehrere Punkte der Deck-Mittellinie schießen.
+    obj.updateMatrixWorld(true);
+    const ys=[];
+    for(const fz of [-0.25,-0.1,0.1,0.25,0.35]){
+      const ray = new THREE.Raycaster(new THREE.Vector3(0, box3.max.y+50, FORD_LEN*fz),
+                                      new THREE.Vector3(0,-1,0));
+      const hits = ray.intersectObject(obj, true);
+      if(hits.length) ys.push(hits[0].point.y);
+    }
+    ys.sort((a,b)=>a-b);
+    fordDeckY = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
+    const wrap = new THREE.Group(); wrap.add(obj);
+    fordTemplate = wrap;
+    refreshCarriers();   // bereits platzierte Platzhalter durch echtes Modell ersetzen
+    placeAtStart(MODEL_NAMES[currentModel]);   // Flieger neu aufs echte Deck setzen (Höhe korrekt)
+  });
+}
+
+// Hafen-GLB (The Wharf – Fishing Harbor by Mehdi Shahsavan) — an jeder Insel ein Hafen.
+let harborTemplate = null, harborHeight = 8;   // echte Hafenhöhe (flach); Default bis GLB geladen
+function preloadHarbor(){
+  loadModel('models/harbor.glb', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(HARBOR_SIZE / Math.max(size.x, size.z));
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
+    const box3 = new THREE.Box3().setFromObject(obj);
+    harborHeight = box3.max.y;   // echte Hafenhöhe (flach) -> Kollisionsobergrenze, drüber frei
+    const wrap = new THREE.Group(); wrap.add(obj);
+    harborTemplate = wrap;
+    refreshIslands();   // bereits gebaute Inseln neu bauen -> alle bekommen jetzt einen Hafen
+  });
+}
+
+// ---------- Höhen-Schatten am Boden (Hilfe fürs Kind, ab <=20 m) ----------
+// Flacher, flugzeugförmiger Umriss (Kreuz aus zwei Ellipsen: Rumpf + Flügel),
+// folgt der X/Z-Position, liegt knapp über dem Boden. Bei niedriger Höhe größer/dunkler.
+// depthTest:false -> Schatten wird IMMER gezeichnet, egal ob eine Welle davor liegt
+// (verhindert Flackern/z-fighting mit dem animierten Wasser). renderOrder hoch = zuletzt.
+const shadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.3,
+  depthWrite:false, depthTest:false });
+const planeShadow = new THREE.Group();
+planeShadow.renderOrder = 999;
+const shBody = new THREE.Mesh(new THREE.CircleGeometry(1, 24), shadowMat);
+shBody.rotation.x = -Math.PI/2; shBody.scale.set(1.2, 1, 4.5); shBody.renderOrder = 999;
+planeShadow.add(shBody);
+const shWing = new THREE.Mesh(new THREE.CircleGeometry(1, 24), shadowMat);
+shWing.rotation.x = -Math.PI/2; shWing.scale.set(5.5, 1, 1.1); shWing.renderOrder = 999;
+planeShadow.add(shWing);
+planeShadow.visible = false;
+scene.add(planeShadow);
+
+
+function buildModel(name) {
+  // altes Mesh entfernen
+  while (modelHolder.children.length) modelHolder.remove(modelHolder.children[0]);
+  propMeshes = [];
+
+  // Alle Flugzeuge sind externe GLB-Modelle. Ausrichtung (rotation.y) pro Modell.
+  const GLB_ROT = { Canadair: Math.PI, AlphaJet: Math.PI/2, Airbus: Math.PI,
+                    Mustang: -Math.PI, Transall: 0 };
+  const GLB_SPAN = { Canadair: 20, AlphaJet: 9, Airbus: 30, Mustang: 11, Transall: 20 };
+  if(glbTemplates[name]){
+    const m = glbTemplates[name].clone(true);
+    m.rotation.y = GLB_ROT[name] || 0;
+    modelHolder.add(m);
+    return { span: GLB_SPAN[name] || 11, scale: 1 };
+  }
+  // GLB noch nicht geladen -> leer lassen (wird nachgezogen, sobald preloadGLB fertig ist)
+  return { span: GLB_SPAN[name] || 11, scale: 1 };
+}
+
+// ---------- Flugeigenschaften pro Modell ----------
+// vTO = Abhebe-Geschwindigkeit (m/s). Kräfte so, dass v_terminal(t)=sqrt(maxThrust*t/dragK).
+// liftK wird aus vTO berechnet (Auftrieb=Gewicht bei vTO). Schwere/schnelle Flieger
+// (Airbus) haben hohes vTO + trägere Steuerung; leichte (SuperCup/Slowfly) niedriges vTO + wendig.
+const PLANE_SPECS = {
+  SuperCup:   { vTO: 32, maxThrust: 34, dragK: 0.011, pitch: 1.3, roll: 2.4, turn: 1.2 },
+  Mustang:    { vTO: 40, maxThrust: 60, dragK: 0.0031, pitch: 1.6, roll: 3.0, turn: 1.3, aero:true, maxAlt: 1400 },  // P-51: ~500 km/h, Looping+Rolle
+  Transall:   { vTO: 42, maxThrust: 50, dragK: 0.010, pitch: 1.0, roll: 1.6, turn: 0.85, aero:false, maxAlt: 600, maxBank: 0.7 }, // Transporter, ruhig
+  Pitts:      { vTO: 38, maxThrust: 46, dragK: 0.011, pitch: 1.6, roll: 3.0, turn: 1.3 },
+  Bf109:      { vTO: 46, maxThrust: 52, dragK: 0.010, pitch: 1.2, roll: 2.4, turn: 1.0 },
+  CurtissR3C: { vTO: 44, maxThrust: 50, dragK: 0.010, pitch: 1.2, roll: 2.3, turn: 1.0 },
+  Airbus:     { vTO: 62, maxThrust: 84, dragK: 0.0075, pitch: 0.8, roll: 1.4, turn: 0.7, aero:false, maxAlt: 800, maxBank: 0.6 },  // Gleitflug: <30% Schub -> Auftrieb reicht nicht -> sinkt
+  Canadair:   { vTO: 40, maxThrust: 44, dragK: 0.011, pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 },
+  // Alpha-Jet: sau schnell + sehr wendig. Hoher Schub, wenig Widerstand -> hohe Top-Speed.
+  AlphaJet:   { vTO: 55, maxThrust: 120, dragK: 0.000936, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },  // Überschall NUR bei 100% (90% knapp drunter)
+};
+const DEFAULT_SPEC = { vTO: 44, maxThrust: 48, dragK: 0.010, pitch: 1.2, roll: 2.2, turn: 1.0 };
+let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
+
+// ---------- Flugzustand (muss VOR buildModel stehen) ----------
+const state = {
+  pos: new THREE.Vector3(0, 0.3, 110),   // am Boden (Inselhöhe), hinten auf der Bahn
+  quat: new THREE.Quaternion(),
+  vel: new THREE.Vector3(0, 0, 0),        // steht still -> selbst starten!
+  throttle: 0,
+  onGround: true,
+  crashed: false,
+  crashTimer: 0,
+  water: 0,          // Wasser-Ladung 0..1 (nur Canadair)
+  scoopTime: 0,      // wie lange schon tief über Wasser (fürs Aufnehmen)
+  ejected: false,    // Schleudersitz ausgelöst (AlphaJet) -> Flieger führerlos
+  falling: false,    // führerloser Sturz nach Gebäude-Kollision
+};
+
+let currentModel = 0;
+document.getElementById('mdl').textContent = MODEL_NAMES[0];
+buildModel(MODEL_NAMES[0]);
+spec = PLANE_SPECS[MODEL_NAMES[0]] || DEFAULT_SPEC;
+
+function cycleModel() {
+  currentModel = (currentModel+1) % MODEL_NAMES.length;
+  document.getElementById('mdl').textContent = MODEL_NAMES[currentModel];
+  buildModel(MODEL_NAMES[currentModel]);
+  spec = PLANE_SPECS[MODEL_NAMES[currentModel]] || DEFAULT_SPEC;
+  placeAtStart(MODEL_NAMES[currentModel]);   // neues Flugzeug an passender Startposition am Boden
+  // Motorsound wird von updateEngineSound automatisch nachgezogen (erkennt Modellwechsel)
+}
+
+// Passende Startposition je Modell suchen (ortsfest, deterministisch):
+//  Airbus -> Stadt-Flugschneise · AlphaJet/Mustang -> Trägerdeck · Canadair -> Hafen · Transall -> Landebahn.
+// Sucht in wachsenden Ringen um den Ursprung. Rückgabe {x,y,z,yaw} oder null (Fallback Start-Bahn).
+function findStart(name){
+  const near = (cx,cz)=>{     // helper: Suche in Ringen 0..8 um (cx,cz)
+    for(let r=0;r<=8;r++){
+      for(let dz=-r;dz<=r;dz++)for(let dx=-r;dx<=r;dx++){
+        if(Math.max(Math.abs(dx),Math.abs(dz))!==r) continue;   // nur Ring-Rand
+        const res = probe(cx+dx, cz+dz); if(res) return res;
+      }
+    }
+    return null;
+  };
+  let probe;
+  if(name==='Airbus'){
+    // Stadt-Insel: Flugschneise liegt bei x≈Inselmitte, entlang Z -> dort am Bahn-Anfang aufstellen
+    probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
+      if(cellRnd(cx,cz,99)>=0.10) return null;                 // nur Städte
+      const rwLen=Math.min(260, info.radius*1.4);
+      // ans +Z-Ende stellen, Nase (-Z bei yaw=0) läuft die ganze Bahn entlang
+      return { x:info.wx, y:ISLAND_Y, z:info.wz + rwLen*0.5 - 20, yaw:0 }; };
+  } else if(name==='AlphaJet' || name==='Mustang'){
+    probe=(cx,cz)=>{ const info=carrierInfo(cx,cz); if(!info) return null;
+      // hinten aufs Deck stellen (lokal x'=0, z'=-Len/2+30), Nase entlang Deck-Längsachse.
+      const dz=FORD_LEN*0.5-30;
+      return { y:fordDeckY, yaw:info.rot, _deck:{info,dz} }; };
+  } else if(name==='Canadair'){
+    probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
+      // im Wasser knapp AUSSERHALB des Hafens (Richtung offenes Meer), Nase vom Land weg
+      const hb=harborLocal(cx,cz);
+      const dir=Math.atan2(hb.x, hb.z);              // Richtung Inselmitte->Hafen (nach außen)
+      const rr=info.radius*1.14;                     // etwas weiter draußen als der Steg
+      // Nase (-Z bei yaw) zeigt aufs offene Meer (vom Land weg): yaw = dir + PI
+      return { x:info.wx+Math.sin(dir)*rr, y:0, z:info.wz+Math.cos(dir)*rr, yaw:dir+Math.PI }; };
+  } else {  // Transall / Default -> Landebahn
+    probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
+      const rwLen=Math.min(260, info.radius*1.4);
+      // ans +Z-Ende stellen, Nase (-Z bei yaw=0) läuft die ganze Bahn entlang
+      return { x:info.wx, y:ISLAND_Y, z:info.wz + rwLen*0.5 - 20, yaw:0 }; };
+  }
+  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
+  return near(pcx,pcz);
+}
+function placeAtStart(name){
+  const s = findStart(name);
+  if(!s){ // Fallback: Start-Insel-Bahn
+    state.pos.set(0,ISLAND_Y,110); state.quat.identity();
+  } else {
+    // Trägerdeck: Position exakt entlang der gedrehten Deck-Achse setzen
+    if(s._deck){
+      const {info,dz}=s._deck; const cs=Math.cos(info.rot), sn=Math.sin(info.rot);
+      state.pos.set(info.wx + sn*dz, fordDeckY, info.wz + cs*dz);
+    } else {
+      state.pos.set(s.x, s.y, s.z);
+    }
+    state.quat.setFromEuler(new THREE.Euler(0, s.yaw, 0, 'YXZ'));
+  }
+  state.vel.set(0,0,0); state.throttle=0; state.onGround=true;
+  state.crashed=false; state.crashTimer=0; state.ejected=false; state.falling=false; state.stalling=false;
+  wasSupersonic=false; if(vaporCone) vaporCone.visible=false; vaporT=0;
+  clearRescue(); clearParachute();
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  // Kamera HART hinter den Flieger setzen (nicht lerpen) -> hängt nie im Himmel nach Crash/Wechsel.
+  if(typeof camera !== 'undefined'){
+    const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+    camera.position.set(state.pos.x + back.x*24, state.pos.y + 8, state.pos.z + back.z*24);
+    camera.lookAt(state.pos);
+  }
+}
+
+// ---------- Audio (Web Audio API) ----------
+let audioCtx = null, engineBuf = null, crashBuf = null;
+let engineSrc = null, engineGain = null;
+const decodedCache = {};
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // Crash vorab dekodieren
+  decodeSound(window.FMS_SND._crash).then(b => crashBuf = b);
+  // Motorsound wird von updateEngineSound (im Loop) automatisch gestartet
+}
+function b64ToArrayBuffer(dataUrl) {
+  const b64 = dataUrl.split(',')[1];
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function decodeSound(dataUrl) {
+  if (decodedCache[dataUrl]) return Promise.resolve(decodedCache[dataUrl]);
+  return audioCtx.decodeAudioData(b64ToArrayBuffer(dataUrl)).then(buf => {
+    decodedCache[dataUrl] = buf; return buf;
+  });
+}
+function soundUrlFor(name){
+  // Canadair -> Propellersound (SuperCup), AlphaJet -> Turbine (Airbus), sonst passend/Propeller
+  return window.FMS_SND[name] || (name==='AlphaJet' ? window.FMS_SND['Airbus'] : window.FMS_SND['SuperCup']);
+}
+function startEngineLoop(buf) {
+  if (!audioCtx || !buf) return;
+  if (engineSrc) { try { engineSrc.stop(); } catch(e){} }
+  engineSrc = audioCtx.createBufferSource();
+  engineSrc.buffer = buf;
+  engineSrc.loop = true;
+  engineGain = audioCtx.createGain();
+  engineGain.gain.value = 0;
+  engineSrc.connect(engineGain).connect(audioCtx.destination);
+  engineSrc.start();
+}
+// updateEngineSound ist die EINZIGE Steuerstelle: sorgt dafür, dass für das aktuelle
+// Modell der richtige Loop läuft (deckt Start + Wechsel einheitlich ab, keine Races).
+let engineFor = null;          // welches Modell aktuell klingt
+let enginePending = null;      // welches Modell gerade geladen wird
+let engineBufCurrent = null;   // Puffer des aktuell laufenden Loops
+function updateEngineSound() {
+  if (!audioCtx) return;
+  // AudioContext jeden Frame aufwecken, falls (noch) suspendiert (Browser-Autoplay-Sperre).
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const running = audioCtx.state === 'running';
+  const model = MODEL_NAMES[currentModel];
+  // Puffer fürs aktuelle Modell laden (nur einmal pro Modell)
+  if (engineFor !== model && enginePending !== model) {
+    enginePending = model;
+    decodeSound(soundUrlFor(model)).then(buf => {
+      if (MODEL_NAMES[currentModel] === model) { engineBufCurrent = buf; engineFor = model; }
+      enginePending = null;
+    });
+  }
+  // Loop (neu) starten, wenn: Puffer da, aber kein Source läuft ODER Context erst jetzt "running".
+  // engineFor wird oben gesetzt; der Loop-Start hängt zusätzlich am running-State.
+  if (running && engineBufCurrent && (!engineSrc || engineSrc.buffer !== engineBufCurrent)) {
+    startEngineLoop(engineBufCurrent);
+  }
+  if (!engineGain || !engineSrc) return;
+  // Während des Crash-Einsatzes: Motor stumm (nur Sirene)
+  if (state.crashed) { engineGain.gain.value = 0; return; }
+  const t = state.throttle;
+  // Lautstärke steigt MONOTON (Vollgas bleibt am lautesten), aber deutlich FLACHER als früher,
+  // damit es insgesamt nicht zu laut wird: 0 % -> 0.05, 100 % -> 0.23.
+  const vol = 0.05 + t * 0.18;
+  engineGain.gain.value = vol;
+  engineSrc.playbackRate.value = 0.7 + t * 0.9; // Tonhöhe ∝ Schub
+}
+function playCrash() {
+  if (!audioCtx || !crashBuf) return;
+  const s = audioCtx.createBufferSource();
+  s.buffer = crashBuf;
+  const g = audioCtx.createGain(); g.gain.value = 0.9;
+  s.connect(g).connect(audioCtx.destination);
+  s.start();
+}
+// Überschallknall: kurzer, tiefer Rausch-Impuls (synthetisch, kein Sample nötig).
+function playSonicBoom(){
+  if(!audioCtx) return;
+  const dur = 0.5, sr = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, Math.floor(sr*dur), sr);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++){
+    const env = Math.pow(1 - i/d.length, 2);      // schnelles Abklingen
+    d[i] = (Math.random()*2-1) * env;             // weißes Rauschen mit Hüllkurve
+  }
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=220; // dumpf/tief
+  const g = audioCtx.createGain(); g.gain.value = 0.6;
+  src.connect(lp).connect(g).connect(audioCtx.destination);
+  src.start();
+}
+
+// ---- Sirene (Tatütata) synthetisch: zwei abwechselnde Töne ----
+let sirenOsc = null, sirenGain = null, sirenTimer = null;
+function startSiren() {
+  if (!audioCtx || sirenOsc) return;
+  sirenOsc = audioCtx.createOscillator();
+  sirenOsc.type = 'square';
+  sirenGain = audioCtx.createGain();
+  sirenGain.gain.value = 0.06;                 // leise (dein Wunsch: leichtes Tatütata)
+  sirenOsc.connect(sirenGain).connect(audioCtx.destination);
+  sirenOsc.frequency.value = 660;
+  sirenOsc.start();
+  let hi = true;
+  sirenTimer = setInterval(() => {
+    if (!sirenOsc) return;
+    hi = !hi;
+    sirenOsc.frequency.setValueAtTime(hi ? 660 : 500, audioCtx.currentTime); // Ta-Tü
+  }, 500);
+}
+function stopSiren() {
+  if (sirenTimer) { clearInterval(sirenTimer); sirenTimer = null; }
+  if (sirenOsc) { try { sirenOsc.stop(); } catch(e){} sirenOsc = null; sirenGain = null; }
+}
+// Audio erst nach erster Nutzer-Interaktion starten (Browser-Regel)
+function armAudio(){ initAudio(); if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
+addEventListener('keydown', armAudio, { once:true });
+addEventListener('pointerdown', armAudio, { once:true });
+// Gamepad: beim ersten Tastendruck (im Loop) aktivieren
+let audioArmed = false;
+
+// ---------- Flugzustand ----------
+function resetPlane() {
+  state.water = 0;
+  state.scoopTime = 0;
+  placeAtStart(MODEL_NAMES[currentModel]);   // modellgerechte Startposition (Stadt/Träger/Hafen/Bahn)
+  // Missions-Zustände zurücksetzen (globale Schalter missionsOn/leadOn bleiben!)
+  clearFire(); fireRespawnT=-1; airborneT=0;
+  clearCargoTarget(); cargoRespawnT=-1;
+  clearPaxTarget(); paxLoad=0; paxLoadT=0; lastPaxLoad=0; paxRespawnT=-1;
+  paxBoardQueue=0; paxDropQueue=0; paxDropping=false; paxServiced=false;
+  for(const pfg of activePax) scene.remove(pfg.group); activePax.length=0;
+  showBig('');
+}
+
+// ---------- Eingaben ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code]=true;
+  if(e.code==='KeyR') resetPlane();
+  if(e.code==='KeyV') cycleView();
+  if(e.code==='KeyM') cycleModel();
+  if(e.code==='KeyX') state.throttle = 0;
+  if(e.code==='KeyB') buttonB();          // Canadair: Wasser · AlphaJet: Schleudersitz
+  if(e.code==='KeyT') toggleMissions();   // RB-Ersatz: Minispiele an/aus
+  if(e.code==='KeyG') toggleLead();       // LB-Ersatz: Leitfaden an/aus
+  if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
+
+  if(e.code==='Space') e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code]=false; });
+
+let gamepadIndex = null;
+addEventListener('gamepadconnected', e => { gamepadIndex=e.gamepad.index;
+  document.getElementById('pad').textContent='Controller: '+e.gamepad.id; });
+addEventListener('gamepaddisconnected', ()=>{ gamepadIndex=null;
+  document.getElementById('pad').textContent='Controller getrennt.'; });
+function deadzone(v, dz=0.15){ return Math.abs(v)<dz ? 0 : (v-Math.sign(v)*dz)/(1-dz); }
+
+let btnPrev = {};
+let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
+let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
+function edge(gp, i){ const now = gp.buttons[i] && gp.buttons[i].pressed;
+  const was = btnPrev[i]; btnPrev[i]=now; return now && !was; }
+
+// Schub-Auto-Repeat: solange gehalten, alle THR_REPEAT_MS eine 20%-Stufe.
+// Erster Schritt sofort, danach im Intervall. Richtungswechsel wirkt sofort.
+const THR_REPEAT_MS = 350;
+let thrHoldDir = 0, thrLastStep = -1e9;
+function thrHold(dir){
+  const t = performance.now();
+  if(dir === 0){ thrHoldDir = 0; return; }
+  if(dir !== thrHoldDir){ thrHoldDir = dir; thrLastStep = -1e9; }  // sofort bei Neu-/Richtungswechsel
+  if(t - thrLastStep >= THR_REPEAT_MS){ thrStep(dir); thrLastStep = t; }
+}
+
+function readInput() {
+  let pitch=0, roll=0, yaw=0, thrDir=0;
+
+  // ---- Tastatur ----
+  if(keys['ArrowUp'])    pitch-=1;
+  if(keys['ArrowDown'])  pitch+=1;
+  if(keys['ArrowLeft'])  yaw-=1;    // Pfeile ←→ = lenken (Querruder)
+  if(keys['ArrowRight']) yaw+=1;
+  if(keys['KeyQ'])       roll-=1;   // Q/E rollen (Tastatur-Ersatz für LT/RT)
+  if(keys['KeyE'])       roll+=1;
+  if(keys['KeyW'])       thrDir = +1;   // W/S = Schub hoch/runter (Auto-Repeat, s.u.)
+  else if(keys['KeyS'])  thrDir = -1;
+  if(keys['Space'])      state.throttle = 1;
+  // C HALTEN = Umkehrschub -20 % (Bremse), Tastatur-Pendant zu "A halten" am Controller.
+  if(keys['KeyC']) state.throttle = -0.2; else if(cPrev) state.throttle = 0;
+  cPrev = !!keys['KeyC'];
+
+  // ---- Gamepad ----
+  if(gamepadIndex!==null){
+    const gp = navigator.getGamepads()[gamepadIndex];
+    if(gp){
+      const lx=deadzone(gp.axes[0]||0), ly=deadzone(gp.axes[1]||0);
+      // linker Stick: ←→ = Querruder/Lenken, ↕ = Nase (Höhenruder)
+      yaw   += lx;
+      pitch += ly;
+      // NUR LT/RT rollen: RT nach rechts, LT nach links
+      const rt = gp.buttons[7] ? gp.buttons[7].value : 0;
+      const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
+      roll += (rt - lt);
+      // rechter Stick vertikal: oben = Schub steigt, unten = fällt (in 10%-Stufen) — nur bis 0.
+      const ry = gp.axes[3] || 0;
+      if(ry < -0.5) thrDir = +1; else if(ry > 0.5) thrDir = -1;
+      // rechter Stick horizontal: bewusst unbelegt
+
+      // A HALTEN = Umkehrschub -20 % (Bremse); beim LOSLASSEN -> Motor 0.
+      const aDown = gp.buttons[0] && gp.buttons[0].pressed;
+      if(aDown) state.throttle = -0.2;
+      else if(aPrev) state.throttle = 0;   // A gerade losgelassen -> Motor aus
+      aPrev = aDown;
+
+      if(edge(gp,3)) cycleModel();    // Y = Modell
+      if(edge(gp,1)) buttonB();       // B: Canadair Wasser · AlphaJet Schleudersitz
+      if(edge(gp,5)) toggleMissions();// RB: Minispiele an/aus
+      if(edge(gp,4)) toggleLead();    // LB: Leitfaden (Pfeile) an/aus
+      if(edge(gp,9)) resetPlane();    // Start/Menu = Reset
+      // D-Pad: oben(12)=Hilfe an/aus, unten(13)=Kamera, links(14)/rechts(15)=Seitenansicht (gehalten).
+      if(edge(gp,12)) toggleHelp();
+      if(edge(gp,13)) cycleView();
+      const dLeft  = gp.buttons[14] && gp.buttons[14].pressed;
+      const dRight = gp.buttons[15] && gp.buttons[15].pressed;
+      sideView = dLeft ? -1 : (dRight ? 1 : 0);
+    }
+  } else {
+    sideView = 0;   // ohne Controller keine Seitenansicht
+  }
+  thrHold(thrDir);   // Auto-Repeat auswerten
+  roll = Math.max(-1, Math.min(1, roll));
+  return { pitch, roll, yaw };
+}
+
+// ---------- Ansichten ----------
+let viewMode=0;
+let sideView=0;   // 0=normal, -1=von links, +1=von rechts (D-Pad links/rechts gehalten)
+const viewConfigs=[{dist:24,height:8,lerp:0.06},{dist:14,height:5,lerp:0.10},{dist:6,height:3,lerp:0.18}];
+function cycleView(){ viewMode=(viewMode+1)%viewConfigs.length; }
+// Kamera-Abstandsfaktor pro Modell (große/nahe Modelle brauchen mehr Abstand)
+// Kamera pro Modell: dist=Abstand-Faktor, hgt=Höhen-Faktor (kleiner = flacher/mehr von hinten)
+const CAM_CFG = {
+  Airbus:   { dist: 1.8,  hgt: 1.4 },
+  Canadair: { dist: 1.3,  hgt: 1.1 },
+  Transall: { dist: 1.7,  hgt: 1.2 },    // großer Transporter
+};
+function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
+
+// ---------- großer Text (Start/Landung) ----------
+const bigEl = document.getElementById('big');
+let bigTimer=0;
+function showBig(t){ bigEl.textContent=t; bigEl.style.opacity = t?1:0; if(t) bigTimer=2.0; }
+
+// Schub in 10%-Stufen (rechter Stick nur 0..100 %). Umkehrschub (-20 %) liegt jetzt auf A (gehalten).
+function thrStep(dir){
+  let p = Math.round(state.throttle*10);     // Stufen 0..10 = 0,...,100 %
+  p = Math.max(0, Math.min(10, p + dir));
+  state.throttle = p/10;
+}
+
+// ---------- Physik ----------
+function stepPhysics(dt, inp){
+  // Wenn abgestürzt: Feuerwehr löscht, dann Reset (Reset erst wenn Pilot gelandet)
+  if(state.crashed){
+    state.crashTimer -= dt;
+    updateRescue(dt);
+    if(state.crashTimer <= 0) resetPlane();
+    return;
+  }
+
+  state.throttle = Math.max(-0.2, Math.min(1, state.throttle));   // -0.2 = Umkehrschub (Bremse)
+
+  // Nach Schleudersitz: Flieger ist führerlos -> keine Steuerung, stürzt schnell ab.
+  if(state.ejected){
+    state.quat.multiply(new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(1.0*dt, 1.4*dt, 2.2*dt, 'XYZ')));   // schnelles Trudeln
+    state.quat.normalize();
+    // rascher Sturz: Nase runter + starke Schwerkraft, wenig Bremsung
+    state.vel.y -= 26 * dt;
+    state.pos.addScaledVector(state.vel, dt);
+    const wreckY = isOnCarrier(state.pos.x,state.pos.z) ? fordDeckY : (isOnLand(state.pos.x,state.pos.z) ? ISLAND_Y : 0);
+    if(state.pos.y <= wreckY){
+      // Aufschlag -> Feuerwehr (3 s), Fallschirm schwebt im Hintergrund weiter
+      state.pos.y = wreckY;
+      state.crashed = true; state.crashTimer = 3.0;
+      state.ejected = false;
+      playCrash();
+      const wreckE = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+      state.quat.setFromEuler(new THREE.Euler(0.15, wreckE.y, 0.4, 'YXZ'));
+      planeGroup.position.copy(state.pos);
+      planeGroup.quaternion.copy(state.quat);
+      spawnRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
+      return;
+    }
+    planeGroup.position.copy(state.pos);
+    planeGroup.quaternion.copy(state.quat);
+    return;
+  }
+
+  // Steuerraten aus dem aktiven Modell (Airbus träge, SuperCup wendig)
+  const pitchRate=spec.pitch, rollRate=spec.roll, yawRate=0.7;
+  const e = new THREE.Euler(inp.pitch*pitchRate*dt, -inp.yaw*yawRate*dt, -inp.roll*rollRate*dt, 'XYZ');
+  const dq = new THREE.Quaternion().setFromEuler(e);
+  state.quat.multiply(dq); state.quat.normalize();
+
+  // --- Nicht-Kunstflug-Modelle (Airbus/Transall/Canadair): KEIN Looping/keine Rolle. ---
+  // Nick (Nase hoch/runter) und Querlage werden hart begrenzt -> statt Überschlag legt er sich
+  // nur in die Kurve bzw. steigt maximal steil, kippt aber nie über Kopf.
+  if(!spec.aero && !state.onGround){
+    const eL = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+    const maxPitch = 1.05;                       // ~60° Nase hoch/runter, kein Überkopf
+    const maxBank  = spec.maxBank || 0.7;        // ~40° Querlage max
+    eL.x = Math.max(-maxPitch, Math.min(maxPitch, eL.x));
+    eL.z = Math.max(-maxBank,  Math.min(maxBank,  eL.z));
+    state.quat.setFromEuler(eL);
+  }
+
+  // --- Kurvenflug aus Querlage: Schräglage erzeugt Gieren (wie ein echtes Flugzeug). ---
+  // Nicht-Kunstflug: volle Kopplung (kurven über die Querlage). Kunstflug-Jets: nur SCHWACHE
+  // Kopplung (~20 %), damit sie sich beim Kurvenlegen sanft zur Seite ziehen (nicht nur rollen),
+  // ohne dass ein Looping/eine Rolle verzogen wird. Beim Überkopf-Fliegen (Looping) kehrt cos(bank)
+  // das Vorzeichen um -> deshalb mit cos gewichten, damit die Rolle sauber bleibt.
+  if(!state.onGround){
+    const eB = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+    const bank = eB.z;                       // Querlage (rad)
+    let turn = bank * spec.turn;
+    if(spec.aero) turn *= 0.25 * Math.max(0, Math.cos(bank));   // 75% Rolle / 25% Seitwärts
+    const turnQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), turn*dt);
+    state.quat.premultiply(turnQ); state.quat.normalize();
+  }
+
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const upV      = new THREE.Vector3(0,1,0).applyQuaternion(state.quat);
+
+  // --- Echtes Kräftemodell: Schub, Schwerkraft, Auftrieb (∝v²), Luftwiderstand ---
+  // Dadurch: Sturz -> Schwerkraft entlang Bewegung -> beschleunigt; Steigflug -> bremst.
+  // Auftrieb=Gewicht genau bei vTO -> darunter sinkt er, darüber steigt er.
+  // Kräfte je Modell (spec): schwere Flieger vTO/Schub höher.
+  const GRAV=9.81, maxThrust=spec.maxThrust, dragK=spec.dragK, liftK=GRAV/(spec.vTO*spec.vTO);
+  const vMax = Math.sqrt(maxThrust / dragK);                   // Vollgas-Grenzgeschwindigkeit
+  const speed = state.vel.length();
+  const accel = new THREE.Vector3();
+  accel.addScaledVector(forward, maxThrust * state.throttle);   // Schub entlang Nase
+  accel.y -= GRAV;                                              // Schwerkraft (immer -Y)
+  // Auftrieb ⟂ Flügel, ∝ v² — trägt das Gewicht ab vTO. Bei Langsamflug (v<vTO) bricht er
+  // zunehmend weg (Stall) -> Flieger sinkt, gewinnt im Sinken Fahrt -> Auftrieb kehrt zurück.
+  accel.addScaledVector(upV, liftK * speed * speed);
+  accel.addScaledVector(state.vel, -dragK * speed);             // Luftwiderstand ∝ v²
+  state.vel.addScaledVector(accel, dt);
+
+  // Schub-abhängige Obergrenze: im Horizontal-/Steigflug ist bei ~vMax*sqrt(throttle) Schluss,
+  // damit z.B. der AlphaJet Überschall NUR bei 100 % erreicht (bei 80/90 % drunter) und nach
+  // Schubwegnahme SOFORT abbremst, statt weiter zu beschleunigen. Im Sturzflug (Nase unten)
+  // darf er darüber (Höhe -> Fahrt = Gleitflug), aber nie über den harten Deckel vMax*1.15.
+  const vNow = state.vel.length();
+  const diving = state.vel.y < -2;                 // sinkt spürbar -> Sturz erlaubt Mehrspeed
+  const vCap = diving ? vMax*1.15 : Math.max(vMax*Math.sqrt(state.throttle), spec.vTO*0.6);
+  if(vNow > vCap) state.vel.multiplyScalar(vCap / vNow);
+
+  // Höhen-Deckel: sanft abriegeln (kein hartes Ruckeln, kein "Anstoßen"/Crash). In den letzten
+  // 120 m vor maxAlt wird die Steig-Geschwindigkeit gedämpft; bei maxAlt ist Schluss nach oben.
+  if(spec.maxAlt){
+    const over = (state.pos.y - ISLAND_Y) - (spec.maxAlt - 120);
+    if(over > 0 && state.vel.y > 0){
+      const damp = Math.max(0, 1 - over/120);                  // 1 -> 0 über die letzten 120 m
+      state.vel.y *= damp;
+    }
+    if((state.pos.y - ISLAND_Y) >= spec.maxAlt && state.vel.y > 0) state.vel.y = 0;
+  }
+
+  // --- Ruderwirksamkeit ∝ Fahrt: schnell = Geschwindigkeit folgt der Nase (sauberer Looping/Kurve);
+  //     langsam = Flieger sackt durch (Nase zeigt hoch, sinkt trotzdem = echter Gleit-/Stall-Effekt). ---
+  const vlen = state.vel.length();
+  if(vlen > 0.001){
+    const authority = Math.min(1, speed / spec.vTO);           // 0 (steht) .. 1 (ab vTO volle Kontrolle)
+    const base = spec.aero ? 0.14 : 0.09;                      // Kunstflug-Jets koppeln straffer
+    const dir = state.vel.clone().normalize();
+    dir.lerp(forward, base * authority);
+    state.vel.copy(dir.multiplyScalar(vlen));
+  }
+
+  // --- STALL: zu wenig Fahrt in der Luft -> Auftrieb bricht weg, Nase kippt runter, Flieger SACKT AB.
+  // Kein "In-der-Luft-Stehen" mehr. Trifft er im Sackflug den Boden = Crash (unten via GROUND_Y).
+  // Je WENIGER Schub, desto schneller/heftiger der Absturz (viel Schub -> gewinnt schnell wieder Fahrt).
+  const vStall = spec.vTO * 0.55;
+  if(!state.onGround && speed < vStall){
+    const sev = 1 - speed/vStall;                    // 0 (an der Grenze) .. 1 (fast Stillstand)
+    const thrLack = 1 - Math.max(0, state.throttle); // 0 (Vollgas) .. 1 (kein Schub)
+    state.quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-1.4*sev*dt, 0, 0, 'XYZ')));
+    state.quat.normalize();
+    state.vel.y -= (10 + 30*thrLack) * sev * dt;     // wenig Schub -> bis zu 40 zusätzl. Sinken
+    state.stalling = true;                           // im Stall -> Bodenkontakt = IMMER Absturz (keine Landung)
+  } else if(speed > vStall*1.15){
+    state.stalling = false;                          // genug Fahrt zurückgewonnen -> wieder normal
+  }
+
+  // Abhebe-Sperre: am Boden unter der modell-Abhebe-Geschwindigkeit kein Steigen,
+  // egal wie sehr man die Nase zieht -> abheben erst ab genug Schub/Fahrt.
+  if(state.onGround && speed < spec.vTO && state.vel.y > 0) state.vel.y = 0;
+
+  // Umkehrschub (throttle<0) bremst -> bei Stillstand STOPP (kein Rückwärtsgang). Sobald die
+  // Vorwärts-Komponente der Geschwindigkeit auf 0 fällt, Horizontalfahrt komplett anhalten.
+  if(state.throttle < 0){
+    const fwdDot = state.vel.x*forward.x + state.vel.z*forward.z;   // Fahrt in Nasenrichtung
+    if(fwdDot <= 0){ state.vel.x = 0; state.vel.z = 0; }
+  }
+
+  state.pos.addScaledVector(state.vel, dt);
+
+  // ---- Gebäude-Kollision: Prallt am Haus ab (fliegt NICHT durch) und fällt GERADE nach unten ----
+  if(!state.onGround && !state.falling && hitsBuilding(state.pos.x, state.pos.y, state.pos.z)){
+    state.falling = true;
+    playCrash();                       // 1. Geräusch: Aufprall gegen das Hindernis
+    state.throttle = 0;
+    state.vel.set(0, 0, 0);            // stoppt sofort (kein Durchfliegen, kein Vortrieb)
+    // Bei einem BERG radial an den Hangfuß nach außen schieben, damit er AUSSEN am Hang
+    // herunterrutscht statt im Kegel zu stecken/durchzufallen (bei Häusern nicht nötig).
+    const po = pushOutOfHill(state.pos.x, state.pos.z);
+    if(po){ state.pos.x = po.x; state.pos.z = po.z; }
+  }
+  if(state.falling){
+    // langsames Kippen der Nase nach unten, aber KEIN seitliches Wegdriften -> senkrechter Fall
+    state.quat.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.8*dt, 0, 0, 'XYZ')));
+    state.quat.normalize();
+    state.vel.x = 0; state.vel.z = 0;                      // strikt senkrecht (nicht durchs Haus driften)
+    state.vel.y -= 22*dt;                                  // fällt beschleunigt gerade runter
+    state.pos.y += state.vel.y * dt;
+    const gy = isOnLand(state.pos.x, state.pos.z) ? ISLAND_Y : 0;
+    if(state.pos.y <= gy){
+      state.pos.y = gy; state.falling = false;
+      state.crashed = true; state.crashTimer = 3.0;
+      playCrash();                     // 2. Geräusch: Aufschlag auf dem Boden
+      const w = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+      state.quat.setFromEuler(new THREE.Euler(0.15, w.y, 0.4, 'YXZ'));
+      planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+      spawnRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
+      return;
+    }
+    planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+    return;
+  }
+
+  // ---- Boden / Start / Landung / Crash ----
+  // Oberfläche ortsabhängig: über Land = Inselhöhe, über Trägerdeck = Deckhöhe, sonst Meer (y=0).
+  const overLand = isOnLand(state.pos.x, state.pos.z);
+  const onCarrierDeck = isOnCarrier(state.pos.x, state.pos.z);
+  const GROUND_Y = onCarrierDeck ? fordDeckY : (overLand ? ISLAND_Y : 0);
+  const wasGround = state.onGround;
+  if(state.pos.y <= GROUND_Y){
+    const vspeed = speed;
+    const sinkRate = -state.vel.y;   // wie schnell fällt er?
+    const eul0 = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+    const tilt = Math.abs(eul0.x) + Math.abs(eul0.z);
+
+    if(!wasGround){
+      // Crash, wenn: hier nicht landbar (falsche Oberfläche fürs Modell) ODER
+      // zu schnell / zu steil gesunken / zu schräg aufgesetzt.
+      const badSpot   = !canLandHere(state.pos.x, state.pos.z);
+      const hardLand  = vspeed > 55 || sinkRate > 16 || tilt > 0.9 || state.stalling;  // Stall = kein sanftes Landen
+      if(badSpot || hardLand){
+        state.crashed = true;
+        state.crashTimer = 3.0;              // 3 Sek Löschsequenz
+        playCrash();
+        const wreckE = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+        state.quat.setFromEuler(new THREE.Euler(0.15, wreckE.y, 0.4, 'YXZ'));
+        state.pos.y = GROUND_Y;
+        planeGroup.position.copy(state.pos);
+        planeGroup.quaternion.copy(state.quat);
+        spawnRescue(state.pos.x, state.pos.z, overLand);
+        return;
+      }
+    }
+    // Beim ROLLEN auf falscher Fläche (z.B. Jet rollt ins Gras, Canadair rutscht an Land)
+    // ebenfalls Crash — aber nur wenn er sich noch bewegt (nicht direkt beim Reset/Stillstand).
+    if(wasGround && vspeed > 3 && !canLandHere(state.pos.x, state.pos.z)){
+      state.crashed = true;
+      state.crashTimer = 3.0;
+      playCrash();
+      const wreckE = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+      state.quat.setFromEuler(new THREE.Euler(0.15, wreckE.y, 0.4, 'YXZ'));
+      state.pos.y = GROUND_Y;
+      planeGroup.position.copy(state.pos);
+      planeGroup.quaternion.copy(state.quat);
+      spawnRescue(state.pos.x, state.pos.z, overLand);
+      return;
+    }
+    state.pos.y = GROUND_Y;
+    if(state.vel.y < 0) state.vel.y = 0;
+    state.vel.x *= 0.995; state.vel.z *= 0.995;   // wenig Rollreibung -> rollt zum Abheben an
+    state.onGround = true;
+    const eul = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+    eul.x *= 0.9; eul.z *= 0.9;                    // Nase am Boden waagerecht halten
+    state.quat.setFromEuler(eul);
+  } else {
+    state.onGround = false;
+  }
+
+  // Transform
+  planeGroup.position.copy(state.pos);
+  planeGroup.quaternion.copy(state.quat);
+
+  if(bigTimer>0){ bigTimer-=dt; if(bigTimer<=0) showBig(''); }
+}
+
+// ---------- Kamera ----------
+function updateCamera(){
+  // Schleudersitz-Phasen: 1) Jet trudelt -> Fallschirm im Blick.
+  // 2) Jet aufgeschlagen (crashed) -> Blick auf Wrack/Feuerwehr, Fallschirm oben im Bild.
+  if(parachute){
+    if(state.crashed){
+      // auf die Absturzstelle schauen, weit genug für Feuerwehr + Fallschirm darüber
+      const focus = state.pos;
+      const desired = focus.clone().add(new THREE.Vector3(28, 20, 40));
+      camera.position.lerp(desired, 0.06);
+      camera.lookAt(focus.x, focus.y + 6, focus.z);
+    } else {
+      const focus = parachute.group.position;
+      const desired = focus.clone().add(new THREE.Vector3(30, 18, 42));
+      camera.position.lerp(desired, 0.06);
+      camera.lookAt(focus.x, focus.y - 4, focus.z);
+    }
+    return;
+  }
+  const cfg=viewConfigs[viewMode];
+  const cc = camCfg();                            // pro Modell: Abstand + Höhe getrennt
+  // Seitenansicht (D-Pad links/rechts gehalten): Kamera seitlich neben den Flieger.
+  if(sideView !== 0){
+    const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
+    const side = 24 * cc.dist * sideView;         // links (-) / rechts (+)
+    const desired = state.pos.clone().addScaledVector(right, side);
+    desired.y += 6;
+    if(desired.y < 2) desired.y = 2;
+    camera.position.lerp(desired, 0.18);
+    camera.lookAt(state.pos);
+    return;
+  }
+  const back=new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+  const upV =new THREE.Vector3(0,1,0).applyQuaternion(state.quat);
+  const desired=state.pos.clone().addScaledVector(back,cfg.dist*cc.dist).addScaledVector(upV,cfg.height*cc.hgt);
+  if(desired.y < 2) desired.y = 2; // Kamera nicht unter den Boden
+  camera.position.lerp(desired, cfg.lerp);
+  camera.lookAt(state.pos);
+}
+
+// ---------- Welt recyceln ----------
+function recycleWorld(){
+  // Meer folgt dem Flieger (bleibt immer unter ihm)
+  ground.position.x = state.pos.x;
+  ground.position.z = state.pos.z;
+  // Inseln in Sichtweite erzeugen/entfernen
+  updateIslands();
+  for(const cl of clouds){
+    const dx=cl.position.x-state.pos.x, dz=cl.position.z-state.pos.z;
+    if(dx> CLOUD_SPREAD/2) cl.position.x-=CLOUD_SPREAD;
+    if(dx<-CLOUD_SPREAD/2) cl.position.x+=CLOUD_SPREAD;
+    if(dz> CLOUD_SPREAD/2) cl.position.z-=CLOUD_SPREAD;
+    if(dz<-CLOUD_SPREAD/2) cl.position.z+=CLOUD_SPREAD;
+  }
+}
+
+// ---------- HUD ----------
+const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd'),
+      elThr=document.getElementById('thr'), elStat=document.getElementById('status');
+function updateHUD(){
+  elAlt.textContent=Math.max(0,Math.round(state.pos.y-0.3));
+  elSpd.textContent=Math.round(state.vel.length()*3.6);
+  elThr.textContent=Math.round(state.throttle*100);
+  // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
+  // 💧-Reihe = Tankfüllung, 🔥 = aktives Feuer.
+  let s = '';
+  if(state.ejected || parachute) s = '🪂';
+  else if(state.crashed) s = '🚒';
+  else {
+    // Einheitlich für alle 3 Aufgaben-Modelle: ERST Missions-Symbol (🎯 an / 🚫 aus), DANN Ladesymbole.
+    const mission = missionsOn ? '🎯 ' : '🚫 ';
+    if(isCanadair()){
+      const drops = Math.round(state.water*4);       // 0..4 Tropfen
+      s = mission + (waterDrop ? '💦' : ('💧'.repeat(drops) || '·'));
+      if(missionsOn && fire) s += ' 🔥';
+    } else if(isTransall()){
+      s = mission + ('📦'.repeat(crateLoad) || '·'); // geladene Kisten
+    } else if(isAirbus()){
+      s = mission + ('🧍'.repeat(paxLoad) || '·');   // eingestiegene Menschen
+    }
+  }
+  elStat.textContent = s;
+}
+
+// ---------- Radar/Kompass (rechts, immer sichtbar) ----------
+// Zeigt Flieger (Mitte, Nase nach oben) + Ziel-Blip (Richtung/Distanz, Ampelfarbe).
+// Ohne laufendes Minispiel (missionsOn=false) kein Blip.
+const radarCv = document.getElementById('radar');
+const radarCtx = radarCv.getContext('2d');
+function activeTarget(){
+  if(!missionsOn) return null;
+  if(isCanadair() && fire) return {x:fire.x, z:fire.z, col:(state.water>0?'#33cc44':'#cc4444')};
+  if(isTransall() && cargoTarget) return {x:cargoTarget.x, z:cargoTarget.z, col:(crateLoad>0?'#e8c020':'#cc4444')};
+  if(isAirbus() && paxTarget) return {x:paxTarget.x, z:paxTarget.z, col:(paxLoad>=PAX_MAX?'#e8c020':'#cc4444')};
+  return null;
+}
+function updateRadar(){
+  const W=radarCv.width, H=radarCv.height, cx=W/2, cy=H/2, R=W/2-6;
+  radarCtx.clearRect(0,0,W,H);
+  // Scheibe
+  radarCtx.fillStyle='rgba(10,25,40,0.55)';
+  radarCtx.beginPath(); radarCtx.arc(cx,cy,R,0,Math.PI*2); radarCtx.fill();
+  radarCtx.strokeStyle='rgba(255,255,255,0.6)'; radarCtx.lineWidth=2;
+  radarCtx.beginPath(); radarCtx.arc(cx,cy,R,0,Math.PI*2); radarCtx.stroke();
+  // Flieger-Dreieck (Mitte, zeigt nach oben = Flugrichtung)
+  radarCtx.fillStyle='#ffffff';
+  radarCtx.beginPath();
+  radarCtx.moveTo(cx,cy-7); radarCtx.lineTo(cx-5,cy+6); radarCtx.lineTo(cx+5,cy+6);
+  radarCtx.closePath(); radarCtx.fill();
+  // Ziel-Blip relativ zum Flieger-Kurs
+  const tgt=activeTarget();
+  if(tgt){
+    const dx=tgt.x-state.pos.x, dz=tgt.z-state.pos.z;
+    const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    const head=Math.atan2(fwd.x, fwd.z);       // Kurs (Weltwinkel)
+    // Zielwinkel relativ zum Kurs; im Radar zeigt "oben" = vorn
+    const worldAng=Math.atan2(dx, dz);
+    const rel=worldAng-head;
+    const dist=Math.hypot(dx,dz);
+    const rr=Math.min(R-8, dist/2500*(R-8)+10);  // Distanz auf Radarradius mappen
+    const bx=cx + Math.sin(rel)*rr;
+    const by=cy - Math.cos(rel)*rr;
+    radarCtx.fillStyle=tgt.col;
+    radarCtx.beginPath(); radarCtx.arc(bx,by,5,0,Math.PI*2); radarCtx.fill();
+    radarCtx.strokeStyle='rgba(0,0,0,0.5)'; radarCtx.lineWidth=1; radarCtx.stroke();
+  }
+}
+
+// ---------- Loop ----------
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
+  // Audio beim ersten Gamepad-Kontakt aktivieren (falls noch nicht per Taste geschehen)
+  if(!audioArmed && gamepadIndex!==null){
+    const gp = navigator.getGamepads()[gamepadIndex];
+    if(gp && (gp.buttons.some(b=>b.pressed) || gp.axes.some(a=>Math.abs(a)>0.3))){
+      armAudio(); audioArmed = true;
+    }
+  }
+  const inp=readInput();
+  stepPhysics(dt,inp);
+  updateEngineSound();
+  updateScoop(dt);           // Wasser aufnehmen (Canadair)
+  updateWaterDrop(dt);       // Wasserabwurf-Animation
+  updateFire(dt);            // Waldbrand-Modus (Canadair)
+  updateThumb(dt);           // grüner Daumen über dem Flieger
+  updateScoopHint(dt);       // große Wassertropfen beim Tanken
+  updateCrates(dt);          // Transall: Kisten laden/abwerfen
+  updateTransallMission(dt); // Transall: Fracht-Ziel + Navigation
+  updateAirbusMission(dt);   // Airbus: Ziel + Ankunft (Aussteigen)
+  updatePax(dt);             // Airbus: Figuren steigen seitlich ein/aus (im Paket-Takt)
+  updateToggleHint(dt);      // Umschalt-Symbol (RB/LB) ausblenden
+  updateRadar();             // Radar/Kompass rechts (immer sichtbar)
+  updateParachute(dt);       // Schleudersitz-Fallschirm (AlphaJet)
+  updateSonic(dt);           // Überschallknall + Vapor-Cone (AlphaJet ab Schallgeschwindigkeit)
+  updateShadow();            // Höhen-Schatten am Boden (ab <=20 m)
+  updateSea(dt);             // animierte Meereswellen
+  for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
+  recycleWorld();
+  updateCamera();
+  updateHUD();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+updateIslands();
+preloadAllGLB();       // echte GLB-Modelle laden (ersetzen Fallback, sobald fertig)
+preloadBoat();         // Feuerwehrboot-GLB laden
+preloadTruck();        // Feuerwehrauto-GLB laden
+preloadParachute();    // Fallschirm-GLB laden (Transall-Kisten & AlphaJet/Mustang-Schleudersitz)
+preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
+preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
+updateLoadBar();       // Ladebalken initialisieren (glbTotal steht jetzt fest)
+setTimeout(()=>{ loaderHidden=true; const l=document.getElementById('loader'); if(l){ l.style.opacity='0'; setTimeout(()=>l.style.display='none',600);} }, 15000); // Sicherheits-Timeout
+placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (Canadair) im Hafen aufstellen
+camera.position.set(state.pos.x, state.pos.y+10, state.pos.z+25);
+camera.lookAt(state.pos);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
