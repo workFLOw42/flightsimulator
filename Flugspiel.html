@@ -2,24 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#87b8e8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flugspiel</title>
 <style>
-  html, body { margin: 0; padding: 0; overflow: hidden; background: #87b8e8; font-family: Arial, sans-serif;
-    touch-action: none; -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #87b8e8; font-family: Arial, sans-serif; }
   canvas { display: block; }
-  /* Ladebildschirm (Web-Version: Modelle werden per Netz geladen) */
-  #loader { position: fixed; inset: 0; background: #87b8e8; color: #fff; z-index: 50;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    font-family: Arial, sans-serif; transition: opacity .5s; }
-  #loader .ico { font-size: 64px; margin-bottom: 18px; }
-  #loader .bar { width: 220px; height: 14px; background: rgba(255,255,255,0.3); border-radius: 7px; overflow: hidden; }
-  #loader .fill { height: 100%; width: 0%; background: #fff; transition: width .2s; }
-  #loader .txt { margin-top: 10px; font-size: 15px; text-shadow: 1px 1px 2px rgba(0,0,0,0.4); }
   #hud {
     position: absolute; top: 10px; left: 12px; color: #fff;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.7); font-size: 18px; line-height: 1.5;
@@ -47,11 +34,6 @@
 </style>
 </head>
 <body>
-<div id="loader">
-  <div class="ico">🛩️</div>
-  <div class="bar"><div class="fill" id="loaderFill"></div></div>
-  <div class="txt" id="loaderTxt">Lädt …</div>
-</div>
 <div id="hud">
   <div>Modell: <span id="mdl">SuperCup</span></div>
   <div>Höhe: <span id="alt">0</span> m</div>
@@ -94,8 +76,17 @@
 </div>
 <script src="three.min.js"></script>
 <script src="GLTFLoader.js"></script>
-<script src="DRACOLoader.js"></script>
 <script src="sounds.js"></script>
+<script src="canadair_glb.js"></script>
+<script src="alphajet_glb.js"></script>
+<script src="airbus_glb.js"></script>
+<script src="transall_glb.js"></script>
+<script src="parachute_glb.js"></script>
+<script src="boat_glb.js"></script>
+<script src="firetruck_glb.js"></script>
+<script src="mustang_glb.js"></script>
+<script src="ford_glb.js"></script>
+<script src="harbor_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -1667,66 +1658,21 @@ let propMeshes = [];   // rotierende Propeller (Canadair)
 // und als Vorlage gecacht. buildModel() klont die Vorlage synchron.
 const glbTemplates = {};       // name -> fertig ausgerichtete Group (Vorlage zum Klonen)
 const GLB_CONFIG = {
-  // url: komprimiertes .glb (Draco). yOff: manueller Höhen-Offset (negativ = tiefer setzen).
-  Canadair: { url: 'models/canadair.glb', span: 18.5, yOff: 0 },
-  AlphaJet: { url: 'models/alphajet.glb', span: 11,   yOff: 0, recolor: 'wbr' },
-  Airbus:   { url: 'models/airbus.glb',   span: 27.1, yOff: 0 },
-  Mustang:  { url: 'models/mustang.glb',  span: 11,   yOff: 0 },
-  Transall: { url: 'models/transall.glb', span: 20,   yOff: 0 },
+  // yOff: manueller Höhen-Offset (negativ = tiefer setzen, falls das Modell schwebt)
+  Canadair: { data: () => window.CANADAIR_GLB, span: 18.5, yOff: 0 },
+  AlphaJet: { data: () => window.ALPHAJET_GLB, span: 11,   yOff: 0, recolor: 'wbr' },
+  Airbus:   { data: () => window.AIRBUS_GLB,   span: 27.1, yOff: 0 },
+  Mustang:  { data: () => window.MUSTANG_GLB,  span: 11,   yOff: 0 },
+  Transall: { data: () => window.TRANSALL_GLB, span: 20,   yOff: 0 },
 };
-// Gemeinsamer GLTF-Loader mit DRACO-Decoder (lokal in draco/). Eine Instanz, von allen genutzt.
-let _dracoLoader = null, _gltfLoader = null;
-function gltfLoader(){
-  if(_gltfLoader) return _gltfLoader;
-  _gltfLoader = new THREE.GLTFLoader();
-  if(THREE.DRACOLoader){
-    _dracoLoader = new THREE.DRACOLoader();
-    _dracoLoader.setDecoderPath('draco/');            // draco_decoder.wasm liegt lokal daneben
-    _gltfLoader.setDRACOLoader(_dracoLoader);
-  }
-  return _gltfLoader;
-}
-// Ladefortschritt (für den Ladebalken): Anzahl erwarteter/fertiger Modelle.
-let glbTotal = 0, glbDone = 0, loaderHidden = false;
-function glbProgress(){ glbDone++; updateLoadBar(); }
-function updateLoadBar(){
-  const fill = document.getElementById('loaderFill'), txt = document.getElementById('loaderTxt');
-  const pct = glbTotal>0 ? Math.round(glbDone/glbTotal*100) : 0;
-  if(fill) fill.style.width = pct + '%';
-  if(txt) txt.textContent = 'Lädt … ' + pct + '%';
-  // Loader ausblenden, sobald die WICHTIGSTEN Modelle (mind. das Startmodell) da sind.
-  if(!loaderHidden && glbDone >= glbTotal && glbTotal > 0){
-    loaderHidden = true;
-    const l = document.getElementById('loader');
-    if(l){ l.style.opacity = '0'; setTimeout(()=>{ l.style.display='none'; }, 600); }
-  }
-}
-// Sichtbares Fehler-Overlay (am Handy gibt es keine Konsole) — sammelt GLB-/JS-Fehler.
-function showErr(msg){
-  let e = document.getElementById('errbox');
-  if(!e){
-    e = document.createElement('div');
-    e.id = 'errbox';
-    e.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;z-index:99;'+
-      'background:rgba(120,0,0,0.85);color:#fff;font:12px monospace;padding:8px;white-space:pre-wrap;';
-    document.body.appendChild(e);
-  }
-  e.textContent += msg + '\n';
-}
-window.addEventListener('error', ev=>{ showErr('JS: '+(ev.message||ev.error||ev)); });
-window.addEventListener('unhandledrejection', ev=>{ showErr('PROMISE: '+(ev.reason&&ev.reason.message||ev.reason)); });
-// Ein Modell per URL laden (Draco-dekomprimiert), normalisieren, als Vorlage cachen.
-function loadModel(url, onReady, onErr){
-  glbTotal++;
-  gltfLoader().load(url,
-    (gltf)=>{ try{ onReady(gltf); }catch(e){ showErr('VERARB '+url+': '+e.message); } glbProgress(); },
-    undefined,
-    (err)=>{ const m=(err&&err.message)||err; showErr('LADEN '+url+': '+m); glbProgress(); if(onErr) onErr(err); });
-}
 function preloadGLB(name){
   const cfg = GLB_CONFIG[name];
-  if(!cfg || !THREE.GLTFLoader) return;
-  loadModel(cfg.url, (gltf)=>{
+  if(!cfg || !cfg.data() || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = cfg.data().split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     // auf Ziel-Spannweite normieren (größere Horizontalachse = Spannweite)
     const box = new THREE.Box3().setFromObject(obj);
@@ -1741,7 +1687,7 @@ function preloadGLB(name){
     const wrap = new THREE.Group(); wrap.add(obj);
     glbTemplates[name] = wrap;
     if(MODEL_NAMES[currentModel] === name) buildModel(name);  // sofort ersetzen wenn aktiv
-  });
+  }, (err)=>{ console.warn(name+'-GLB Ladefehler:', err); });
 }
 // Weiß-Blau-Rot in Höhenzonen: obere Hälfte weiß, schmaler roter Streifen, untere Hälfte blau.
 // Ersetzt Textur durch Vertex-Farben (getrennte Materialinstanz je Mesh).
@@ -1770,7 +1716,12 @@ function preloadAllGLB(){ Object.keys(GLB_CONFIG).forEach(preloadGLB); }
 // Feuerwehrboot-GLB (by gogiart) separat laden — kein fliegbares Modell.
 let boatTemplate = null;
 function preloadBoat(){
-  loadModel('models/boat.glb', (gltf)=>{
+  if(!window.BOAT_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.BOAT_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3(); box.getSize(size);
@@ -1780,13 +1731,18 @@ function preloadBoat(){
     obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
     const wrap = new THREE.Group(); wrap.add(obj);
     boatTemplate = wrap;
-  });
+  }, (err)=>{ console.warn('Boot-GLB Ladefehler:', err); });
 }
 
 // Feuerwehrauto-GLB (Mercedes Atego by Aeroux Games 3D) separat laden.
 let truckTemplate = null;
 function preloadTruck(){
-  loadModel('models/firetruck.glb', (gltf)=>{
+  if(!window.FIRETRUCK_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.FIRETRUCK_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3(); box.getSize(size);
@@ -1796,13 +1752,18 @@ function preloadTruck(){
     obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
     const wrap = new THREE.Group(); wrap.add(obj);
     truckTemplate = wrap;
-  });
+  }, (err)=>{ console.warn('Auto-GLB Ladefehler:', err); });
 }
 
 // Fallschirm-GLB (by stroodledoodle) laden — für Transall-Kistenabwurf.
 let parachuteTemplate = null;
 function preloadParachute(){
-  loadModel('models/parachute.glb', (gltf)=>{
+  if(!window.PARACHUTE_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.PARACHUTE_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3(); box.getSize(size);
@@ -1812,22 +1773,28 @@ function preloadParachute(){
     obj.position.sub(c);           // zentrieren
     const wrap = new THREE.Group(); wrap.add(obj);
     parachuteTemplate = wrap;
-  });
+  }, (err)=>{ console.warn('Parachute-GLB Ladefehler:', err); });
 }
 
 // Flugzeugträger-GLB (Gerald R. Ford by Usman Zia) — schwimmende Landebahn auf dem Meer.
 let fordTemplate = null, fordDeckY = 12;   // Deckhöhe über Wasser (nach Normierung gesetzt)
 function preloadFord(){
-  loadModel('models/ford.glb', (gltf)=>{
+  if(!window.FORD_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.FORD_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3(); box.getSize(size);
-    obj.scale.setScalar(FORD_LEN / Math.max(size.x, size.z));   // ~280 m langer Träger
+    obj.scale.setScalar(FORD_LEN / Math.max(size.x, size.z));   // ~330 m langer Träger
     const box2 = new THREE.Box3().setFromObject(obj);
     const c = new THREE.Vector3(); box2.getCenter(c);
     obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;  // Rumpf-Unterkante auf y=0
     const box3 = new THREE.Box3().setFromObject(obj);
-    // Flugdeck-Höhe EXAKT per Raycast: von oben auf mehrere Punkte der Deck-Mittellinie schießen.
+    // Flugdeck-Höhe EXAKT per Raycast: von oben auf mehrere Punkte der Deck-Mittellinie schießen
+    // (dort ist kein Aufbau/Mast -> trifft das ebene Flugdeck). Median der Treffer = Deckhöhe.
     obj.updateMatrixWorld(true);
     const ys=[];
     for(const fz of [-0.25,-0.1,0.1,0.25,0.35]){
@@ -1842,13 +1809,18 @@ function preloadFord(){
     fordTemplate = wrap;
     refreshCarriers();   // bereits platzierte Platzhalter durch echtes Modell ersetzen
     placeAtStart(MODEL_NAMES[currentModel]);   // Flieger neu aufs echte Deck setzen (Höhe korrekt)
-  });
+  }, (err)=>{ console.warn('Ford-GLB Ladefehler:', err); });
 }
 
-// Hafen-GLB (The Wharf – Fishing Harbor by Mehdi Shahsavan) — an jeder Insel ein Hafen.
+// Hafen-GLB (Low Poly Mini Harbor by IndiNest.io) — an jeder Insel ein Hafen.
 let harborTemplate = null, harborHeight = 8;   // echte Hafenhöhe (flach); Default bis GLB geladen
 function preloadHarbor(){
-  loadModel('models/harbor.glb', (gltf)=>{
+  if(!window.HARBOR_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.HARBOR_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
     const obj = gltf.scene;
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3(); box.getSize(size);
@@ -1861,7 +1833,7 @@ function preloadHarbor(){
     const wrap = new THREE.Group(); wrap.add(obj);
     harborTemplate = wrap;
     refreshIslands();   // bereits gebaute Inseln neu bauen -> alle bekommen jetzt einen Hafen
-  });
+  }, (err)=>{ console.warn('Harbor-GLB Ladefehler:', err); });
 }
 
 // ---------- Höhen-Schatten am Boden (Hilfe fürs Kind, ab <=20 m) ----------
@@ -2705,8 +2677,6 @@ preloadTruck();        // Feuerwehrauto-GLB laden
 preloadParachute();    // Fallschirm-GLB laden (Transall-Kisten & AlphaJet/Mustang-Schleudersitz)
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
-updateLoadBar();       // Ladebalken initialisieren (glbTotal steht jetzt fest)
-setTimeout(()=>{ loaderHidden=true; const l=document.getElementById('loader'); if(l){ l.style.opacity='0'; setTimeout(()=>l.style.display='none',600);} }, 15000); // Sicherheits-Timeout
 placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (Canadair) im Hafen aufstellen
 camera.position.set(state.pos.x, state.pos.y+10, state.pos.z+25);
 camera.lookAt(state.pos);
