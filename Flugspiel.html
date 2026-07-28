@@ -57,7 +57,7 @@
     <div class="hrow"><span>B</span><b>Aktion (Wasser/Kiste/Schleudersitz)</b></div>
     <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
-    <div class="hrow"><span>LB / RB</span><b>Leitfaden / Aufgaben an-aus</b></div>
+    <div class="hrow"><span>RB</span><b>Aufgaben an/aus</b></div>
     <div class="hrow"><span>D-Pad ↑</span><b>diese Hilfe an-aus</b></div>
     <div class="hrow"><span>D-Pad ↓</span><b>Ton an/aus</b></div>
     <div class="hrow"><span>D-Pad ←→</span><b>Ansicht von links/rechts</b></div>
@@ -73,7 +73,7 @@
     <div class="hrow"><span>C (halten)</span><b>Bremse</b> · <span>X</span> Motor aus</div>
     <div class="hrow"><span>Shift (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera · <span>N</span> Ton</div>
-    <div class="hrow"><span>T / G</span><b>Aufgaben / Leitfaden an-aus</b></div>
+    <div class="hrow"><span>T</span><b>Aufgaben an/aus</b></div>
     <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
   </div>
   <div class="hcol">
@@ -81,7 +81,7 @@
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, über Ziel-Insel B = abwerfen</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um</b></div>
-    <div class="hrow"><span>🧭 Leitweg</span><b>rot = leer/hin · gelb = voll · grün = jetzt!</b></div>
+    <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt</b></div>
@@ -945,7 +945,7 @@ let thumbEl = null;      // grüner Daumen (DOM-Overlay)
 
 // ---------- Globale Schalter: Minispiele (RB) & Leitfaden (LB) ----------
 let missionsOn = true;   // RB: alle Aufgaben (Feuer/Fracht/Menschen + Navi) an/aus
-let leadOn = true;       // LB: nur die Pfeilketten-Navigation an/aus (Radar bleibt)
+let leadOn = false;      // LEITSTRAHL DEAKTIVIERT (Navigation nur noch über Radar). Code bleibt erhalten.
 
 function makeFire(x, z){
   const g = new THREE.Group();
@@ -1079,12 +1079,9 @@ function toggleMissions(){
   if(!missionsOn){ clearFire(); clearCargoTarget(); clearPaxTarget(); }
   showToggle(missionsOn ? '🎯' : '🚫');
 }
-// LB: nur den Leitfaden (Pfeile) an/aus. Ohne laufendes Minispiel wirkungslos.
-function toggleLead(){
-  if(!missionsOn){ showToggle('🚫'); return; }
-  leadOn = !leadOn;
-  showToggle(leadOn ? '🧭' : '🚫');
-}
+// LEITSTRAHL DEAKTIVIERT: toggleLead ist absichtlich wirkungslos (Navigation läuft nur über Radar).
+// Die frühere Logik ist unten in drawLeadRoute erhalten, wird aber wegen leadOn=false nie sichtbar.
+function toggleLead(){ /* deaktiviert */ }
 // H / L4: Tastatur-/Controller-Belegung unten ein-/ausblenden (Standard: aus).
 function toggleHelp(){
   const h = document.getElementById('hint');
@@ -2198,7 +2195,7 @@ addEventListener('keydown', e => {
   if(e.code==='KeyX') state.throttle = 0;
   if(e.code==='KeyB') buttonB();          // Canadair: Wasser · AlphaJet: Schleudersitz
   if(e.code==='KeyT') toggleMissions();   // RB-Ersatz: Minispiele an/aus
-  if(e.code==='KeyG') toggleLead();       // LB-Ersatz: Leitfaden an/aus
+
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
   if(e.code==='KeyN') toggleSound();      // Ton an/aus (Standard: aus)
 
@@ -2327,7 +2324,7 @@ function readInput() {
       if(edge(gp,3)) cycleModel();    // Y = Modell
       if(edge(gp,1)) buttonB();       // B: Canadair Wasser · AlphaJet Schleudersitz
       if(edge(gp,5)) toggleMissions();// RB: Minispiele an/aus
-      if(edge(gp,4)) toggleLead();    // LB: Leitfaden (Pfeile) an/aus
+
       if(edge(gp,9)) resetPlane();    // Start/Menu = Reset
       // D-Pad: oben(12)=Hilfe, unten(13)=Ton an/aus, links(14)/rechts(15)=Seitenansicht (gehalten).
       if(edge(gp,12)) toggleHelp();
