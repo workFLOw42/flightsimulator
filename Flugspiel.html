@@ -2161,6 +2161,7 @@ addEventListener('keydown', e => {
   if(e.code==='KeyT') toggleMissions();   // RB-Ersatz: Minispiele an/aus
   if(e.code==='KeyG') toggleLead();       // LB-Ersatz: Leitfaden an/aus
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
+  if(e.code==='KeyJ'){ rumble(500, 1.0, 1.0); document.getElementById('pad').textContent='Rumble: '+_rumDbg; }  // Vibrations-Test
 
   if(e.code==='Space') e.preventDefault();
 });
@@ -2175,12 +2176,28 @@ function deadzone(v, dz=0.15){ return Math.abs(v)<dz ? 0 : (v-Math.sign(v)*dz)/(
 
 // Controller-Vibration (Gamepad Haptics API). Läuft nur, wo unterstützt (Chrome/Edge, X-Input);
 // sonst still ignoriert. strong = tiefes Wummern, weak = feines Rattern (je 0..1).
+let _rumDbg = '';   // Diagnose (per Taste J sichtbar)
 function rumble(durMs, strong, weak){
-  if(gamepadIndex===null) return;
+  if(gamepadIndex===null){ _rumDbg='kein Gamepad'; return; }
   const gp = navigator.getGamepads()[gamepadIndex];
-  const act = gp && (gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]));
-  if(!act || !act.playEffect) return;
-  try{ act.playEffect('dual-rumble', { duration:durMs, strongMagnitude:strong, weakMagnitude:(weak==null?strong:weak) }); }catch(e){}
+  if(!gp){ _rumDbg='gp null'; return; }
+  const w = (weak==null?strong:weak);
+  // Variante 1: Standard vibrationActuator.playEffect('dual-rumble', {...})
+  const va = gp.vibrationActuator;
+  if(va && va.playEffect){
+    try{ va.playEffect('dual-rumble', { startDelay:0, duration:durMs, strongMagnitude:strong, weakMagnitude:w });
+         _rumDbg='vibrationActuator.playEffect'; return; }catch(e){ _rumDbg='playEffect-Fehler: '+e.message; }
+  }
+  // Variante 2: vibrationActuator.pulse(value, duration)  (ältere/andere Impl.)
+  if(va && va.pulse){
+    try{ va.pulse(Math.max(strong,w), durMs); _rumDbg='vibrationActuator.pulse'; return; }catch(e){ _rumDbg='pulse-Fehler: '+e.message; }
+  }
+  // Variante 3: hapticActuators[0].pulse(...)
+  const ha = gp.hapticActuators && gp.hapticActuators[0];
+  if(ha && ha.pulse){
+    try{ ha.pulse(Math.max(strong,w), durMs); _rumDbg='hapticActuators.pulse'; return; }catch(e){ _rumDbg='haptic-Fehler: '+e.message; }
+  }
+  _rumDbg='kein Aktuator (va='+(!!va)+' ha='+(!!ha)+')';
 }
 // Vibration an Ereignisse koppeln (Flankenerkennung): Crash stark, Landung sanft, Stall zittern.
 let _rumPrevCrashed=false, _rumPrevGround=true, _rumStallT=0;
