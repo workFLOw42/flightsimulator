@@ -43,6 +43,7 @@
 </div>
 <div id="big"></div>
 <canvas id="radar" width="130" height="130" style="position:absolute;top:12px;right:12px;pointer-events:none;"></canvas>
+<canvas id="gyro" width="130" height="130" style="position:absolute;top:150px;right:12px;pointer-events:none;"></canvas>
 
 <div id="pad">Controller: verbinde & drücke eine Taste …</div>
 <div id="hint">
@@ -1143,30 +1144,45 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
     ? new THREE.Vector3(GS.tx - GS.dirX*GS.len, GS.ty + climb, GS.tz - GS.dirZ*GS.len)
     : new THREE.Vector3(goal.x, goal.y, goal.z);
   const dist2 = p0.distanceTo(pEnd);
-  const lead = Math.max(180, dist2*0.9);
   const toGoal = new THREE.Vector3(pEnd.x-p0.x,0,pEnd.z-p0.z);
   if(toGoal.lengthSq()<1e-4) toGoal.copy(flat); else toGoal.normalize();
-  const facing = flat.x*toGoal.x + flat.z*toGoal.z;
+  const facing = flat.x*toGoal.x + flat.z*toGoal.z;   // 1=genau voraus, -1=hinter mir
   const side = new THREE.Vector3(-flat.z,0,flat.x);
   const sideSign = (side.x*toGoal.x + side.z*toGoal.z) >= 0 ? 1 : -1;
   side.multiplyScalar(sideSign);
   const lowRoute = !!opts.lowRoute;
+  // DIREKTER Anflug (Ziel liegt fast voraus, facing>0.8): gerade Linie statt Kurve -> ruhiger.
+  const direct = facing > 0.8;
+  // lead = wie weit die Kurve vorausschaut. Nicht zu nah (nicht hektisch), skaliert mit Distanz.
+  const lead = direct ? dist2*0.5 : Math.max(240, dist2*0.6);
   const midY   = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.4);
   const startY = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.1);
-  const p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
-  const sideAmt = dist2 * (0.35 + 0.5*(1-facing)/2);
-  const p2 = new THREE.Vector3(
-    pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.15, midY,
-    pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.15);
-  arrowPhase = (arrowPhase + dt*0.12) % 1;
+  let p1, p2;
+  if(direct){
+    // gerade Route: beide Kontrollpunkte auf der Sichtlinie zum Ziel (kein seitlicher Bogen)
+    p1 = new THREE.Vector3(p0.x + toGoal.x*dist2*0.33, startY + (pEnd.y-startY)*0.33, p0.z + toGoal.z*dist2*0.33);
+    p2 = new THREE.Vector3(p0.x + toGoal.x*dist2*0.66, midY  + (pEnd.y-midY )*0.33, p0.z + toGoal.z*dist2*0.66);
+  } else {
+    p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
+    const sideAmt = dist2 * (0.30 + 0.4*(1-facing)/2);   // etwas flacherer Bogen als vorher
+    p2 = new THREE.Vector3(
+      pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.15, midY,
+      pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.15);
+  }
+  // Pfeile langsamer laufen lassen (weniger hektisch), v.a. im tiefen Anflug (lowRoute).
+  arrowPhase = (arrowPhase + dt*(lowRoute?0.07:0.10)) % 1;
   const N = arrows.length;
   const split = GS ? 0.62 : 1.0;   // letzten ~38 % = gerader Gleitpfad zur Schwelle
+  // Pfeilgröße adaptiv: nahe Ziele -> größere Pfeile (gut sichtbar), weite -> etwas kleiner.
+  const scl = Math.max(0.9, Math.min(1.8, 900/Math.max(200,dist2)));
+  const hideFront = lowRoute ? 0.14 : 0.10;   // weniger Pfeile ausblenden -> Kette wirkt näher/dichter
   for(let i=0;i<N;i++){
     const ar = arrows[i];
     const t = ((i/N) + arrowPhase) % 1;
-    if(t < 0.22){ ar.visible=false; continue; }   // erste Pfeile direkt vorm Flieger ausblenden
+    if(t < hideFront){ ar.visible=false; continue; }
     ar.visible = true;
     if(ar.material !== arMat) ar.material = arMat;
+    ar.scale.setScalar(scl);
     if(t < split){
       const tt = t/split;
       bezier3(p0,p1,p2,pEnd,tt,_bez);
@@ -2716,6 +2732,42 @@ function updateRadar(){
   }
 }
 
+// ---------- Gyroskop / künstlicher Horizont (unter dem Radar) ----------
+// Zeigt Fluglage: Nicken (Horizontlinie hoch/runter) + Rollen (Horizont kippt). Grüner Ring +
+// "Landelicht", wenn die Lage FÜR EINE SANFTE LANDUNG passt (fast waagerecht, geringe Sinkrate).
+const gyroCv = document.getElementById('gyro');
+const gyroCtx = gyroCv.getContext('2d');
+function updateGyro(){
+  const W=gyroCv.width, H=gyroCv.height, cx=W/2, cy=H/2, R=W/2-6;
+  const g=gyroCtx; g.clearRect(0,0,W,H);
+  // Fluglage aus der Orientierung (Nicken/Rollen)
+  const e = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+  const pitch = e.x;                 // + = Nase hoch
+  const roll  = e.z;                 // Querlage
+  const sink  = -state.vel.y;        // >0 = sinkt
+  const spdK  = state.vel.length();
+  // "Sanfte-Landung-Fenster": fast waagerecht + moderate Sinkrate + nicht zu schnell.
+  const softOk = Math.abs(pitch) < 0.22 && Math.abs(roll) < 0.22 && sink < 6 && sink > -1 && spdK < spec.vTO*1.4;
+  // Instrument-Ring
+  g.save(); g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.clip();
+  // Himmel/Boden, um Roll gedreht und um Pitch verschoben (künstlicher Horizont)
+  g.translate(cx,cy); g.rotate(-roll);
+  const off = Math.max(-R, Math.min(R, pitch*R*1.6));   // Pitch -> Horizont-Verschiebung
+  g.fillStyle='#5aa0e0'; g.fillRect(-R, -R+off, 2*R, 2*R);          // Himmel
+  g.fillStyle='#6b7a45'; g.fillRect(-R, off,    2*R, 2*R);          // Boden
+  g.strokeStyle='#fff'; g.lineWidth=2; g.beginPath(); g.moveTo(-R,off); g.lineTo(R,off); g.stroke();  // Horizontlinie
+  g.restore();
+  // fester Flieger-Marker in der Mitte (zeigt aktuelle Lage relativ zum Horizont)
+  g.strokeStyle='#ffd400'; g.lineWidth=3;
+  g.beginPath(); g.moveTo(cx-16,cy); g.lineTo(cx-5,cy); g.moveTo(cx+5,cy); g.lineTo(cx+16,cy);
+  g.moveTo(cx,cy-4); g.lineTo(cx,cy); g.stroke();
+  // Rahmen: grün wenn Landelage passt, sonst weiß
+  g.strokeStyle = softOk ? '#33dd44' : 'rgba(255,255,255,0.7)';
+  g.lineWidth = softOk ? 4 : 2;
+  g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.stroke();
+  if(softOk){ g.fillStyle='#33dd44'; g.beginPath(); g.arc(cx, H-10, 4, 0, Math.PI*2); g.fill(); }  // Landelicht
+}
+
 // ---------- Loop ----------
 let last=performance.now();
 function loop(now){
@@ -2750,6 +2802,7 @@ function loop(now){
   updatePax(dt);             // Airbus: Figuren steigen seitlich ein/aus (im Paket-Takt)
   updateToggleHint(dt);      // Umschalt-Symbol (RB/LB) ausblenden
   updateRadar();             // Radar/Kompass rechts (immer sichtbar)
+  updateGyro();              // Gyroskop/künstlicher Horizont darunter (Lande-Hilfe)
   updateParachute(dt);       // Schleudersitz-Fallschirm (AlphaJet)
   updateSonic(dt);           // Überschallknall + Vapor-Cone (AlphaJet ab Schallgeschwindigkeit)
   updateShadow();            // Höhen-Schatten am Boden (ab <=20 m)
