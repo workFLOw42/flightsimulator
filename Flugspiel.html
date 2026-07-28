@@ -1879,18 +1879,18 @@ function buildModel(name) {
 // (30 % Schub -> 30 % vMax). accel = wie schnell er sich der Zielgeschwindigkeit nähert (m/s²) —
 // klein = träge (Airbus), groß = spritzig. vTO = Abhebe-/Stall-Geschwindigkeit.
 const PLANE_SPECS = {
-  SuperCup:   { vTO: 32, vMax: 55,  accel: 8,  pitch: 1.3, roll: 2.4, turn: 1.2 },
-  Mustang:    { vTO: 40, vMax: 139, accel: 14, pitch: 1.6, roll: 3.0, turn: 1.3, aero:true, maxAlt: 1400 },  // P-51: ~500 km/h, Looping+Rolle
-  Transall:   { vTO: 42, vMax: 71,  accel: 7,  pitch: 1.0, roll: 1.6, turn: 0.85, aero:false, maxAlt: 600, maxBank: 0.7 }, // Transporter, träge
-  Pitts:      { vTO: 38, vMax: 64,  accel: 10, pitch: 1.6, roll: 3.0, turn: 1.3 },
-  Bf109:      { vTO: 46, vMax: 90,  accel: 11, pitch: 1.2, roll: 2.4, turn: 1.0 },
-  CurtissR3C: { vTO: 44, vMax: 85,  accel: 10, pitch: 1.2, roll: 2.3, turn: 1.0 },
-  Airbus:     { vTO: 62, vMax: 106, accel: 9,  pitch: 0.8, roll: 1.4, turn: 0.7, aero:false, maxAlt: 800, maxBank: 0.6 },  // ~380 km/h, träge
-  Canadair:   { vTO: 40, vMax: 63,  accel: 8,  pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 }, // ~228 km/h
+  SuperCup:   { vTO: 32, vMax: 55,  accel: 16,  pitch: 1.3, roll: 2.4, turn: 1.2 },
+  Mustang:    { vTO: 40, vMax: 139, accel: 24, pitch: 1.6, roll: 3.0, turn: 1.3, aero:true, maxAlt: 1400 },  // P-51: ~500 km/h, Looping+Rolle
+  Transall:   { vTO: 42, vMax: 71,  accel: 15,  pitch: 1.0, roll: 1.6, turn: 0.85, aero:false, maxAlt: 600, maxBank: 0.7 }, // Transporter, träge
+  Pitts:      { vTO: 38, vMax: 64,  accel: 18, pitch: 1.6, roll: 3.0, turn: 1.3 },
+  Bf109:      { vTO: 46, vMax: 90,  accel: 20, pitch: 1.2, roll: 2.4, turn: 1.0 },
+  CurtissR3C: { vTO: 44, vMax: 85,  accel: 19, pitch: 1.2, roll: 2.3, turn: 1.0 },
+  Airbus:     { vTO: 62, vMax: 106, accel: 24,  pitch: 0.8, roll: 1.4, turn: 0.7, aero:false, maxAlt: 800, maxBank: 0.6 },  // ~380 km/h, träge
+  Canadair:   { vTO: 40, vMax: 63,  accel: 16,  pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 }, // ~228 km/h
   // Alpha-Jet: sau schnell + sehr wendig. Überschall bei 100 % (~1300 km/h). Beschleunigt gemächlich.
-  AlphaJet:   { vTO: 55, vMax: 361, accel: 16, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },
+  AlphaJet:   { vTO: 55, vMax: 361, accel: 28, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },
 };
-const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 10, pitch: 1.2, roll: 2.2, turn: 1.0 };
+const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 18, pitch: 1.2, roll: 2.2, turn: 1.0 };
 let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
 
 // ---------- Flugzustand (muss VOR buildModel stehen) ----------
