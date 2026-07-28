@@ -1,7 +1,7 @@
 # Flugspiel 🛩️
 
 Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen — läuft komplett
-**im Browser**, auf Desktop und Android. Gedacht für ein kleines Kind ("Joshi", 5 J.) — daher
+**im Browser**, auf Desktop und Android. Gedacht für kleine Kinder — daher
 **keine Lesetexte im Spiel, nur Symbole und Farben**.
 
 ## ▶️ Spielen

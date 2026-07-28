@@ -933,9 +933,10 @@ function updateCrates(dt){
 // ---------- Waldbrand-Modus (nur Canadair): Feuer auf Inselwiesen löschen ----------
 const flameMat = new THREE.MeshBasicMaterial({ color:0xff5510, transparent:true, opacity:0.9 });
 const smokeMat = new THREE.MeshBasicMaterial({ color:0x555555, transparent:true, opacity:0.5 });
-const arrowMat   = new THREE.MeshBasicMaterial({ color:0xcc4444, transparent:true, opacity:0.8 }); // rot: Tank leer
-const arrowMatMid= new THREE.MeshBasicMaterial({ color:0xe8c020, transparent:true, opacity:0.85 });// gelb: Wasser im Tank
-const arrowMatOk = new THREE.MeshBasicMaterial({ color:0x33cc44, transparent:true, opacity:0.9 }); // grün: Treffer sicher
+// Leitstrahl-Pfeile: kräftige Farben, VOLL sichtbar (depthTest:false -> nie von Terrain/Wellen verdeckt).
+const arrowMat   = new THREE.MeshBasicMaterial({ color:0xff3b3b, transparent:true, opacity:0.95, depthTest:false }); // rot: leer/hin
+const arrowMatMid= new THREE.MeshBasicMaterial({ color:0xffd21e, transparent:true, opacity:0.95, depthTest:false }); // gelb: beladen
+const arrowMatOk = new THREE.MeshBasicMaterial({ color:0x2be63a, transparent:true, opacity:0.98, depthTest:false }); // grün: jetzt!
 let fire = null;         // {group, x, z, r, flames:[]}
 let fireRespawnT = -1;   // Countdown bis neues Feuer (-1 = inaktiv/erstes Feuer sofort)
 let leadArrows = [];     // Pfeilkette (Cyberpunk-Style) zum Feuer
@@ -1012,7 +1013,7 @@ function nearestWaterXZ(x, z){
 function buildLeadArrows(){
   clearArrows();
   for(let i=0;i<14;i++){
-    const ar = new THREE.Mesh(new THREE.ConeGeometry(3.5, 8, 4), arrowMat);
+    const ar = new THREE.Mesh(new THREE.ConeGeometry(5, 13, 5), arrowMat);
     ar.renderOrder = 998;
     scene.add(ar); leadArrows.push(ar);
   }
@@ -1151,33 +1152,27 @@ function drawLeadRoute(arrows, goal, arMat, opts, dt){
   const sideSign = (side.x*toGoal.x + side.z*toGoal.z) >= 0 ? 1 : -1;
   side.multiplyScalar(sideSign);
   const lowRoute = !!opts.lowRoute;
-  // DIREKTER Anflug (Ziel liegt fast voraus, facing>0.8): gerade Linie statt Kurve -> ruhiger.
-  const direct = facing > 0.8;
-  // lead = wie weit die Kurve vorausschaut. Nicht zu nah (nicht hektisch), skaliert mit Distanz.
-  const lead = direct ? dist2*0.5 : Math.max(240, dist2*0.6);
   const midY   = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.4);
   const startY = lowRoute ? Math.min(p0.y, ISLAND_Y+18) : (p0.y + (pEnd.y-p0.y)*0.1);
-  let p1, p2;
-  if(direct){
-    // gerade Route: beide Kontrollpunkte auf der Sichtlinie zum Ziel (kein seitlicher Bogen)
-    p1 = new THREE.Vector3(p0.x + toGoal.x*dist2*0.33, startY + (pEnd.y-startY)*0.33, p0.z + toGoal.z*dist2*0.33);
-    p2 = new THREE.Vector3(p0.x + toGoal.x*dist2*0.66, midY  + (pEnd.y-midY )*0.33, p0.z + toGoal.z*dist2*0.66);
-  } else {
-    p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
-    const sideAmt = dist2 * (0.30 + 0.4*(1-facing)/2);   // etwas flacherer Bogen als vorher
-    p2 = new THREE.Vector3(
-      pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.15, midY,
-      pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.15);
-  }
-  // Pfeile durchgehend RUHIG laufen lassen (nicht hektisch) — für alle Zustände gleich langsam.
-  arrowPhase = (arrowPhase + dt*0.06) % 1;
+  // IMMER eine WEICHE Kurve (ruhig, kinderfreundlich, keine 90°-Knicke):
+  // P1 startet in Flugrichtung nach vorne (weicher Einlauf), P2 nähert das Ziel von der Seite an.
+  // Liegt das Ziel seitlich/hinter mir (facing klein/negativ), wird der Bogen GROSS und ruhig
+  // (weite Runde), statt scharf abzuknicken. Bei Ziel voraus ist der Bogen fast gerade.
+  const lead = Math.max(220, dist2*0.55);
+  const turnAmt = (1 - facing) / 2;                 // 0 (voraus) .. 1 (genau hinter mir)
+  const p1 = new THREE.Vector3(p0.x + flat.x*lead, startY, p0.z + flat.z*lead);
+  const sideAmt = dist2 * (0.15 + 0.55*turnAmt);    // je weiter hinten, desto weiter außen = große Runde
+  const p2 = new THREE.Vector3(
+    pEnd.x + side.x*sideAmt - toGoal.x*dist2*0.12, midY,
+    pEnd.z + side.z*sideAmt - toGoal.z*dist2*0.12);
+  // Pfeile durchgehend RUHIG laufen lassen (leichtes Fließen, nicht hektisch).
+  arrowPhase = (arrowPhase + dt*0.05) % 1;
   const N = arrows.length;
   const split = GS ? 0.62 : 1.0;   // letzten ~38 % = gerader Gleitpfad zur Schwelle
-  // Pfeilgröße adaptiv: nahe Ziele -> größere Pfeile (gut sichtbar), weite -> etwas kleiner.
-  const scl = Math.max(0.9, Math.min(1.8, 900/Math.max(200,dist2)));
-  // Bei KURZEN Routen (nahes Ziel, rot/grün) den Kettenanfang weiter nach vorne schieben, damit die
-  // Pfeile nicht direkt am Cockpit kleben/flackern. Je kürzer die Route, desto mehr vorne ausblenden.
-  const hideFront = Math.max(0.18, Math.min(0.5, 260/Math.max(120,dist2)));
+  // Pfeile durchgehend GROSS & gut sichtbar; nahe Ziele noch etwas größer.
+  const scl = Math.max(1.3, Math.min(2.2, 1200/Math.max(200,dist2)));
+  // Nur ganz wenige Pfeile direkt vorm Flieger ausblenden -> die Kette ist durchgehend sichtbar.
+  const hideFront = 0.08;
   for(let i=0;i<N;i++){
     const ar = arrows[i];
     const t = ((i/N) + arrowPhase) % 1;
@@ -1265,7 +1260,7 @@ function updateFire(dt){
 function makeArrowChain(n){
   const arr=[];
   for(let i=0;i<n;i++){
-    const ar=new THREE.Mesh(new THREE.ConeGeometry(3.5,8,4), arrowMat);
+    const ar=new THREE.Mesh(new THREE.ConeGeometry(5,13,5), arrowMat);
     ar.renderOrder=998; ar.visible=false; scene.add(ar); arr.push(ar);
   }
   return arr;
