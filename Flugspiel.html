@@ -1613,6 +1613,7 @@ function makeVaporCone(){
 }
 function triggerSonicBoom(){
   playSonicBoom();
+  rumble(400, 1.0, 0.9);              // kräftiger Stoß wie beim Crash
   if(!vaporCone) vaporCone = makeVaporCone();
   vaporT = 0.6;                       // sichtbar ~0,6 s
 }
@@ -2161,7 +2162,6 @@ addEventListener('keydown', e => {
   if(e.code==='KeyT') toggleMissions();   // RB-Ersatz: Minispiele an/aus
   if(e.code==='KeyG') toggleLead();       // LB-Ersatz: Leitfaden an/aus
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
-  if(e.code==='KeyJ'){ rumble(500, 1.0, 1.0); document.getElementById('pad').textContent='Rumble: '+_rumDbg; }  // Vibrations-Test
 
   if(e.code==='Space') e.preventDefault();
 });
