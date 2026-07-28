@@ -480,7 +480,7 @@ function lineOfSightFree(x1, z1, x2, z2){
 }
 // Rettungs-Standplatz nahe dem Wrack: hindernisfrei (Häuser/Hafen/Carrier) UND mit freier Sicht
 // zum Wrack (Strahl geht durch nichts). onLand -> Stelle muss Land sein (Auto); sonst Wasser (Boot).
-function rescueSpotNear(wx, wz, onLand){
+function rescueSpotNear(wx, wz, onLand, strict){
   for(let r=16; r<=90; r+=10){
     for(let a=0; a<12; a++){
       const px = wx + Math.cos(a/12*6.283)*r, pz = wz + Math.sin(a/12*6.283)*r;
@@ -488,7 +488,8 @@ function rescueSpotNear(wx, wz, onLand){
          && spotFreeOfBuildings(px, pz) && lineOfSightFree(px, pz, wx, wz)) return { x:px, z:pz };
     }
   }
-  return freeSpotNear(wx+22, wz+8);   // Fallback
+  // strict: nur zurückgeben, wenn das gewünschte Element (Land/Wasser) NAH am Wrack existiert.
+  return strict ? null : freeSpotNear(wx+22, wz+8);
 }
 
 // baut eine Insel für Zelle (cx,cz). Gibt eine Group zurück (oder null = kein Land).
@@ -734,70 +735,71 @@ function faceTowards(obj, tx, tz){
   obj.rotation.y = ang + Math.PI;   // -Z ist die Front
 }
 
-let rescue = null;   // {group, jet, wreck, start, stop, groundY, t}
-function spawnRescue(x, z, onLand) {
-  clearRescue();
+let rescueUnits = [];   // Liste aktiver Einheiten: [{group, jet, wreck, start, stop, t}]
+// Eine Einheit (Auto=Land ODER Boot=Wasser) neben dem Wrack aufstellen. Gibt Einheit oder null.
+function makeRescueUnit(x, z, onLand){
+  const sp = rescueSpotNear(x, z, onLand, true);   // strict: nur wenn dieses Element NAH da ist
+  if(!sp) return null;
   const g = onLand ? makeFireTruck() : makeFireBoat();
   const groundY = onLand ? ISLAND_Y : 0;
-  // Zielposition: NAH neben dem Wrack, gebäudefrei UND mit freier Sicht (Wasserstrahl darf nicht
-  // durch ein Haus). Auf Wasser (Boot) ist alles frei -> feste Seitenposition.
-  // Standplatz: nah, hindernisfrei, freie Sicht (Auto auf Land, Boot auf Wasser — beide meiden
-  // Häuser, Hafen und Trägerdeck).
-  const sp = rescueSpotNear(x, z, onLand);
-  const stop  = new THREE.Vector3(sp.x, groundY, sp.z);
-  // Startposition: in Verlängerung Wrack->Stop weiter außen (fährt aus derselben Richtung ins Bild),
-  // ebenfalls hindernisfrei auf der passenden Oberfläche.
+  const stop = new THREE.Vector3(sp.x, groundY, sp.z);
+  // Startposition: in Verlängerung Wrack->Stop weiter außen, ebenfalls im richtigen Element.
   const ox = sp.x - x, oz = sp.z - z, ol = Math.hypot(ox, oz) || 1;
   let far = { x: sp.x + ox/ol*120, z: sp.z + oz/ol*120 };
-  if(onLand ? !isOnLand(far.x,far.z) : isOnLand(far.x,far.z) || !spotFreeOfBuildings(far.x,far.z)){
-    const alt = rescueSpotNear(sp.x + ox/ol*120, sp.z + oz/ol*120, onLand);
-    if(alt) far = alt;
-  }
+  const farOk = (onLand ? isOnLand(far.x,far.z) : !isOnLand(far.x,far.z)) && spotFreeOfBuildings(far.x,far.z);
+  if(!farOk){ const alt = rescueSpotNear(sp.x + ox/ol*120, sp.z + oz/ol*120, onLand, true); if(alt) far = alt; }
   const start = new THREE.Vector3(far.x, groundY, far.z);
-  g.position.copy(start);
-  faceTowards(g, x, z);   // Front (-Z) zum Wrack ausrichten
-  scene.add(g);
-  // EIN Wasserstrahl (Kegel), Spitze zeigt zum Wrack – Länge/Winkel in updateRescue
-  const jet = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1, 8), waterJetMat);
-  scene.add(jet);
-  rescue = { group:g, jet, wreck:new THREE.Vector3(x, groundY+1.5, z), start, stop, groundY, t:0 };
+  g.position.copy(start); faceTowards(g, x, z); scene.add(g);
+  const jet = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1, 8), waterJetMat); scene.add(jet);
+  return { group:g, jet, wreck:new THREE.Vector3(x, groundY+1.5, z), start, stop, t:0 };
+}
+function spawnRescue(x, z, onLand) {
+  clearRescue();
+  // An der Land/Wasser-Grenze (Hafen, Strand) kommen BEIDE — jedes sauber aus seinem Element.
+  // Sonst nur das passende (mitten an Land nur Auto, mitten im Meer nur Boot).
+  const truck = makeRescueUnit(x, z, true);    // Auto von Land
+  const boat  = makeRescueUnit(x, z, false);   // Boot vom Wasser
+  if(truck) rescueUnits.push(truck);
+  if(boat)  rescueUnits.push(boat);
+  // Sicherheitsnetz: falls keins ein sauberes Element nahe fand -> das zum Crashort passende erzwingen.
+  if(rescueUnits.length === 0){
+    const sp = rescueSpotNear(x, z, onLand, false);
+    const groundY = onLand ? ISLAND_Y : 0;
+    const g = onLand ? makeFireTruck() : makeFireBoat();
+    const start = new THREE.Vector3(x + 140, groundY, z + 60);
+    g.position.copy(start); faceTowards(g, x, z); scene.add(g);
+    const jet = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1, 8), waterJetMat); scene.add(jet);
+    rescueUnits.push({ group:g, jet, wreck:new THREE.Vector3(x, groundY+1.5, z),
+      start, stop:new THREE.Vector3(sp.x, groundY, sp.z), t:0 });
+  }
   startSiren();
 }
 function clearRescue(){
   stopSiren();
-  if(rescue){ scene.remove(rescue.group); scene.remove(rescue.jet); rescue = null; }
+  for(const r of rescueUnits){ scene.remove(r.group); scene.remove(r.jet); }
+  rescueUnits = [];
 }
 function updateRescue(dt){
-  if(!rescue) return;
-  rescue.t += dt;
-
-  // Phase 1 (0–1,6 s): ins Bild fahren. Phase 2: stehen & löschen.
-  const driveT = Math.min(1, rescue.t / 1.6);
-  const ease = 1 - Math.pow(1 - driveT, 3);   // sanft abbremsen
-  rescue.group.position.lerpVectors(rescue.start, rescue.stop, ease);
-  faceTowards(rescue.group, rescue.wreck.x, rescue.wreck.z);
-
-  // Blaulicht blinkt
-  const beacon = rescue.group.userData.beacon;
-  if(beacon) beacon.material = (Math.floor(rescue.t*6)%2===0) ? blueMat : darkMat;
-
-  // Wasserstrahl erst ab Phase 2 (Fahrzeug steht)
-  const jet = rescue.jet;
-  if(driveT >= 1){
-    jet.visible = (Math.floor(rescue.t*12)%2===0);   // flackern
-    // Düse etwas über dem Fahrzeug
-    const noz = rescue.group.position.clone(); noz.y += 5;
-    const target = rescue.wreck;
-    const mid = noz.clone().lerp(target, 0.5);
-    const len = noz.distanceTo(target);
-    jet.position.copy(mid);
-    jet.scale.set(1, len, 1);                          // Kegel auf Distanz strecken
-    // Kegel: Spitze (+Y) SCHMAL an der Düse, breite Basis (-Y) fächert zum Wrack.
-    // Also -Y-Achse zum Wrack ausrichten (Strahl geht VOM Boot weg).
-    const dir = target.clone().sub(noz).normalize();
-    jet.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0), dir);
-  } else {
-    jet.visible = false;
+  if(!rescueUnits.length) return;
+  for(const r of rescueUnits){
+    r.t += dt;
+    const driveT = Math.min(1, r.t / 1.6);            // Phase 1: ins Bild fahren, Phase 2: löschen
+    const ease = 1 - Math.pow(1 - driveT, 3);
+    r.group.position.lerpVectors(r.start, r.stop, ease);
+    faceTowards(r.group, r.wreck.x, r.wreck.z);
+    const beacon = r.group.userData.beacon;
+    if(beacon) beacon.material = (Math.floor(r.t*6)%2===0) ? blueMat : darkMat;
+    const jet = r.jet;
+    if(driveT >= 1){
+      jet.visible = (Math.floor(r.t*12)%2===0);
+      const noz = r.group.position.clone(); noz.y += 5;
+      const target = r.wreck;
+      const mid = noz.clone().lerp(target, 0.5);
+      jet.position.copy(mid);
+      jet.scale.set(1, noz.distanceTo(target), 1);
+      const dir = target.clone().sub(noz).normalize();
+      jet.quaternion.setFromUnitVectors(new THREE.Vector3(0,-1,0), dir);
+    } else jet.visible = false;
   }
 }
 
