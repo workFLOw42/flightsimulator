@@ -380,7 +380,7 @@ function islandBuildings(cx, cz) {
 
 // Trifft das Flugzeug an Weltposition (x,y,z) ein Gebäude? (Türme/Häuser, keine Hügel-Extra).
 // Nutzt dieselbe deterministische Bauwerks-Liste wie buildIsland.
-function hitsBuilding(x, y, z) {
+function hitsBuilding(x, y, z, skipHarbor) {
   const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
   for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) {
     const info = islandInfo(pcx+dx, pcz+dz);
@@ -405,7 +405,7 @@ function hitsBuilding(x, y, z) {
     }
     // Hafen: solide Struktur am Inselrand -> Treffer bis ~20 m Höhe (Kräne/Masten)
     const hb = harborLocal(pcx+dx, pcz+dz);
-    if(y - ISLAND_Y < harborHeight + 3 && Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.45) return true;
+    if(!skipHarbor && y - ISLAND_Y < harborHeight + 3 && Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.45) return true;
   }
   // Flugzeugträger: seitlich in den Rumpf/Aufbau fliegen = Treffer. Das Flugdeck (oben, landbar)
   // ist frei -> Treffer nur UNTERHALB der Deckhöhe (Bordwand) oder am Turm knapp über Deck.
@@ -431,15 +431,30 @@ function pushOutOfHill(x, z){
   }
   return null;
 }
+// Wie carrierAt, aber mit der vollen RUMPF-Breite (Bordwand ragt seitlich ueber das Deck hinaus).
+// Nur fuer die Kollision: seitliches Einfliegen unter Deckhoehe soll die Flanke treffen.
+function carrierHullAt(x, z){
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  const HULL_HALF_X = FORD_DECK_HALF_X + 4;   // Rumpf ist 4 m/Seite breiter als das Flugdeck
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const info = carrierInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const rx = x-info.wx, rz = z-info.wz;
+    const cs = Math.cos(info.rot), sn = Math.sin(info.rot);
+    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+    if(Math.abs(lx) <= HULL_HALF_X && Math.abs(lz) <= FORD_LEN*0.5)
+      return { info, cx:pcx+dx, cz:pcz+dz };
+  }
+  return null;
+}
 function _hitsBuildingCarrier(x, y, z){
-  const car = carrierAt(x, z);
+  const car = carrierHullAt(x, z);
   if(car){
     if(y < fordDeckY - 1.5) return true;                       // unter dem Deck = in die Bordwand
     // Turm (Insel-Aufbau) steht seitlich auf dem Deck -> kleiner Sperrblock knapp über Deck
     const info=car.info, rx=x-info.wx, rz=z-info.wz;
     const cs=Math.cos(info.rot), sn=Math.sin(info.rot);
     const lx2=rx*cs - rz*sn, lz2=rx*sn + rz*cs;
-    if(y < fordDeckY + 16 && Math.abs(lx2-(FORD_DECK_HALF_X-4)) < 8 && Math.abs(lz2-FORD_LEN*0.28) < 12) return true;
+    if(y < fordDeckY + 22 && Math.abs(lx2-(FORD_DECK_HALF_X-4)) < 10 && Math.abs(lz2-FORD_LEN*0.28) < 14) return true;
   }
   return false;
 }
@@ -1238,7 +1253,7 @@ function updateFire(dt){
   // Ampel: rot = Tank leer, gelb = Wasser da, grün = Treffer sicher
   const aimOk = haveWater && alt < 120 && impactDist < fire.r + 25;
   const arMat = aimOk ? arrowMatOk : (haveWater ? arrowMatMid : arrowMat);
-  const onTarget = haveWater && alt < 130 && impactDist < fire.r;
+  const onTarget = haveWater && alt < 130 && (impactDist < fire.r || Math.hypot(fire.x-state.pos.x, fire.z-state.pos.z) < fire.r);
 
   // Leitroute: mit Wasser -> weiche Kurve zum Feuer (Überflughöhe). Ohne Wasser -> tiefer
   // Gleitpfad zur nächsten Wasserstelle (zeigt, wie tief man zum Tanken anfliegen muss).
@@ -2521,7 +2536,7 @@ function stepPhysics(dt, inp){
   state.pos.addScaledVector(state.vel, dt);
 
   // ---- Gebäude-Kollision: Prallt am Haus ab (fliegt NICHT durch) und fällt GERADE nach unten ----
-  if(!state.onGround && !state.falling && hitsBuilding(state.pos.x, state.pos.y, state.pos.z)){
+  if(!state.falling && hitsBuilding(state.pos.x, state.pos.y, state.pos.z, state.onGround)){
     state.falling = true;
     playCrash();                       // 1. Geräusch: Aufprall gegen das Hindernis
     state.throttle = 0;
