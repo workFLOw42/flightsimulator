@@ -306,7 +306,7 @@ function carrierAt(x, z){
     // Welt->lokal (Inverse der three.js rotation.y): x_l=rx*cos-rz*sin, z_l=rx*sin+rz*cos
     const cs = Math.cos(info.rot), sn = Math.sin(info.rot);
     const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
-    if(Math.abs(lx) <= FORD_DECK_HALF_X && Math.abs(lz) <= FORD_LEN*0.5)
+    if(Math.abs(lx) <= fordDeckHalfX && Math.abs(lz) <= FORD_LEN*0.5)
       return { info, cx:pcx+dx, cz:pcz+dz };
   }
   return null;
@@ -435,7 +435,7 @@ function pushOutOfHill(x, z){
 // Nur fuer die Kollision: seitliches Einfliegen unter Deckhoehe soll die Flanke treffen.
 function carrierHullAt(x, z){
   const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
-  const HULL_HALF_X = FORD_DECK_HALF_X + 4;   // Rumpf ist 4 m/Seite breiter als das Flugdeck
+  const HULL_HALF_X = fordHullHalfX;   // aus GLB vermessene Rumpf-Halbbreite (Deck + Puffer)
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
     const info = carrierInfo(pcx+dx, pcz+dz); if(!info) continue;
     const rx = x-info.wx, rz = z-info.wz;
@@ -456,7 +456,7 @@ function _hitsBuildingCarrier(x, y, z){
     const cs=Math.cos(info.rot), sn=Math.sin(info.rot);
     const lx2=rx*cs - rz*sn, lz2=rx*sn + rz*cs;
     if(fordTower){
-      const P=4;   // Puffer = Rasterweite: gleicht die Quantelung der Vermessung aus (kein Rand-Schlupf)
+      const P=3;   // Puffer = Rasterweite (STEP): gleicht die Quantelung der Vermessung genau aus
       if(y < fordTower.top && lx2 > fordTower.minX-P && lx2 < fordTower.maxX+P
                            && lz2 > fordTower.minZ-P && lz2 < fordTower.maxZ+P) return true;
     } else {
@@ -1844,6 +1844,10 @@ function preloadParachute(){
 // Flugzeugträger-GLB (Gerald R. Ford by Usman Zia) — schwimmende Landebahn auf dem Meer.
 let fordTemplate = null, fordDeckY = 12;   // Deckhöhe über Wasser (nach Normierung gesetzt)
 let fordTower = null;   // vermessener Turm/Aufbau (lokale Box) -> exakte Kollision statt Schätzung
+// Deck-/Rumpf-Halbbreite werden aus dem echten GLB vermessen (Default = Schätzung, bis geladen).
+// Das echte Ford-Deck ist ~35 m halbbreit, nicht 19 -> sonst Turm/Rand durchlässig & Landung zu schmal.
+let fordDeckHalfX = FORD_DECK_HALF_X;       // landbares Deck (X')
+let fordHullHalfX = FORD_DECK_HALF_X + 4;   // Rumpf/Kollision (etwas breiter als Deck)
 function preloadFord(){
   if(!window.FORD_GLB || !THREE.GLTFLoader) return;
   const gl = new THREE.GLTFLoader();
@@ -1871,12 +1875,17 @@ function preloadFord(){
     }
     ys.sort((a,b)=>a-b);
     fordDeckY = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
+    // Echte Deck-/Rumpfbreite aus der Bounding-Box übernehmen (das Ford-Deck ist ~35 m halbbreit,
+    // nicht die geschätzten 19). Damit landet man auf dem GANZEN sichtbaren Deck und Turm/Ränder
+    // sind über die volle Breite kollidierbar. Länge (Z) stimmte bereits mit FORD_LEN/2 überein.
+    fordDeckHalfX = Math.max(Math.abs(box3.min.x), Math.abs(box3.max.x));
+    fordHullHalfX = fordDeckHalfX + 2;
     // Turm/Aufbau ("Insel") des echten Modells robust vermessen: Deck mit einem Raster von oben
-    // abtasten und Trefferhöhen speichern. Dann vom HÖCHSTEN Punkt (Turmspitze/Mast) aus nur über
-    // ZUSAMMENHÄNGENDE, deutlich erhöhte Zellen "wachsen" (Region-Growing). So bleibt die Box eng
-    // um den seitlichen Aufbau; niedrige Reling/Kanten entlang der ganzen Schiffslänge zählen NICHT
-    // mit -> die Bounding-Box reicht nicht in die Landebahn-Mitte (kein unsichtbares Hindernis).
-    const HHX = FORD_DECK_HALF_X + 4, STEP = 3;
+    // abtasten (über die VOLLE Breite!) und Trefferhöhen speichern. Dann vom HÖCHSTEN Punkt
+    // (Turmspitze/Mast) aus nur über ZUSAMMENHÄNGENDE, deutlich erhöhte Zellen "wachsen"
+    // (Region-Growing). So bleibt die Box eng um den seitlichen Aufbau; niedrige Reling/Kanten
+    // entlang der Schiffslänge zählen NICHT mit -> Bounding-Box reicht nicht in die Landebahn-Mitte.
+    const HHX = fordDeckHalfX + 2, STEP = 3;
     const cells = new Map();   // "ix,iz" -> {gx,gz,y};  peak = höchste Zelle
     let peak = null;
     for(let ix=0, gx=-HHX; gx<=HHX; gx+=STEP, ix++){
