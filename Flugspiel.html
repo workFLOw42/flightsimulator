@@ -1871,25 +1871,43 @@ function preloadFord(){
     }
     ys.sort((a,b)=>a-b);
     fordDeckY = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
-    // Turm/Aufbau ("Insel") des echten Modells vermessen: Raster von oben abtasten; Punkte, die
-    // DEUTLICH über der Deckhöhe liegen, gehören zum Aufbau. Getrennt nach Deckseite clustern und
-    // die dominante Seite nehmen (die Insel sitzt seitlich) -> Landebahn (Mitte) bleibt frei.
-    const HHX = FORD_DECK_HALF_X + 4;
-    const sd = [ {n:0,minX:1e9,maxX:-1e9,minZ:1e9,maxZ:-1e9,top:-1e9},
-                 {n:0,minX:1e9,maxX:-1e9,minZ:1e9,maxZ:-1e9,top:-1e9} ];
-    for(let gx=-HHX; gx<=HHX; gx+=3){
-      for(let gz=-FORD_LEN*0.5; gz<=FORD_LEN*0.5; gz+=4){
+    // Turm/Aufbau ("Insel") des echten Modells robust vermessen: Deck mit einem Raster von oben
+    // abtasten und Trefferhöhen speichern. Dann vom HÖCHSTEN Punkt (Turmspitze/Mast) aus nur über
+    // ZUSAMMENHÄNGENDE, deutlich erhöhte Zellen "wachsen" (Region-Growing). So bleibt die Box eng
+    // um den seitlichen Aufbau; niedrige Reling/Kanten entlang der ganzen Schiffslänge zählen NICHT
+    // mit -> die Bounding-Box reicht nicht in die Landebahn-Mitte (kein unsichtbares Hindernis).
+    const HHX = FORD_DECK_HALF_X + 4, STEP = 3;
+    const cells = new Map();   // "ix,iz" -> {gx,gz,y};  peak = höchste Zelle
+    let peak = null;
+    for(let ix=0, gx=-HHX; gx<=HHX; gx+=STEP, ix++){
+      for(let iz=0, gz=-FORD_LEN*0.5; gz<=FORD_LEN*0.5; gz+=STEP, iz++){
         const rc = new THREE.Raycaster(new THREE.Vector3(gx, box3.max.y+50, gz), new THREE.Vector3(0,-1,0));
         const hh = rc.intersectObject(obj, true);
-        if(hh.length && hh[0].point.y > fordDeckY + 6){
-          const s = gx < 0 ? sd[0] : sd[1];
-          s.n++; s.minX=Math.min(s.minX,gx); s.maxX=Math.max(s.maxX,gx);
-          s.minZ=Math.min(s.minZ,gz); s.maxZ=Math.max(s.maxZ,gz); s.top=Math.max(s.top,hh[0].point.y);
+        if(hh.length){
+          const cell = { gx, gz, y:hh[0].point.y };
+          cells.set(ix+','+iz, cell);
+          if(!peak || cell.y > peak.y) peak = { ix, iz, y:cell.y };
         }
       }
     }
-    const dom = sd[0].n >= sd[1].n ? sd[0] : sd[1];
-    fordTower = dom.n >= 3 ? { minX:dom.minX, maxX:dom.maxX, minZ:dom.minZ, maxZ:dom.maxZ, top:dom.top } : null;
+    fordTower = null;
+    if(peak && peak.y > fordDeckY + 8){
+      const hiThresh = fordDeckY + 8;   // Reling/Catwalks (~1-2 m) fallen weg, Aufbau (>>8 m) bleibt
+      const seen = new Set(), stack = [[peak.ix, peak.iz]];
+      let minX=1e9,maxX=-1e9,minZ=1e9,maxZ=-1e9,top=-1e9,cnt=0;
+      while(stack.length){
+        const [ix,iz] = stack.pop(), key = ix+','+iz;
+        if(seen.has(key)) continue; seen.add(key);
+        const c = cells.get(key);
+        if(!c || c.y < hiThresh) continue;         // Lücke -> Wachstum stoppt hier
+        cnt++;
+        minX=Math.min(minX,c.gx); maxX=Math.max(maxX,c.gx);
+        minZ=Math.min(minZ,c.gz); maxZ=Math.max(maxZ,c.gz); top=Math.max(top,c.y);
+        for(let dix=-1;dix<=1;dix++)for(let diz=-1;diz<=1;diz++)
+          if(dix||diz) stack.push([ix+dix, iz+diz]);
+      }
+      if(cnt >= 4) fordTower = { minX, maxX, minZ, maxZ, top };
+    }
     const wrap = new THREE.Group(); wrap.add(obj);
     fordTemplate = wrap;
     refreshCarriers();   // bereits platzierte Platzhalter durch echtes Modell ersetzen
@@ -2580,7 +2598,7 @@ function stepPhysics(dt, inp){
     state.vel.x = 0; state.vel.z = 0;                      // strikt senkrecht (nicht durchs Haus driften)
     state.vel.y -= 22*dt;                                  // fällt beschleunigt gerade runter
     state.pos.y += state.vel.y * dt;
-    const gy = isOnLand(state.pos.x, state.pos.z) ? ISLAND_Y : 0;
+    const gy = isOnCarrier(state.pos.x, state.pos.z) ? fordDeckY : (isOnLand(state.pos.x, state.pos.z) ? ISLAND_Y : 0);
     if(state.pos.y <= gy){
       state.pos.y = gy; state.falling = false;
       state.crashed = true; state.crashTimer = 3.0;
