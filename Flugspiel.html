@@ -450,11 +450,18 @@ function _hitsBuildingCarrier(x, y, z){
   const car = carrierHullAt(x, z);
   if(car){
     if(y < fordDeckY - 1.5) return true;                       // unter dem Deck = in die Bordwand
-    // Turm (Insel-Aufbau) steht seitlich auf dem Deck -> kleiner Sperrblock knapp über Deck
+    // Turm (Insel-Aufbau) steht seitlich auf dem Deck. Bevorzugt die aus dem echten GLB
+    // VERMESSENE Box (fordTower); solange das Modell noch lädt, greift die Schätzung.
     const info=car.info, rx=x-info.wx, rz=z-info.wz;
     const cs=Math.cos(info.rot), sn=Math.sin(info.rot);
     const lx2=rx*cs - rz*sn, lz2=rx*sn + rz*cs;
-    if(y < fordDeckY + 22 && Math.abs(lx2-(FORD_DECK_HALF_X-4)) < 10 && Math.abs(lz2-FORD_LEN*0.28) < 14) return true;
+    if(fordTower){
+      const P=4;   // Puffer = Rasterweite: gleicht die Quantelung der Vermessung aus (kein Rand-Schlupf)
+      if(y < fordTower.top && lx2 > fordTower.minX-P && lx2 < fordTower.maxX+P
+                           && lz2 > fordTower.minZ-P && lz2 < fordTower.maxZ+P) return true;
+    } else {
+      if(y < fordDeckY + 22 && Math.abs(lx2-(FORD_DECK_HALF_X-4)) < 10 && Math.abs(lz2-FORD_LEN*0.28) < 14) return true;
+    }
   }
   return false;
 }
@@ -1836,6 +1843,7 @@ function preloadParachute(){
 
 // Flugzeugträger-GLB (Gerald R. Ford by Usman Zia) — schwimmende Landebahn auf dem Meer.
 let fordTemplate = null, fordDeckY = 12;   // Deckhöhe über Wasser (nach Normierung gesetzt)
+let fordTower = null;   // vermessener Turm/Aufbau (lokale Box) -> exakte Kollision statt Schätzung
 function preloadFord(){
   if(!window.FORD_GLB || !THREE.GLTFLoader) return;
   const gl = new THREE.GLTFLoader();
@@ -1863,6 +1871,25 @@ function preloadFord(){
     }
     ys.sort((a,b)=>a-b);
     fordDeckY = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
+    // Turm/Aufbau ("Insel") des echten Modells vermessen: Raster von oben abtasten; Punkte, die
+    // DEUTLICH über der Deckhöhe liegen, gehören zum Aufbau. Getrennt nach Deckseite clustern und
+    // die dominante Seite nehmen (die Insel sitzt seitlich) -> Landebahn (Mitte) bleibt frei.
+    const HHX = FORD_DECK_HALF_X + 4;
+    const sd = [ {n:0,minX:1e9,maxX:-1e9,minZ:1e9,maxZ:-1e9,top:-1e9},
+                 {n:0,minX:1e9,maxX:-1e9,minZ:1e9,maxZ:-1e9,top:-1e9} ];
+    for(let gx=-HHX; gx<=HHX; gx+=3){
+      for(let gz=-FORD_LEN*0.5; gz<=FORD_LEN*0.5; gz+=4){
+        const rc = new THREE.Raycaster(new THREE.Vector3(gx, box3.max.y+50, gz), new THREE.Vector3(0,-1,0));
+        const hh = rc.intersectObject(obj, true);
+        if(hh.length && hh[0].point.y > fordDeckY + 6){
+          const s = gx < 0 ? sd[0] : sd[1];
+          s.n++; s.minX=Math.min(s.minX,gx); s.maxX=Math.max(s.maxX,gx);
+          s.minZ=Math.min(s.minZ,gz); s.maxZ=Math.max(s.maxZ,gz); s.top=Math.max(s.top,hh[0].point.y);
+        }
+      }
+    }
+    const dom = sd[0].n >= sd[1].n ? sd[0] : sd[1];
+    fordTower = dom.n >= 3 ? { minX:dom.minX, maxX:dom.maxX, minZ:dom.minZ, maxZ:dom.maxZ, top:dom.top } : null;
     const wrap = new THREE.Group(); wrap.add(obj);
     fordTemplate = wrap;
     refreshCarriers();   // bereits platzierte Platzhalter durch echtes Modell ersetzen
