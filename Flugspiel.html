@@ -53,7 +53,6 @@
 <canvas id="gyro" width="130" height="130" style="position:absolute;top:150px;right:12px;pointer-events:none;"></canvas>
 
 <div id="pad">Controller: verbinde & drücke eine Taste …</div>
-<div id="rumdbg" style="position:absolute;top:290px;right:12px;max-width:300px;color:#cfe;background:rgba(10,25,40,0.82);border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;font-family:monospace;pointer-events:none;user-select:none;display:none;white-space:pre-wrap;"></div>
 <div id="hint">
   <div class="hcol">
     <div class="htitle">🎮 Controller</div>
@@ -2328,32 +2327,6 @@ function updateRumble(dt){
   } else _rumStallT = 0;
 }
 
-// ---- Vibrations-Diagnose (Select/Back-Taste): zeigt, was der Browser fuer den Controller meldet ----
-let _rumDbgShow = false;
-function toggleRumDbg(){ _rumDbgShow = !_rumDbgShow;
-  document.getElementById('rumdbg').style.display = _rumDbgShow ? 'block' : 'none'; }
-function drawRumDbg(){
-  if(!_rumDbgShow) return;
-  const el = document.getElementById('rumdbg');
-  let s = 'VIBRATIONS-DIAGNOSE\n';
-  if(gamepadIndex===null){ el.textContent = s + 'kein Gamepad verbunden'; return; }
-  const gp = navigator.getGamepads()[gamepadIndex];
-  if(!gp){ el.textContent = s + 'Gamepad null'; return; }
-  const va = gp.vibrationActuator;
-  const ha = gp.hapticActuators && gp.hapticActuators[0];
-  s += 'id: ' + gp.id + '\n';
-  s += 'mapping: ' + (gp.mapping || '(leer)') + '\n';
-  s += 'vibrationActuator: ' + (va ? 'JA' : 'nein') + '\n';
-  if(va){
-    s += '  .playEffect: ' + (va.playEffect ? 'JA' : 'nein') + '\n';
-    s += '  .pulse: ' + (va.pulse ? 'JA' : 'nein') + '\n';
-    if(va.type) s += '  .type: ' + va.type + '\n';
-  }
-  s += 'hapticActuators[0]: ' + (ha ? 'JA' : 'nein') + '\n';
-  s += 'letzter Versuch: ' + (_rumDbg || '(noch keiner)') + '\n';
-  s += '\n[B] = Test-Rumble ausloesen';
-  el.textContent = s;
-}
 let btnPrev = {};
 let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
 let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
@@ -2428,7 +2401,6 @@ function readInput() {
       if(edge(gp,1)) buttonB();       // B: Canadair Wasser · AlphaJet Schleudersitz
       if(edge(gp,5)) toggleMissions();// RB: Minispiele an/aus
 
-      if(edge(gp,8)) toggleRumDbg();  // Select/Back = Vibrations-Diagnose ein/aus
       if(edge(gp,9)) resetPlane();    // Start/Menu = Reset
       // D-Pad: oben(12)=Hilfe, unten(13)=Ton an/aus, links(14)/rechts(15)=Seitenansicht (gehalten).
       if(edge(gp,12)) toggleHelp();
@@ -2914,7 +2886,6 @@ function loop(now){
   }
   stepPhysics(dt,inp);
   updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
-  drawRumDbg();              // Vibrations-Diagnose aktualisieren (falls sichtbar)
   updateEngineSound();
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
   updateWaterDrop(dt);       // Wasserabwurf-Animation
