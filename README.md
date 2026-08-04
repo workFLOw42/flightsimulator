@@ -57,6 +57,12 @@ komplett abschalten (dann nur freies Fliegen).
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
 
+## ✈️ Flugverkehr in der Luft (Taste J)
+Der Himmel lebt: **KI-Flieger** ziehen ortsfest ihre Bahnen (alle 5 Modelle) — **ohne Kollision**.
+Airbus/Transall **landen** und laden Passagiere/Kisten, der Canadair **fischt Wasser** und **löscht**
+ein Feuer, der Mustang macht **Kunstflug**. Kommt ein Flieger nah vorbei, **wackelt** er zum Gruß mit
+den Flügeln. Sporadisch rauscht ein **Alpha-Jet von hinten** vorbei und durchbricht die Schallmauer.
+Hohe/schnelle Flieger ziehen **Kondensstreifen**. Mit **J** schaltet man den Verkehr an/aus (Standard: an).
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.
