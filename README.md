@@ -26,7 +26,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | **Bremse / Umkehrschub** (halten) | A | C |
 | Aktion (modellabhängig, s.u.) | B | B |
 | Aufgaben an/aus | RB | T |
-| Leitfaden an/aus | LB | G |
+| Flugverkehr an/aus | LB | J |
 | Modell wechseln | Y | M |
 | Kamera wechseln | — | V |
 | Ansicht von links/rechts (halten) | D-Pad ←→ | — |
@@ -57,12 +57,14 @@ komplett abschalten (dann nur freies Fliegen).
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
 
-## ✈️ Flugverkehr in der Luft (Taste J)
+## ✈️ Flugverkehr in der Luft (Taste J / LB)
 Der Himmel lebt: **KI-Flieger** ziehen ortsfest ihre Bahnen (alle 5 Modelle) — **ohne Kollision**.
 Airbus/Transall **landen** und laden Passagiere/Kisten, der Canadair **fischt Wasser** und **löscht**
-ein Feuer, der Mustang macht **Kunstflug**. Kommt ein Flieger nah vorbei, **wackelt** er zum Gruß mit
+ein Feuer, der Mustang macht **Kunstflug**. Über **Flugzeugträgern** fliegen **Alpha-Jet & Mustang**
+eine Deck-Platzrunde und setzen im **Touch-and-Go** kurz auf dem Flugdeck auf; der Alpha-Jet zieht
+zusätzlich als ruhiger Reise-Kreis seine Bahn. Kommt ein Flieger nah vorbei, **wackelt** er zum Gruß mit
 den Flügeln. Sporadisch rauscht ein **Alpha-Jet von hinten** vorbei und durchbricht die Schallmauer.
-Hohe/schnelle Flieger ziehen **Kondensstreifen**. Mit **J** schaltet man den Verkehr an/aus (Standard: an).
+Hohe/schnelle Flieger ziehen **Kondensstreifen**. Mit **J** oder **LB** schaltet man den Verkehr an/aus (Standard: an).
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.

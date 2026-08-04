@@ -65,6 +65,7 @@
     <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>RB</span><b>Aufgaben an/aus</b></div>
+    <div class="hrow"><span>LB</span><b>Flugverkehr an/aus</b></div>
     <div class="hrow"><span>D-Pad ↑</span><b>diese Hilfe an-aus</b></div>
     <div class="hrow"><span>D-Pad ↓</span><b>Ton an/aus</b></div>
     <div class="hrow"><span>D-Pad ←→</span><b>Ansicht von links/rechts</b></div>
@@ -80,7 +81,7 @@
     <div class="hrow"><span>C (halten)</span><b>Bremse</b> · <span>X</span> Motor aus</div>
     <div class="hrow"><span>Shift (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>B</span><b>Aktion</b> · <span>M</span> Modell · <span>V</span> Kamera · <span>N</span> Ton</div>
-    <div class="hrow"><span>T</span><b>Aufgaben an/aus</b></div>
+    <div class="hrow"><span>T</span><b>Aufgaben an/aus</b> · <span>J</span> Flugverkehr an/aus</div>
     <div class="hrow"><span>R</span><b>Reset</b> · <span>H</span> diese Hilfe aus</div>
   </div>
   <div class="hcol">
@@ -2400,6 +2401,7 @@ function readInput() {
 
       if(edge(gp,3)) cycleModel();    // Y = Modell
       if(edge(gp,1)) buttonB();       // B: Canadair Wasser · AlphaJet Schleudersitz
+      if(edge(gp,4)) toggleTraffic();  // LB: KI-Flugverkehr an/aus (wie Taste J)
       if(edge(gp,5)) toggleMissions();// RB: Minispiele an/aus
 
       if(edge(gp,9)) resetPlane();    // Start/Menu = Reset
@@ -2873,7 +2875,9 @@ let last=performance.now();
 // Ambient-Flieger (deterministisch pro Zelle wie carrierInfo), die EXAKT das tun, was der Spieler
 // kann: Airbus landet + Menschen raus/rein, Transall Touchdown+Rollen+Durchstarten+Kistenabwurf,
 // Canadair fischt Wasser + löscht Feuer, Mustang Kunstflug. Flügelwackeln bei Nähe, Kondensstreifen.
-// KEINE Kollision, KEIN Radar. Höhe im Reiseflug immer ±Spielerhöhe. Toggle: Taste J (Standard an).
+// Über Trägerzellen: AlphaJet/Mustang fliegen eine gedrehte Deck-Platzrunde und setzen im Touch-and-Go
+// kurz auf dem Flugdeck auf (kein Halt); AlphaJet erscheint zusätzlich als ruhiger Reise-Kreis.
+// KEINE Kollision, KEIN Radar. Höhe im Reiseflug immer ±Spielerhöhe. Toggle: Taste J oder LB (Standard an).
 // Zusätzlich: sporadischer Alpha-Jet-Überschall-Vorbeiflug von hinten.
 let trafficOn = true;              // Taste J schaltet allen Verkehr an/aus
 let worldClock = 0;                // fortlaufende Zeitbasis (kein Date.now nötig)
@@ -2895,11 +2899,26 @@ function cruiseAltFor(e){ return Math.max(55, state.pos.y + e.info.altOff); }
 // Deterministische Route je Zelle.
 function trafficInfo(cx, cz){
   if(Math.abs(cx) <= 1 && Math.abs(cz) <= 1) return null;  // Nähe Startzelle frei halten
+  // Trägerzelle? -> verlässlich Deck-Verkehr (Touch-and-Go), NICHT dem 26%-Filter unterworfen.
+  const car = carrierInfo(cx, cz);
+  if(car){
+    const cpool = ['AlphaJet','Mustang'];
+    const cmodel = cpool[Math.floor(cellRnd(cx,cz,72) * cpool.length) % cpool.length];
+    return {
+      cx, cz, wx:car.wx, wz:car.wz, model:cmodel, hasIsland:false, rwLen:0,
+      carrier:true, car,
+      dir: cellRnd(cx,cz,77) < 0.5 ? 1 : -1,
+      phase: cellRnd(cx,cz,78) * Math.PI*2,
+      altOff: (cellRnd(cx,cz,80)-0.5) * 90,
+      tOff:  cellRnd(cx,cz,79) * 30,
+      radius: 200 + cellRnd(cx,cz,75)*120,
+    };
+  }
   if(cellRnd(cx, cz, 71) >= 0.26) return null;             // ~26% der Zellen haben Verkehr
   const isl = islandInfo(cx, cz);
   const hasIsland = !!isl;
-  const pool = hasIsland ? ['Airbus','Transall','Mustang']
-                         : ['Canadair','Canadair','Mustang'];  // Wasser: nur echte Missionen (AlphaJet nur als Flyby)
+  const pool = hasIsland ? ['Airbus','Airbus','Transall','Transall','Mustang','AlphaJet']
+                         : ['Canadair','Canadair','Mustang','AlphaJet'];  // Insel: 4/6 Landemissionen; Wasser: Canadair + Kreisflieger
   const model = pool[Math.floor(cellRnd(cx, cz, 72) * pool.length) % pool.length];
   const wx = hasIsland ? isl.wx : cx*CELL + (cellRnd(cx,cz,73)-0.5)*CELL*0.4;
   const wz = hasIsland ? isl.wz : cz*CELL + (cellRnd(cx,cz,74)-0.5)*CELL*0.4;
@@ -2947,11 +2966,14 @@ function makeTraffic(info){
     trail = { line, pts: [], N };
   }
   // Modus: 'land' (Platzrunde) für Airbus/Transall mit Insel, sonst Kreis.
-  const mode = ((info.model==='Airbus'||info.model==='Transall') && info.hasIsland) ? 'land'
+  const mode = info.carrier ? 'carrier'
+             : ((info.model==='Airbus'||info.model==='Transall') && info.hasIsland) ? 'land'
              : (info.model==='Canadair' ? 'fish'
-             : 'aero');   // Mustang = Kunstflug; AlphaJet erscheint NUR als Ueberschall-Vorbeiflug
+             : 'aero');   // Mustang = Kunstflug; AlphaJet = ruhiger Reise-Kreis; Träger = Touch-and-Go
   // Platzrunden-Geometrie (Racetrack): Landebahn-Schenkel bei x=wx, Gegenanflug bei x=wx+D.
-  const turnR = 70, D = 2*turnR, L = Math.max(220, info.rwLen + 120), rwHalf = info.rwLen/2;
+  const turnR = 70, D = 2*turnR,
+        L = Math.max(220, (info.carrier?FORD_LEN:info.rwLen) + 120),
+        rwHalf = info.carrier ? FORD_LEN*0.5 : info.rwLen/2;
   const P = 2*L + 2*Math.PI*turnR;
   // Canadair-Feuer als kleine Gruppe (falls Nachbar-Insel).
   let fireGrp = null;
@@ -3001,11 +3023,11 @@ function stepLanding(e, dt){
 
   if(e.info.model==='Airbus'){
     // in Bahnmitte anhalten -> Menschen raus, dann rein -> weiter
-    if(p.seg===0 && Math.abs(zRel)<4 && !e.serviced && e.hold<=0){ e.hold=7; e.serviced=true; aiPaxSequence(e); }
+    if(p.seg===0 && Math.abs(zRel)<4 && !e.serviced && e.hold<=0){ e.hold=5; e.serviced=true; aiPaxSequence(e); }
     if(p.seg===2) e.serviced=false;                  // im Gegenanflug für nächste Runde freigeben
   } else { // Transall: beim Rollen laden, nach dem Abheben abwerfen
     if(atTouch && e.crateLoad<4){ e.crateLoad=Math.min(4, e.crateLoad + dt*2.5); }
-    if(p.seg===1 && !e.dropped && e.crateLoad>=1){ e.dropped=true; e.dropQueue=Math.floor(e.crateLoad); e.crateLoad=0; e.dropTimer=0; }
+    if(p.seg===1 && !e.dropped && e.crateLoad>=1){ e.dropped=true; e.dropQueue=Math.max(2,Math.floor(e.crateLoad)); e.crateLoad=0; e.dropTimer=0; }
     if(p.seg===2){ e.dropped=false; }
     if(e.dropQueue>0){ e.dropTimer-=dt; if(e.dropTimer<=0){ aiDropCrate(e); e.dropQueue--; e.dropTimer=0.35; } }
   }
@@ -3020,6 +3042,35 @@ function stepLanding(e, dt){
   e.holder.rotation.x=0;
 }
 
+// Träger-Touch-and-Go: rotierte Deck-Platzrunde, kurz aufsetzen, sofort durchstarten (kein Halt).
+function rtAltCarrier(e, p, cruise){
+  if(p.seg!==0) return cruise;                       // Kurven/Gegenanflug: Reiseflug
+  const zRel=p.z - e.info.wz, L=e.rt.L, touch=24;    // nur ±24 m um die Deckmitte am Deck
+  const az=Math.abs(zRel);
+  if(az <= touch) return fordDeckY;                  // Aufsetzfenster (Touch)
+  const t=Math.min(1,(az-touch)/(L/2-touch));
+  return fordDeckY + t*(cruise-fordDeckY);           // Anflug/Steigflug: Deck<->Reiseflug
+}
+function stepCarrier(e, dt){
+  const cruise=cruiseAltFor(e), P=e.rt.P, car=e.info.car;
+  const cs=Math.cos(car.rot), sn=Math.sin(car.rot);
+  const p0=rtPoint(e, e.s);
+  // beim Deck-Überflug langsamer, damit der Jet das kurze Deck nicht überschießt
+  const overDeck=(p0.seg===0 && Math.abs(p0.z-e.info.wz)<=e.rt.rwHalf);
+  e.s=(e.s + (overDeck ? e.info.vLin0*0.45 : e.info.vLin0)*dt) % P;
+  const p=rtPoint(e, e.s);
+  const lx=p.x-e.info.wx, lz=p.z-e.info.wz;           // lokale Deltas -> um rot in die Welt drehen
+  const wxp=car.wx + lx*cs + lz*sn, wzp=car.wz - lx*sn + lz*cs;
+  const alt=rtAltCarrier(e, p, cruise);
+  const cy=e.group.position.y||alt;
+  e.group.position.set(wxp, cy+(alt-cy)*Math.min(1,dt*3), wzp);
+  const pn=rtPoint(e, (e.s+2)%P);                    // Blickpunkt voraus (ebenfalls gedreht)
+  const lnx=pn.x-e.info.wx, lnz=pn.z-e.info.wz;
+  faceTowards(e.group, car.wx+lnx*cs+lnz*sn, car.wz-lnx*sn+lnz*cs);
+  e.holder.rotation.z=waveRoll(e, dt, wxp, wzp);     // Flügelwackeln bei Spielernähe
+  e.holder.rotation.x=0;
+}
+
 // Kreis-Flieger (AlphaJet cruise, Mustang aero, Canadair fish).
 function stepCircle(e, dt){
   const info=e.info, cruise=cruiseAltFor(e);
@@ -3029,10 +3080,14 @@ function stepCircle(e, dt){
   let alt=cruise, roll=0, pitch=0;
   e.t+=dt; const P=info.model==='Canadair'?20:16, u=(e.t%P)/P;
 
-  if(e.mode==='aero'){                               // Mustang: Rolle + Looping
-    roll = worldClock*1.6*info.dir;
-    const lo=winWin(u,0.35,0.45,0.55,0.65);
-    pitch = lo*Math.PI*2*info.dir; alt = cruise + lo*60;
+  if(e.mode==='aero'){
+    if(info.model==='AlphaJet'){                     // Jet: flacher, schneller Reise-Kreis (kein Looping)
+      roll = 0.25*info.dir; pitch = 0; alt = cruise;
+    } else {                                         // Mustang: wilde Rolle + Looping
+      roll = worldClock*1.6*info.dir;
+      const lo=winWin(u,0.35,0.45,0.55,0.65);
+      pitch = lo*Math.PI*2*info.dir; alt = cruise + lo*60;
+    }
   } else if(e.mode==='fish'){                        // Canadair: fischen + evtl. löschen
     // Winkel des Fluges relativ zum Feuer/Wasser: über Wasser tief (fischen), am Inselrand abwerfen.
     const overIsland = isOnLand(x,z);
@@ -3147,7 +3202,7 @@ function updateTraffic(dt){
   }
   for(const [key,e] of trafficCells){ if(!needed.has(key)){ if(e) removeTraffic(e); trafficCells.delete(key); } }
   for(const [,e] of trafficCells){ if(!e) continue;
-    if(e.mode==='land') stepLanding(e,dt); else stepCircle(e,dt);
+    if(e.mode==='land') stepLanding(e,dt); else if(e.mode==='carrier') stepCarrier(e,dt); else stepCircle(e,dt);
     trafficTrail(e);
   }
   updateAiEffects(dt);
