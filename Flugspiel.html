@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flugspiel</title>
+<meta name="theme-color" content="#87b8e8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flugspiel">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; background: #87b8e8; font-family: Arial, sans-serif; }
   canvas { display: block; }
@@ -2914,6 +2921,15 @@ placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (Canadair) im Hafen au
 camera.position.set(state.pos.x, state.pos.y+10, state.pos.z+25);
 camera.lookAt(state.pos);
 requestAnimationFrame(loop);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function (e) {
+      console.warn('Service Worker Registrierung fehlgeschlagen:', e);
+    });
+  });
+}
 </script>
 </body>
 </html>
