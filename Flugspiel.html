@@ -2965,7 +2965,7 @@ function aiFindIsland(e, pred, opts){
   return best;
 }
 function aiFindRunwayIsland(e, exCx, exCz){
-  const pred=(info,cx,cz)=> !(cx===exCx&&cz===exCz);
+  const pred=(info,cx,cz)=> cellRnd(cx,cz,99)>=0.10 && !(cx===exCx&&cz===exCz);  // keine Wolkenkratzer-Stadt
   return aiFindIsland(e, pred, {cone:true, R:3}) || aiFindIsland(e, pred, {R:3});
 }
 function aiFindCargoTarget(e, exCx, exCz){
@@ -2973,7 +2973,7 @@ function aiFindCargoTarget(e, exCx, exCz){
   return aiFindIsland(e, pred, {cone:true, R:3}) || aiFindIsland(e, pred, {R:4});
 }
 function aiFindDistantIsland(e){
-  const pred=(info,cx,cz)=> true;
+  const pred=(info,cx,cz)=> cellRnd(cx,cz,99)>=0.10;   // keine Wolkenkratzer-Stadt als Ziel
   return aiFindIsland(e, pred, {minCells:5, R:9, cone:true}) || aiFindIsland(e, pred, {minCells:5, R:9});
 }
 // Feuer auf einer Wieseninsel (keine Stadt), Feuerfleck abseits von Bauwerken. Baut e.fireGrp.
@@ -3355,9 +3355,56 @@ function recycleIfFar(e){
     assignMission(e);
   }
 }
+// ---- Hindernis-Ausweichen: deterministische Höhensonde (Turm/Berg/Haus aus r1/r2 rekonstruiert,
+// unabhängig davon, ob die Insel schon gerendert ist) + "hochziehen & abdrehen" bei Gefahr. ----
+function aiObstacleTopAt(x, z, margin){
+  margin=margin||0;
+  const pcx=Math.round(x/CELL), pcz=Math.round(z/CELL);
+  let top=0;
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const info=islandInfo(pcx+dx,pcz+dz); if(!info) continue;
+    const list=islandBuildings(pcx+dx,pcz+dz); if(!list) continue;
+    const lx=x-info.wx, lz=z-info.wz;
+    for(const b of list){
+      if(b.type==='hill'){
+        const rBase=30+b.r1*50, hh=20+b.r2*40, dr=Math.hypot(lx-b.x,lz-b.z);
+        if(dr < rBase+margin){ const t=hh*Math.max(0,1-Math.max(0,dr-margin)/rBase); if(t>top)top=t; }
+      } else {
+        let w,d,h;
+        if(b.type==='tower'){ w=14+b.r1*10; d=14+b.r2*10; h=70+b.r1*90; }
+        else { w=5+b.r1*11; d=5+b.r2*9; const h0=4+b.r1*b.r2*12+b.r1*4; h=h0+Math.min(h0*0.5,4); }
+        const hw=Math.max(w,d)/2;
+        if(Math.abs(lx-b.x) < hw+margin && Math.abs(lz-b.z) < hw+margin){ if(h>top)top=h; }
+      }
+    }
+  }
+  return ISLAND_Y + top;   // Welt-Y der Hindernisspitze
+}
+// Nur in Reise-/Anflug-Reisezuständen aktiv (nicht beim Landen/Rollen/Tieflug-Missionen).
+const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1 };
+function aiAvoidObstacles(e, dt){
+  if(!AI_AVOID_STATES[e.state] || e.onFinal || e.rolling) return;
+  const {fx,fz}=aiForward(e), look=Math.max(140, e.spd*1.7);
+  const px=e.group.position.x, pz=e.group.position.z, py=e.group.position.y;
+  let danger=0;
+  for(const dd of [look*0.55, look]){
+    const topY=aiObstacleTopAt(px+fx*dd, pz+fz*dd, 22);
+    if(topY + 30 > py){ danger=Math.max(danger, topY+45); }
+  }
+  if(!danger) return;
+  e.group.position.y += (danger - py)*Math.min(1, dt*3);        // schnell hochziehen
+  // zur freieren Seite abdrehen (quer voraus links/rechts vergleichen)
+  const rx=-fz, rz=fx, sd=look*0.7;
+  const rightTop=aiObstacleTopAt(px+fx*sd+rx*100, pz+fz*sd+rz*100, 22);
+  const leftTop =aiObstacleTopAt(px+fx*sd-rx*100, pz+fz*sd-rz*100, 22);
+  const turnDir=(leftTop < rightTop) ? -1 : 1;
+  e.heading += turnDir*(e.turn||0.6)*dt*2.4;
+  e.group.rotation.y=e.heading;
+  e.holder.rotation.z += turnDir*0.35;                          // Bank in die Ausweichkurve
+}
 function updateTraffic(dt){
   if(fleet.length===0){ initFleet(); }
-  for(const e of fleet){ stepMission(e, dt); trafficTrail(e); recycleIfFar(e); }
+  for(const e of fleet){ stepMission(e, dt); aiAvoidObstacles(e, dt); trafficTrail(e); recycleIfFar(e); }
   updateAiEffects(dt);
 }
 
@@ -3381,6 +3428,8 @@ function spawnFlyby(){
 function updateFlyby(dt){
   if(!flyby){ flybyTimer-=dt; if(flybyTimer<=0){ spawnFlyby(); flybyTimer=16+Math.random()*20; } return; }
   const f=flyby; f.group.position.addScaledVector(f.vel,dt);
+  const minY=aiObstacleTopAt(f.group.position.x, f.group.position.z, 12)+30;   // über Türme/Berge heben
+  if(f.group.position.y < minY) f.group.position.y = minY;
   faceTowards(f.group, f.group.position.x+f.vel.x, f.group.position.z+f.vel.z);
   f.life-=dt;
   const ahead=f.group.position.clone().sub(state.pos).dot(f.fwd);
