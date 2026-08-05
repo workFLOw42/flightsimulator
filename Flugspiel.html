@@ -2879,12 +2879,10 @@ let last=performance.now();
 // kurz auf dem Flugdeck auf (kein Halt); AlphaJet erscheint zusätzlich als ruhiger Reise-Kreis.
 // KEINE Kollision, KEIN Radar. Höhe im Reiseflug immer ±Spielerhöhe. Toggle: Taste J oder LB (Standard an).
 // Zusätzlich: sporadischer Alpha-Jet-Überschall-Vorbeiflug von hinten.
-let trafficOn = true;              // Taste J schaltet allen Verkehr an/aus
+let trafficOn = true;              // Taste J / LB schaltet allen Verkehr an/aus
 let worldClock = 0;                // fortlaufende Zeitbasis (kein Date.now nötig)
-const TRAFFIC_MAX = 12;             // Deckel gleichzeitig sichtbarer KI-Flieger (Performance)
 const TRAFFIC_ROT = { Canadair: Math.PI, AlphaJet: Math.PI/2, Airbus: Math.PI,
                       Mustang: -Math.PI, Transall: 0 };   // wie GLB_ROT in buildModel
-const trafficCells = new Map();    // Key "cx,cz" -> Eintrag {group,...} oder null (keine Route)
 const aiEffects = [];              // eigenständige KI-Kisten/Menschen (wie Spieler-activeCrates/Pax)
 
 // Eigene Material-Instanzen, damit KI nie mit Spieler-Effekten kollidiert.
@@ -2894,110 +2892,288 @@ const aiDropMat   = new THREE.MeshLambertMaterial({ color:0x9fd8ff, transparent:
 const aiVaporMat  = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0, side:THREE.DoubleSide, depthWrite:false });
 
 // Reiseflughöhe immer im Rahmen der Spielerhöhe (±Offset), aber nie zu tief.
-function cruiseAltFor(e){ return Math.max(55, state.pos.y + e.info.altOff); }
+function cruiseAltFor(e){ return Math.max(55, state.pos.y + (e.altOff||0)); }
 
-// Deterministische Route je Zelle.
-function trafficInfo(cx, cz){
-  if(Math.abs(cx) <= 1 && Math.abs(cz) <= 1) return null;  // Nähe Startzelle frei halten
-  // Trägerzelle? -> verlässlich Deck-Verkehr (Touch-and-Go), NICHT dem 26%-Filter unterworfen.
-  const car = carrierInfo(cx, cz);
-  if(car){
-    const cpool = ['AlphaJet','Mustang'];
-    const cmodel = cpool[Math.floor(cellRnd(cx,cz,72) * cpool.length) % cpool.length];
-    return {
-      cx, cz, wx:car.wx, wz:car.wz, model:cmodel, hasIsland:false, rwLen:0,
-      carrier:true, car,
-      dir: cellRnd(cx,cz,77) < 0.5 ? 1 : -1,
-      phase: cellRnd(cx,cz,78) * Math.PI*2,
-      altOff: (cellRnd(cx,cz,80)-0.5) * 90,
-      tOff:  cellRnd(cx,cz,79) * 30,
-      radius: 200 + cellRnd(cx,cz,75)*120,
-    };
-  }
-  if(cellRnd(cx, cz, 71) >= 0.26) return null;             // ~26% der Zellen haben Verkehr
-  const isl = islandInfo(cx, cz);
-  const hasIsland = !!isl;
-  const pool = hasIsland ? ['Airbus','Airbus','Transall','Transall','Mustang','AlphaJet']
-                         : ['Canadair','Canadair','Mustang','AlphaJet'];  // Insel: 4/6 Landemissionen; Wasser: Canadair + Kreisflieger
-  const model = pool[Math.floor(cellRnd(cx, cz, 72) * pool.length) % pool.length];
-  const wx = hasIsland ? isl.wx : cx*CELL + (cellRnd(cx,cz,73)-0.5)*CELL*0.4;
-  const wz = hasIsland ? isl.wz : cz*CELL + (cellRnd(cx,cz,74)-0.5)*CELL*0.4;
-  const rwLen = hasIsland ? Math.min(260, isl.radius*1.4) : 0;   // wie buildIsland/isOnRunway
-  const info = {
-    cx, cz, wx, wz, model, hasIsland, rwLen,
-    dir: cellRnd(cx,cz,77) < 0.5 ? 1 : -1,
-    phase: cellRnd(cx,cz,78) * Math.PI*2,
-    altOff: (cellRnd(cx,cz,80)-0.5) * 90,          // ±45 m um die Spielerhöhe
-    tOff:  cellRnd(cx,cz,79) * 30,
-  };
-  // Radius für Kreis-Flieger (Mustang/AlphaJet/Canadair).
-  info.radius = 200 + cellRnd(cx,cz,75)*120;
-  // Canadair über Wasser: falls Nachbar-Insel existiert, Kreis dazwischen legen -> fischt über
-  // Wasser UND kommt am Inselrand vorbei (dort Feuer löschen).
-  if(model==='Canadair'){
-    let isle=null;
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const ni=islandInfo(cx+dx,cz+dz); if(ni){ isle=ni; break; }
-    }
-    if(isle){
-      info.acx=(wx+isle.wx)/2; info.acz=(wz+isle.wz)/2;
-      info.radius=Math.max(160, Math.hypot(wx-isle.wx, wz-isle.wz)/2*1.05);
-      info.fire={ x:isle.wx, z:isle.wz };
-    } else { info.acx=wx; info.acz=wz; }
-  }
-  return info;
+// ================= Persistente KI-Reise-Flotte =================
+// Feste Anzahl Flieger, die ECHTE Punkt-zu-Punkt-Missionen fliegen (wie der Spieler): Canadair
+// pendelt Wasser<->Feuer und löscht, Transall lädt an Insel A + wirft an Insel B ab, Airbus holt
+// Menschen und fliegt sie WEIT zu einer anderen Bahn, Jet/Mustang reisen (mit Träger-Touch-and-Go).
+// Sie reisen mit dem Spieler durch die Welt (Recycling: zu weit weg -> respawn nahebei mit neuer
+// Mission). KEINE Kollision, KEINE optischen Missions-Hinweise — nur echtes Verhalten.
+const FLEET_COMP = ['Airbus','Airbus','Airbus','Transall','Transall','Canadair','Canadair','Mustang','Mustang','AlphaJet','AlphaJet'];
+const FLEET_MODELS = ['Airbus','Transall','Canadair','Mustang','AlphaJet'];
+const SPEEDS = { Airbus:60, Transall:52, Canadair:48, Mustang:80, AlphaJet:130 };   // m/s
+const TURN   = { Airbus:0.5, Transall:0.55, Canadair:0.6, Mustang:0.9, AlphaJet:0.9 };
+const ARRIVE = 45;                 // Ankunftsradius (m) für Wegpunkte
+const fleet = [];
+
+// ---- Kurs-/Positions-Helfer ----
+function angleDiff(a,b){ let d=(b-a)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+function aiForward(e){ return { fx:-Math.sin(e.heading), fz:-Math.cos(e.heading) }; }
+function aiCellOf(e){ return { cx:Math.round(e.group.position.x/CELL), cz:Math.round(e.group.position.z/CELL) }; }
+
+// Bewegt e Richtung (tx,tz) auf Zielhöhe ty. Gibt horizontale Restdistanz zurück.
+function flyToward(e, tx, tz, ty, dt, speedMul){
+  const px=e.group.position.x, pz=e.group.position.z;
+  const dx=tx-px, dz=tz-pz, dist=Math.hypot(dx,dz);
+  const desired=Math.atan2(dx,dz)+Math.PI;             // Front = -Z (wie faceTowards)
+  const diff=angleDiff(e.heading, desired);
+  const maxTurn=(e.turn||0.6)*dt;
+  e.heading += Math.max(-maxTurn, Math.min(maxTurn, diff));
+  const spd=e.spd*(speedMul==null?1:speedMul);
+  e.group.position.x += -Math.sin(e.heading)*spd*dt;
+  e.group.position.z += -Math.cos(e.heading)*spd*dt;
+  e.group.position.y += (ty - e.group.position.y)*Math.min(1, dt*1.2);
+  e.group.rotation.y = e.heading;
+  // Bank aus Drehrate (tiefpassgefiltert) + Flügelwackeln bei Spielernähe
+  const targetBank=Math.max(-0.6, Math.min(0.6, diff*1.4));
+  e.bank = (e.bank||0) + (targetBank-(e.bank||0))*Math.min(1,dt*3);
+  e.holder.rotation.z = e.bank + waveRoll(e, dt, px, pz);
+  e.holder.rotation.x = 0;
+  return dist;
 }
 
-// Ein KI-Flieger: äußere Gruppe (Kurs via faceTowards) -> Holder (Bank/Nicken) -> GLB-Klon.
-function makeTraffic(info){
-  if(!glbTemplates[info.model]) return null;
-  const group = new THREE.Group();
-  const holder = new THREE.Group(); group.add(holder);
-  const m = glbTemplates[info.model].clone(true);
-  m.rotation.y = TRAFFIC_ROT[info.model] || 0; holder.add(m);
-  scene.add(group);
+// ---- KI-Weltsuche (relativ zur KI-Position, analog zu findIslandInCone/spawnFire/nearestWaterXZ) ----
+function aiFindIsland(e, pred, opts){
+  opts=opts||{};
+  const c=aiCellOf(e), minCells=opts.minCells||0, R=opts.R||2, useCone=!!opts.cone;
+  const {fx,fz}=aiForward(e), COS=Math.cos((opts.coneDeg||70)*Math.PI/180);
+  const px=e.group.position.x, pz=e.group.position.z;
+  let best=null, bd=1e9;
+  for(let dz=-R;dz<=R;dz++)for(let dx=-R;dx<=R;dx++){
+    if(minCells && Math.max(Math.abs(dx),Math.abs(dz))<minCells) continue;
+    const cx=c.cx+dx, cz=c.cz+dz, info=islandInfo(cx,cz); if(!info) continue;
+    if(!pred(info,cx,cz)) continue;
+    const rx=info.wx-px, rz=info.wz-pz, d=Math.hypot(rx,rz); if(d<60) continue;
+    if(useCone && (rx*fx+rz*fz)/(d||1) < COS) continue;
+    if(d<bd){ bd=d; best={info,cx,cz,d}; }
+  }
+  return best;
+}
+function aiFindRunwayIsland(e, exCx, exCz){
+  const pred=(info,cx,cz)=> !(cx===exCx&&cz===exCz);
+  return aiFindIsland(e, pred, {cone:true, R:3}) || aiFindIsland(e, pred, {R:3});
+}
+function aiFindCargoTarget(e, exCx, exCz){
+  const pred=(info,cx,cz)=> info.radius<230 && cellRnd(cx,cz,99)>=0.10 && !(cx===exCx&&cz===exCz);
+  return aiFindIsland(e, pred, {cone:true, R:3}) || aiFindIsland(e, pred, {R:4});
+}
+function aiFindDistantIsland(e){
+  const pred=(info,cx,cz)=> true;
+  return aiFindIsland(e, pred, {minCells:5, R:9, cone:true}) || aiFindIsland(e, pred, {minCells:5, R:9});
+}
+// Feuer auf einer Wieseninsel (keine Stadt), Feuerfleck abseits von Bauwerken. Baut e.fireGrp.
+function aiFindFireIsland(e){
+  const pred=(info,cx,cz)=> cellRnd(cx,cz,99)>=0.10;   // keine Stadt (die brennt nicht)
+  const hit=aiFindIsland(e, pred, {cone:true, R:3}) || aiFindIsland(e, pred, {R:3});
+  if(!hit) return null;
+  const buildings=islandBuildings(hit.cx,hit.cz)||[];
+  let fx,fz,ok=false;
+  for(let tries=0; tries<20 && !ok; tries++){
+    const a=Math.random()*Math.PI*2, rr=hit.info.radius*(0.35+Math.random()*0.4);
+    const lx=Math.cos(a)*rr, lz=Math.sin(a)*rr; ok=true;
+    for(const b of buildings){ if(Math.hypot(lx-b.x, lz-b.z)<40){ ok=false; break; } }
+    if(ok){ fx=hit.info.wx+lx; fz=hit.info.wz+lz; }
+  }
+  if(!ok) return null;
+  const g=new THREE.Group();
+  for(let i=0;i<6;i++){
+    const fl=new THREE.Mesh(new THREE.ConeGeometry(1.6,5,6), flameMat);
+    fl.position.set((Math.random()-0.5)*8, ISLAND_Y+2.5, (Math.random()-0.5)*8); g.add(fl);
+  }
+  g.position.set(fx,0,fz); scene.add(g); e.fireGrp=g;
+  return { x:fx, z:fz };
+}
+// Nächste Wasserstelle (analog nearestWaterXZ, aber um die KI-Position).
+function aiNearestWater(e){
+  const px=e.group.position.x, pz=e.group.position.z;
+  if(!isOnLand(px,pz)){ const {fx,fz}=aiForward(e); return { x:px+fx*400, z:pz+fz*400 }; }
+  for(let r=90; r<=760; r+=80) for(let a=0;a<8;a++){
+    const qx=px+Math.cos(a/8*6.283)*r, qz=pz+Math.sin(a/8*6.283)*r;
+    if(!isOnLand(qx,qz)) return { x:qx, z:qz };
+  }
+  return { x:px+300, z:pz+300 };
+}
+// Träger in der Nähe (für Jet/Mustang Touch-and-Go).
+function aiFindCarrier(e, R){
+  const c=aiCellOf(e); R=R||3;
+  const px=e.group.position.x, pz=e.group.position.z; let best=null,bd=1e9;
+  for(let dz=-R;dz<=R;dz++)for(let dx=-R;dx<=R;dx++){
+    const car=carrierInfo(c.cx+dx, c.cz+dz); if(!car) continue;
+    const d=Math.hypot(car.wx-px, car.wz-pz); if(d<bd){ bd=d; best=car; }
+  }
+  return best;
+}
+function aiRandomWaypoint(e){
+  const a=Math.random()*Math.PI*2, d=CELL*(2+Math.random()*2);
+  return { x:e.group.position.x+Math.cos(a)*d, z:e.group.position.z+Math.sin(a)*d };
+}
+// Zufälliger Punkt um den Spieler in Zell-Radius-Vielfachen (für Spawn/Recycling).
+function spawnAroundPlayer(minMul, maxMul){
+  const a=Math.random()*Math.PI*2, r=VIEW_CELLS*CELL*(minMul+Math.random()*(maxMul-minMul));
+  return { x:state.pos.x+Math.cos(a)*r, z:state.pos.z+Math.sin(a)*r };
+}
 
-  const wantsTrail = (info.model==='Airbus' || info.model==='AlphaJet' || info.model==='Mustang');
-  let trail = null;
+// ---- Flieger bauen / Mission zuweisen / entfernen ----
+function spawnPlane(model, x, z){
+  if(!glbTemplates[model]) return null;
+  const group=new THREE.Group(), holder=new THREE.Group(); group.add(holder);
+  const m=glbTemplates[model].clone(true); m.rotation.y=TRAFFIC_ROT[model]||0; holder.add(m);
+  const altOff=(Math.random()-0.5)*90;
+  group.position.set(x, Math.max(60, state.pos.y+altOff), z); scene.add(group);
+  const wantsTrail=(model==='Airbus'||model==='AlphaJet'||model==='Mustang');
+  let trail=null;
   if(wantsTrail){
-    const N = 36, geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N*3), 3));
-    const line = new THREE.Line(geo, aiTrailMat); line.frustumCulled=false; scene.add(line);
-    trail = { line, pts: [], N };
+    const N=36, geo=new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N*3),3));
+    const line=new THREE.Line(geo, aiTrailMat); line.frustumCulled=false; scene.add(line);
+    trail={ line, pts:[], N };
   }
-  // Modus: 'land' (Platzrunde) für Airbus/Transall mit Insel, sonst Kreis.
-  const mode = info.carrier ? 'carrier'
-             : ((info.model==='Airbus'||info.model==='Transall') && info.hasIsland) ? 'land'
-             : (info.model==='Canadair' ? 'fish'
-             : 'aero');   // Mustang = Kunstflug; AlphaJet = ruhiger Reise-Kreis; Träger = Touch-and-Go
-  // Platzrunden-Geometrie (Racetrack): Landebahn-Schenkel bei x=wx, Gegenanflug bei x=wx+D.
-  const turnR = 70, D = 2*turnR,
-        L = Math.max(220, (info.carrier?FORD_LEN:info.rwLen) + 120),
-        rwHalf = info.carrier ? FORD_LEN*0.5 : info.rwLen/2;
-  const P = 2*L + 2*Math.PI*turnR;
-  // Canadair-Feuer als kleine Gruppe (falls Nachbar-Insel).
-  let fireGrp = null;
-  if(mode==='fish' && info.fire){
-    fireGrp = new THREE.Group();
-    for(let i=0;i<6;i++){
-      const fl = new THREE.Mesh(new THREE.ConeGeometry(1.6, 5, 6), flameMat);
-      fl.position.set((Math.random()-0.5)*8, ISLAND_Y+2.5, (Math.random()-0.5)*8); fireGrp.add(fl);
-    }
-    fireGrp.position.set(info.fire.x, 0, info.fire.z); scene.add(fireGrp);
+  let spray=null, drop=null;
+  if(model==='Canadair'){
+    spray=new THREE.Mesh(new THREE.ConeGeometry(4,6,12,1,true), aiSprayMat); spray.visible=false; group.add(spray);
+    drop =new THREE.Mesh(new THREE.CylinderGeometry(0.8,2.4,16,12,1,true), aiDropMat); drop.visible=false; group.add(drop);
   }
-  // Canadair-Wasserstrahl beim Abwurf.
-  let drop=null, spray=null;
-  if(mode==='fish'){
-    spray=new THREE.Mesh(new THREE.ConeGeometry(4,6,12,1,true),aiSprayMat); spray.visible=false; group.add(spray);
-    drop =new THREE.Mesh(new THREE.CylinderGeometry(0.8,2.4,16,12,1,true),aiDropMat); drop.visible=false; group.add(drop);
-  }
-  return { group, holder, info, trail, mode,
-           rt:{turnR,D,L,rwHalf,P}, s: Math.random()*P,       // Position auf der Platzrunde
-           hold:0, serviced:false, dropped:false, crateLoad:0, dropQueue:0, dropTimer:0,
-           fireGrp, fireOut:false, drop, spray,
-           t: info.tOff, wave:0, waveCd:3 };
+  const e={ model, group, holder, trail, spray, drop, altOff,
+            spd:SPEEDS[model]||60, turn:TURN[model]||0.6, heading:Math.random()*Math.PI*2,
+            bank:0, wave:0, waveCd:3, aeroT:0,
+            state:'', timer:0, dst:null, fireXZ:null, fireGrp:null, tank:0,
+            crateLoad:0, dropQueue:0, dropTimer:0, paxLoad:0, loadCx:0, loadCz:0,
+            carrier:null, info:null, rt:null, s:0 };
+  assignMission(e);
+  return e;
+}
+function assignMission(e){
+  if(e.fireGrp){ scene.remove(e.fireGrp); e.fireGrp=null; }
+  if(e.spray) e.spray.visible=false;
+  if(e.drop)  e.drop.visible=false;
+  e.dst=null; e.fireXZ=null; e.tank=0; e.crateLoad=0; e.dropQueue=0; e.dropTimer=0;
+  e.paxLoad=0; e.carrier=null; e.info=null; e.rt=null; e.timer=0;
+  if(e.model==='Canadair')      e.state='toWater';
+  else if(e.model==='Transall') e.state='toLoad';
+  else if(e.model==='Airbus')   e.state='toBoard';
+  else                          e.state='cruise';   // Mustang / AlphaJet
+}
+function removePlane(e){
+  scene.remove(e.group);
+  if(e.trail) scene.remove(e.trail.line);
+  if(e.fireGrp) scene.remove(e.fireGrp);
 }
 
+// ---- Träger-Touch-and-Go-Delegation für Jet/Mustang (nutzt bestehendes stepCarrier) ----
+function enterCarrier(e, car){
+  const turnR=70, L=Math.max(220, FORD_LEN+120), rwHalf=FORD_LEN*0.5, P=2*L+2*Math.PI*turnR;
+  e.info={ car, wx:car.wx, wz:car.wz, vLin0:e.spd };
+  e.rt={ turnR, L, rwHalf, P }; e.s=0; e.timer=P/e.spd + 1.0;   // ~eine Deckrunde
+  e.carrier=car; e.state='carrierLap';
+}
+
+// ---- Missions-Statemachine je Modell ----
+function stepMission(e, dt){
+  const cruise=cruiseAltFor(e);
+  switch(e.model){
+    case 'Canadair': {
+      if(e.state==='toWater'){
+        if(!e.dst) e.dst=aiNearestWater(e);
+        const d=flyToward(e, e.dst.x, e.dst.z, isOnLand(e.dst.x,e.dst.z)?cruise:Math.min(cruise,60), dt);
+        if(d<ARRIVE){ e.state='tanking'; e.timer=2; e.dst=null; }
+      } else if(e.state==='tanking'){
+        flyToward(e, e.group.position.x-Math.sin(e.heading)*80, e.group.position.z-Math.cos(e.heading)*80, 12, dt, 0.6);
+        if(e.spray){ e.spray.visible=true; e.spray.position.set(0,-3,2); e.spray.rotation.x=Math.PI; }
+        e.timer-=dt; if(e.timer<=0){ if(e.spray)e.spray.visible=false; e.tank=1; e.state='toFire'; }
+      } else if(e.state==='toFire'){
+        if(!e.fireXZ){ const f=aiFindFireIsland(e); if(f){ e.fireXZ=f; } else { const w=aiRandomWaypoint(e); const dd=flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const dtF=Math.hypot(e.fireXZ.x-e.group.position.x, e.fireXZ.z-e.group.position.z);
+        const ty=dtF<220 ? ISLAND_Y+22 : cruise;
+        const d=flyToward(e, e.fireXZ.x, e.fireXZ.z, ty, dt, dtF<220?0.7:1);
+        if(d<ARRIVE+15){ e.state='dropFire'; e.timer=1.2; if(e.drop){ e.drop.visible=true; e.drop.position.set(0,-9,0);} if(e.fireGrp){ scene.remove(e.fireGrp); e.fireGrp=null; } }
+      } else if(e.state==='dropFire'){
+        flyToward(e, e.fireXZ.x, e.fireXZ.z, ISLAND_Y+18, dt, 0.7);
+        e.timer-=dt; if(e.timer<=0){ if(e.drop)e.drop.visible=false; e.tank=0; e.fireXZ=null; e.state='cooldown'; e.timer=3; }
+      } else { // cooldown
+        flyToward(e, e.group.position.x-Math.sin(e.heading)*200, e.group.position.z-Math.cos(e.heading)*200, cruise, dt);
+        e.timer-=dt; if(e.timer<=0){ e.state='toWater'; e.dst=null; }
+      }
+      break;
+    }
+    case 'Transall': {
+      if(e.state==='toLoad'){
+        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
+        const rw=Math.min(260,e.dst.r*1.4)/2;
+        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
+        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
+        if(d<ARRIVE){ e.state='loading'; e.loadCx=e.dst.cx; e.loadCz=e.dst.cz; e.crateLoad=0; e.dst=null; }
+      } else if(e.state==='loading'){
+        e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
+        e.crateLoad=Math.min(4, e.crateLoad+dt*2.5);
+        if(e.crateLoad>=4){ e.state='toTarget'; e.dst=null; }
+      } else if(e.state==='toTarget'){
+        if(!e.dst){ const h=aiFindCargoTarget(e, e.loadCx, e.loadCz); if(h){ e.dst={x:h.info.wx,z:h.info.wz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const d=flyToward(e, e.dst.x, e.dst.z, ISLAND_Y+30, dt);
+        if(d<ARRIVE+20){ e.state='dropping'; e.dropQueue=Math.max(2,Math.floor(e.crateLoad)||2); e.crateLoad=0; e.dropTimer=0; }
+      } else if(e.state==='dropping'){
+        flyToward(e, e.group.position.x-Math.sin(e.heading)*200, e.group.position.z-Math.cos(e.heading)*200, ISLAND_Y+30, dt);
+        e.dropTimer-=dt; if(e.dropTimer<=0 && e.dropQueue>0){ aiDropCrate(e); e.dropQueue--; e.dropTimer=0.35; }
+        if(e.dropQueue<=0){ assignMission(e); }
+      }
+      break;
+    }
+    case 'Airbus': {
+      if(e.state==='toBoard'){
+        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
+        const rw=Math.min(260,e.dst.r*1.4)/2;
+        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
+        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
+        if(d<ARRIVE){ e.state='boarding'; e.timer=2; e.dst=null; }
+      } else if(e.state==='boarding'){
+        e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
+        e.timer-=dt; e.paxLoad=Math.min(4, (2-e.timer)/2*4);
+        if(e.timer<=0){ e.paxLoad=4; e.state='toFar'; e.dst=null; }
+      } else if(e.state==='toFar'){
+        if(!e.dst){ const h=aiFindDistantIsland(e); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const d=flyToward(e, e.dst.x, e.dst.z, cruise, dt);
+        if(d<Math.min(260,e.dst.r*1.4)/2+60){ e.state='landing'; }
+      } else if(e.state==='landing'){
+        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
+        const rw=Math.min(260,e.dst.r*1.4)/2;
+        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
+        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
+        if(d<ARRIVE){ aiPaxSequence(e); e.state='unload'; e.timer=5; e.dst=null; }
+      } else if(e.state==='unload'){
+        e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
+        e.timer-=dt; if(e.timer<=0){ e.paxLoad=0; assignMission(e); }
+      }
+      break;
+    }
+    default: {   // Mustang & AlphaJet: reisen + (Jet/Mustang) Träger-Touch-and-Go
+      if(e.state==='carrierLap'){
+        stepCarrier(e, dt);
+        e.timer-=dt; if(e.timer<=0){ e.carrier=null; e.info=null; e.rt=null; e.heading=e.group.rotation.y; e.state='cruise'; e.dst=null; }
+        break;
+      }
+      if(!e.dst){
+        const car=(Math.random()<0.5)?aiFindCarrier(e,3):null;
+        if(car){ e.dst={x:car.wx,z:car.wz,carrier:car}; }
+        else { e.dst=aiRandomWaypoint(e); }
+      }
+      const d=flyToward(e, e.dst.x, e.dst.z, cruise, dt);
+      // Mustang: unterwegs Kunstflug (Rolle + Looping) via Zeitfenster
+      if(e.model==='Mustang'){
+        e.aeroT+=dt; const u=(e.aeroT%16)/16, lo=winWin(u,0.35,0.45,0.55,0.65);
+        e.holder.rotation.x = lo*Math.PI*2;                    // Looping (Bank kommt aus flyToward)
+      }
+      if(d<ARRIVE+40){
+        if(e.dst && e.dst.carrier){ enterCarrier(e, e.dst.carrier); }
+        else { e.dst=null; }
+      }
+      break;
+    }
+  }
+}
+
+// ================= (behalten) Träger-Touch-and-Go: Deck-Platzrunde =================
 // ---- Position auf der Platzrunde (Racetrack) ----
 function rtPoint(e, s){
   const info=e.info, R=e.rt.turnR, L=e.rt.L, wx=info.wx, wz=info.wz;
@@ -3007,42 +3183,6 @@ function rtPoint(e, s){
   if(s < t3)      return { x:wx+2*R,       z:(wz-L/2)+(s-t2),            seg:2 };          // Gegenanflug (+Z)
   const a=(s-t3)/R; return { x:(wx+R)+R*Math.cos(a), z:(wz+L/2)+R*Math.sin(a), seg:3 };
 }
-function rtAlt(e, p, cruise){
-  if(p.seg!==0) return cruise;                       // Kurven + Gegenanflug: Reiseflug
-  const zRel=p.z - e.info.wz, rw=e.rt.rwHalf, L=e.rt.L;
-  if(Math.abs(zRel) <= rw) return ISLAND_Y;          // Touchdown/Rollen: am Boden
-  const t=(Math.abs(zRel)-rw)/(L/2-rw);              // Anflug/Steigflug: Boden<->Reiseflug
-  return ISLAND_Y + t*(cruise-ISLAND_Y);
-}
-
-// Platzrunde: Airbus hält an (Menschen), Transall rollt+lädt und wirft danach ab.
-function stepLanding(e, dt){
-  const cruise=cruiseAltFor(e), R=e.rt.turnR, P=e.rt.P;
-  const p=rtPoint(e, e.s);
-  const zRel=p.z - e.info.wz, atTouch=(p.seg===0 && Math.abs(zRel)<=e.rt.rwHalf);
-
-  if(e.info.model==='Airbus'){
-    // in Bahnmitte anhalten -> Menschen raus, dann rein -> weiter
-    if(p.seg===0 && Math.abs(zRel)<4 && !e.serviced && e.hold<=0){ e.hold=5; e.serviced=true; aiPaxSequence(e); }
-    if(p.seg===2) e.serviced=false;                  // im Gegenanflug für nächste Runde freigeben
-  } else { // Transall: beim Rollen laden, nach dem Abheben abwerfen
-    if(atTouch && e.crateLoad<4){ e.crateLoad=Math.min(4, e.crateLoad + dt*2.5); }
-    if(p.seg===1 && !e.dropped && e.crateLoad>=1){ e.dropped=true; e.dropQueue=Math.max(2,Math.floor(e.crateLoad)); e.crateLoad=0; e.dropTimer=0; }
-    if(p.seg===2){ e.dropped=false; }
-    if(e.dropQueue>0){ e.dropTimer-=dt; if(e.dropTimer<=0){ aiDropCrate(e); e.dropQueue--; e.dropTimer=0.35; } }
-  }
-  if(e.hold>0){ e.hold-=dt; }                         // Halt: s friert ein
-  else { e.s = (e.s + e.info.vLin0*dt) % P; }
-  // Position + Höhe + Kurs
-  const alt=rtAlt(e, p, cruise);
-  const cy=e.group.position.y || alt;
-  e.group.position.set(p.x, cy + (alt-cy)*Math.min(1,dt*3), p.z);
-  const pn=rtPoint(e, (e.s+2)%P);                    // Blickpunkt voraus
-  faceTowards(e.group, pn.x, pn.z);
-  e.holder.rotation.x=0;
-}
-
-// Träger-Touch-and-Go: rotierte Deck-Platzrunde, kurz aufsetzen, sofort durchstarten (kein Halt).
 function rtAltCarrier(e, p, cruise){
   if(p.seg!==0) return cruise;                       // Kurven/Gegenanflug: Reiseflug
   const zRel=p.z - e.info.wz, L=e.rt.L, touch=24;    // nur ±24 m um die Deckmitte am Deck
@@ -3069,48 +3209,6 @@ function stepCarrier(e, dt){
   faceTowards(e.group, car.wx+lnx*cs+lnz*sn, car.wz-lnx*sn+lnz*cs);
   e.holder.rotation.z=waveRoll(e, dt, wxp, wzp);     // Flügelwackeln bei Spielernähe
   e.holder.rotation.x=0;
-}
-
-// Kreis-Flieger (AlphaJet cruise, Mustang aero, Canadair fish).
-function stepCircle(e, dt){
-  const info=e.info, cruise=cruiseAltFor(e);
-  const acx=info.acx!=null?info.acx:info.wx, acz=info.acz!=null?info.acz:info.wz;
-  const ang=info.phase + info.dir*worldClock*(info.vLin0/info.radius);
-  const x=acx+Math.cos(ang)*info.radius, z=acz+Math.sin(ang)*info.radius;
-  let alt=cruise, roll=0, pitch=0;
-  e.t+=dt; const P=info.model==='Canadair'?20:16, u=(e.t%P)/P;
-
-  if(e.mode==='aero'){
-    if(info.model==='AlphaJet'){                     // Jet: flacher, schneller Reise-Kreis (kein Looping)
-      roll = 0.25*info.dir; pitch = 0; alt = cruise;
-    } else {                                         // Mustang: wilde Rolle + Looping
-      roll = worldClock*1.6*info.dir;
-      const lo=winWin(u,0.35,0.45,0.55,0.65);
-      pitch = lo*Math.PI*2*info.dir; alt = cruise + lo*60;
-    }
-  } else if(e.mode==='fish'){                        // Canadair: fischen + evtl. löschen
-    // Winkel des Fluges relativ zum Feuer/Wasser: über Wasser tief (fischen), am Inselrand abwerfen.
-    const overIsland = isOnLand(x,z);
-    const fish = winWin(u,0.10,0.20,0.34,0.46);
-    alt = cruise - fish*(cruise-12);
-    if(e.spray){ e.spray.visible = fish>0.6 && !overIsland; e.spray.position.set(0,-3,2); e.spray.rotation.x=Math.PI; }
-    // Abwurf über der Insel/Feuer
-    let dropping=false;
-    if(info.fire){
-      const df=Math.hypot(x-info.fire.x, z-info.fire.z);
-      dropping = df < 60 && u>0.5;
-      if(dropping){ alt = Math.min(alt, cruise*0.5); }
-      if(e.fireGrp){ if(df<40 && u>0.5){ e.fireOut=true; } if(u<0.05) e.fireOut=false; e.fireGrp.visible=!e.fireOut; }
-    }
-    if(e.drop){ e.drop.visible=dropping; e.drop.position.set(0,-9,0); }
-  }
-  // Flügelwackeln bei Nähe
-  roll += waveRoll(e, dt, x, z);
-  const cy=e.group.position.y||alt;
-  e.group.position.set(x, cy+(alt-cy)*Math.min(1,dt*3), z);
-  const la=ang + info.dir*0.08;
-  faceTowards(e.group, acx+Math.cos(la)*info.radius, acz+Math.sin(la)*info.radius);
-  e.holder.rotation.z=roll; e.holder.rotation.x=pitch;
 }
 
 // Flügelwackeln: gibt zusätzlichen Roll zurück, wenn der Spieler nah ist.
@@ -3173,38 +3271,29 @@ function trafficTrail(e){
   for(let i=0;i<tr.N;i++){ const p=tr.pts[i]||tr.pts[0]||tail; arr[i*3]=p.x; arr[i*3+1]=p.y; arr[i*3+2]=p.z; }
   tr.line.geometry.attributes.position.needsUpdate=true;
 }
-function removeTraffic(e){
-  scene.remove(e.group);
-  if(e.trail) scene.remove(e.trail.line);
-  if(e.fireGrp) scene.remove(e.fireGrp);
+
+// ---- Flotte initialisieren / aktualisieren / recyceln ----
+function initFleet(){
+  if(!FLEET_MODELS.every(m=>glbTemplates[m])) return;   // erst wenn alle GLB geladen sind
+  for(const model of FLEET_COMP){
+    const p=spawnAroundPlayer(0.4,1.2);
+    const e=spawnPlane(model, p.x, p.z);
+    if(e) fleet.push(e);
+  }
 }
-
-// Reisegeschwindigkeit je Modell (m/s) — als vLin0 gespeichert.
-const TRAFFIC_V = { Airbus:60, Transall:52, Canadair:48, Mustang:80, AlphaJet:130 };
-
+function recycleIfFar(e){
+  const d=Math.hypot(e.group.position.x-state.pos.x, e.group.position.z-state.pos.z);
+  if(d > VIEW_CELLS*CELL*1.5){
+    const p=spawnAroundPlayer(0.9,1.3);
+    e.group.position.set(p.x, Math.max(60, state.pos.y+e.altOff), p.z);
+    e.heading=Math.random()*Math.PI*2;
+    if(e.trail) e.trail.pts.length=0;
+    assignMission(e);
+  }
+}
 function updateTraffic(dt){
-  const pcx=Math.round(state.pos.x/CELL), pcz=Math.round(state.pos.z/CELL);
-  const needed=new Set(); let live=0;
-  for(const [,e] of trafficCells){ if(e) live++; }
-  for(let dz=-VIEW_CELLS; dz<=VIEW_CELLS; dz++) for(let dx=-VIEW_CELLS; dx<=VIEW_CELLS; dx++){
-    const cx=pcx+dx, cz=pcz+dz, key=cx+','+cz; needed.add(key);
-    if(trafficCells.has(key)){
-      const e=trafficCells.get(key);
-      if(e===null && live<TRAFFIC_MAX){ const info=trafficInfo(cx,cz);
-        if(info){ info.vLin0=TRAFFIC_V[info.model]||60; const ne=makeTraffic(info); if(ne){ trafficCells.set(key,ne); live++; } } }
-      continue;
-    }
-    const info=trafficInfo(cx,cz);
-    if(!info){ trafficCells.set(key,null); continue; }
-    if(live>=TRAFFIC_MAX){ trafficCells.set(key,null); continue; }
-    info.vLin0=TRAFFIC_V[info.model]||60;
-    const e=makeTraffic(info); trafficCells.set(key, e||null); if(e) live++;
-  }
-  for(const [key,e] of trafficCells){ if(!needed.has(key)){ if(e) removeTraffic(e); trafficCells.delete(key); } }
-  for(const [,e] of trafficCells){ if(!e) continue;
-    if(e.mode==='land') stepLanding(e,dt); else if(e.mode==='carrier') stepCarrier(e,dt); else stepCircle(e,dt);
-    trafficTrail(e);
-  }
+  if(fleet.length===0){ initFleet(); }
+  for(const e of fleet){ stepMission(e, dt); trafficTrail(e); recycleIfFar(e); }
   updateAiEffects(dt);
 }
 
@@ -3246,7 +3335,7 @@ function updateTrafficAll(dt){
 }
 function toggleTraffic(){
   trafficOn=!trafficOn;
-  if(!trafficOn){ for(const [,e] of trafficCells){ if(e) removeTraffic(e); } trafficCells.clear(); clearFlyby(); clearAiEffects(); }
+  if(!trafficOn){ for(const e of fleet) removePlane(e); fleet.length=0; clearFlyby(); clearAiEffects(); }
   showToggle(trafficOn ? '✈️' : '🚫');
 }
 
