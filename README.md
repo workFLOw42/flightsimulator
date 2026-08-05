@@ -58,13 +58,31 @@ komplett abschalten (dann nur freies Fliegen).
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
 
 ## ✈️ Flugverkehr in der Luft (Taste J / LB)
-Der Himmel lebt: **KI-Flieger** ziehen ortsfest ihre Bahnen (alle 5 Modelle) — **ohne Kollision**.
-Airbus/Transall **landen** und laden Passagiere/Kisten, der Canadair **fischt Wasser** und **löscht**
-ein Feuer, der Mustang macht **Kunstflug**. Über **Flugzeugträgern** fliegen **Alpha-Jet & Mustang**
-eine Deck-Platzrunde und setzen im **Touch-and-Go** kurz auf dem Flugdeck auf; der Alpha-Jet zieht
-zusätzlich als ruhiger Reise-Kreis seine Bahn. Kommt ein Flieger nah vorbei, **wackelt** er zum Gruß mit
-den Flügeln. Sporadisch rauscht ein **Alpha-Jet von hinten** vorbei und durchbricht die Schallmauer.
-Hohe/schnelle Flieger ziehen **Kondensstreifen**. Mit **J** oder **LB** schaltet man den Verkehr an/aus (Standard: an).
+Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
+echten Missionen wie du** (keine bloße Deko) — **ohne Kollision mit dir**. Fliegt einer zu weit weg,
+taucht in deiner Nähe ein neuer mit neuer Mission auf, so bleibt der Himmel immer belebt.
+
+- **Canadair** pendelt **Wasser ↔ Feuer**: tankt tief über dem Meer, fliegt zu einer brennenden Insel
+  und löscht. Dieses **KI-Feuer kannst du mit deiner eigenen Canadair auch selbst löschen** (Wasser
+  drüber ablassen) — egal ob deine Aufgaben an sind.
+- **Transall** lädt auf der **Landebahn von Insel A** Kisten, fliegt zu **Insel B** und wirft sie am
+  Fallschirm ab.
+- **Airbus** nimmt Passagiere auf, fliegt **weit** zu einer anderen Landebahn und lässt sie aussteigen.
+  Airbus & Transall fliegen einen **echten Bahnanflug** (auf die Bahnachse einschwenken, aufsetzen,
+  ausrollen) und starten wieder — sie landen nicht mehr im Gras.
+- **Mustang** reist mit **Kunstflug** (Rolle/Looping); **Alpha-Jet** zieht schnelle Reisebahnen.
+- Über **Flugzeugträgern** setzen **Alpha-Jet & Mustang** im **Touch-and-Go** kurz auf dem Deck auf.
+
+**Hindernisse sind für die KI real.** Häuser, Berge und Wolkenkratzer-Städte werden nicht durchflogen:
+- **Airbus/Transall** (langsam) **ziehen hoch und weichen aus**.
+- **Alpha-Jet/Mustang** (schnell) entscheiden dynamisch aus Flughöhe, Steigrate und Hindernishöhe:
+  weit genug weg → **rechtzeitig übersteigen**; zu nah/zu tief → **Absprung (Schleudersitz) + Absturz**,
+  dann rückt (wie beim Spieler) die **Feuerwehr** aus.
+- Der sporadische **Überschall-Vorbeiflug** (Alpha-Jet von hinten, Schallmauer-Knall) folgt derselben
+  Regel: über einer Stadt steigt er drüber oder stürzt ab — je nach Distanz.
+
+Nah vorbeikommende Flieger **wackeln** zum Gruß mit den Flügeln; schnelle/hohe ziehen
+**Kondensstreifen**. Mit **J** oder **LB** schaltet man den gesamten Verkehr an/aus (Standard: an).
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.
