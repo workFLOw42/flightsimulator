@@ -890,6 +890,20 @@ function updateWaterDrop(dt){
   const puls = 0.85 + 0.15*Math.sin(waterDrop.t*20);
   waterDrop.mesh.scale.set(puls, 1, puls);
   waterDrop.mesh.material.opacity = 0.65;
+  // KI-Feuer löschen: Spieler-Wasser (Canadair) über einer KI-Feuerstelle -> Feuer aus (Daumen).
+  // Läuft unabhängig von missionsOn, weil dropWater/updateWaterDrop nicht daran hängen.
+  if(typeof aiFires !== 'undefined' && aiFires.length){
+    const alt = state.pos.y - ISLAND_Y;
+    for(let i=aiFires.length-1;i>=0;i--){
+      const f=aiFires[i];
+      if(alt < 130 && Math.hypot(f.x-state.pos.x, f.z-state.pos.z) < f.r){
+        const owner=f.owner; if(owner) owner.fireGrp=null;
+        scene.remove(f.grp); aiFires.splice(i,1);
+        if(owner){ owner.fireXZ=null; assignMission(owner); }
+        showThumb();
+      }
+    }
+  }
   if(waterDrop.t <= 0){ scene.remove(waterDrop.mesh); waterDrop = null; }
 }
 
@@ -2981,7 +2995,7 @@ function aiFindFireIsland(e){
     const fl=new THREE.Mesh(new THREE.ConeGeometry(1.6,5,6), flameMat);
     fl.position.set((Math.random()-0.5)*8, ISLAND_Y+2.5, (Math.random()-0.5)*8); g.add(fl);
   }
-  g.position.set(fx,0,fz); scene.add(g); e.fireGrp=g;
+  g.position.set(fx,0,fz); scene.add(g); e.fireGrp=g; registerAiFire(e, g, fx, fz);
   return { x:fx, z:fz };
 }
 // Nächste Wasserstelle (analog nearestWaterXZ, aber um die KI-Position).
@@ -3039,16 +3053,16 @@ function spawnPlane(model, x, z){
             bank:0, wave:0, waveCd:3, aeroT:0,
             state:'', timer:0, dst:null, fireXZ:null, fireGrp:null, tank:0,
             crateLoad:0, dropQueue:0, dropTimer:0, paxLoad:0, loadCx:0, loadCz:0,
-            carrier:null, info:null, rt:null, s:0 };
+            onFinal:false, carrier:null, info:null, rt:null, s:0 };
   assignMission(e);
   return e;
 }
 function assignMission(e){
-  if(e.fireGrp){ scene.remove(e.fireGrp); e.fireGrp=null; }
+  clearAiFire(e);
   if(e.spray) e.spray.visible=false;
   if(e.drop)  e.drop.visible=false;
   e.dst=null; e.fireXZ=null; e.tank=0; e.crateLoad=0; e.dropQueue=0; e.dropTimer=0;
-  e.paxLoad=0; e.carrier=null; e.info=null; e.rt=null; e.timer=0;
+  e.paxLoad=0; e.carrier=null; e.info=null; e.rt=null; e.timer=0; e.onFinal=false;
   if(e.model==='Canadair')      e.state='toWater';
   else if(e.model==='Transall') e.state='toLoad';
   else if(e.model==='Airbus')   e.state='toBoard';
@@ -3057,7 +3071,7 @@ function assignMission(e){
 function removePlane(e){
   scene.remove(e.group);
   if(e.trail) scene.remove(e.trail.line);
-  if(e.fireGrp) scene.remove(e.fireGrp);
+  clearAiFire(e);
 }
 
 // ---- Träger-Touch-and-Go-Delegation für Jet/Mustang (nutzt bestehendes stepCarrier) ----
@@ -3066,6 +3080,37 @@ function enterCarrier(e, car){
   e.info={ car, wx:car.wx, wz:car.wz, vLin0:e.spd };
   e.rt={ turnR, L, rwHalf, P }; e.s=0; e.timer=P/e.spd + 1.0;   // ~eine Deckrunde
   e.carrier=car; e.state='carrierLap';
+}
+
+// ---- Bahnanflug für KI: Anflug ENTLANG der Bahnachse (x=wx, Z-Achse) zur zugewandten Schwelle ----
+// Löst zugleich "im Grünen landen" UND das Fahren durch Häuser/Berge: der Bahnkorridor wird von
+// islandBuildings bauwerksfrei gehalten -> ein achsentreuer Anflug ist automatisch hindernisfrei.
+function aiRunwayApproach(e, info){
+  const half=Math.min(260, info.radius*1.4)/2;
+  const nearSign=(e.group.position.z >= info.wz) ? 1 : -1;    // dem Flieger zugewandte Schwelle
+  return { thx:info.wx, thz:info.wz + nearSign*half,          // Schwelle = Aufsetzpunkt
+           apx:info.wx, apz:info.wz + nearSign*(half+240) };  // Anflugfixpunkt (240 m davor, auf Achse)
+}
+// Achsentreuer Anflug + Aufsetzen. Gibt true zurück, sobald an der Schwelle aufgesetzt.
+function aiFlyRunway(e, info, dt){
+  const cruise=cruiseAltFor(e), a=aiRunwayApproach(e, info);
+  if(!e.onFinal){                                             // Phase 1: erst auf die Bahnachse einschwenken
+    const d=flyToward(e, a.apx, a.apz, cruise, dt);
+    if(d < ARRIVE*2) e.onFinal=true;
+    return false;
+  }
+  const dz=Math.abs(e.group.position.z - a.thz);             // Phase 2 (Final): entlang der Achse zur Schwelle
+  const ty=ISLAND_Y + Math.min(1, dz/300)*(cruise-ISLAND_Y); // Höhe rampt Reiseflug -> Boden
+  const d=flyToward(e, a.thx, a.thz, ty, dt, Math.max(0.2, Math.min(1, dz/200)));
+  if(d < ARRIVE){ e.onFinal=false; return true; }
+  return false;
+}
+// ---- KI-Feuer (Canadair): in aiFires registriert, damit auch der SPIELER es löschen kann ----
+const aiFires = [];
+function registerAiFire(e, grp, x, z){ aiFires.push({ grp, x, z, r:60, owner:e }); }
+function clearAiFire(e){
+  if(e.fireGrp){ scene.remove(e.fireGrp); e.fireGrp=null; }
+  for(let i=aiFires.length-1;i>=0;i--){ if(aiFires[i].owner===e) aiFires.splice(i,1); }
 }
 
 // ---- Missions-Statemachine je Modell ----
@@ -3086,7 +3131,7 @@ function stepMission(e, dt){
         const dtF=Math.hypot(e.fireXZ.x-e.group.position.x, e.fireXZ.z-e.group.position.z);
         const ty=dtF<220 ? ISLAND_Y+22 : cruise;
         const d=flyToward(e, e.fireXZ.x, e.fireXZ.z, ty, dt, dtF<220?0.7:1);
-        if(d<ARRIVE+15){ e.state='dropFire'; e.timer=1.2; if(e.drop){ e.drop.visible=true; e.drop.position.set(0,-9,0);} if(e.fireGrp){ scene.remove(e.fireGrp); e.fireGrp=null; } }
+        if(d<ARRIVE+15){ e.state='dropFire'; e.timer=1.2; if(e.drop){ e.drop.visible=true; e.drop.position.set(0,-9,0);} clearAiFire(e); }
       } else if(e.state==='dropFire'){
         flyToward(e, e.fireXZ.x, e.fireXZ.z, ISLAND_Y+18, dt, 0.7);
         e.timer-=dt; if(e.timer<=0){ if(e.drop)e.drop.visible=false; e.tank=0; e.fireXZ=null; e.state='cooldown'; e.timer=3; }
@@ -3098,12 +3143,8 @@ function stepMission(e, dt){
     }
     case 'Transall': {
       if(e.state==='toLoad'){
-        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
-        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
-        const rw=Math.min(260,e.dst.r*1.4)/2;
-        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
-        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
-        if(d<ARRIVE){ e.state='loading'; e.loadCx=e.dst.cx; e.loadCz=e.dst.cz; e.crateLoad=0; e.dst=null; }
+        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={info:h.info,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        if(aiFlyRunway(e, e.dst.info, dt)){ e.state='loading'; e.loadCx=e.dst.cx; e.loadCz=e.dst.cz; e.crateLoad=0; e.dst=null; }
       } else if(e.state==='loading'){
         e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
         e.crateLoad=Math.min(4, e.crateLoad+dt*2.5);
@@ -3121,26 +3162,18 @@ function stepMission(e, dt){
     }
     case 'Airbus': {
       if(e.state==='toBoard'){
-        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
-        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
-        const rw=Math.min(260,e.dst.r*1.4)/2;
-        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
-        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
-        if(d<ARRIVE){ e.state='boarding'; e.timer=2; e.dst=null; }
+        if(!e.dst){ const h=aiFindRunwayIsland(e, 999,999); if(h){ e.dst={info:h.info,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        if(aiFlyRunway(e, e.dst.info, dt)){ e.state='boarding'; e.timer=2; e.dst=null; }
       } else if(e.state==='boarding'){
         e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
         e.timer-=dt; e.paxLoad=Math.min(4, (2-e.timer)/2*4);
         if(e.timer<=0){ e.paxLoad=4; e.state='toFar'; e.dst=null; }
       } else if(e.state==='toFar'){
-        if(!e.dst){ const h=aiFindDistantIsland(e); if(h){ e.dst={x:h.info.wx,z:h.info.wz,r:h.info.radius,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
-        const d=flyToward(e, e.dst.x, e.dst.z, cruise, dt);
-        if(d<Math.min(260,e.dst.r*1.4)/2+60){ e.state='landing'; }
+        if(!e.dst){ const h=aiFindDistantIsland(e); if(h){ e.dst={info:h.info,cx:h.cx,cz:h.cz}; } else { const w=aiRandomWaypoint(e); flyToward(e,w.x,w.z,cruise,dt); return; } }
+        const d=flyToward(e, e.dst.info.wx, e.dst.info.wz, cruise, dt);
+        if(d < e.dst.info.radius+400){ e.state='landing'; e.onFinal=false; }
       } else if(e.state==='landing'){
-        const dd=Math.hypot(e.dst.x-e.group.position.x, e.dst.z-e.group.position.z);
-        const rw=Math.min(260,e.dst.r*1.4)/2;
-        const ty=dd<rw?ISLAND_Y:(ISLAND_Y+Math.min(1,(dd-rw)/220)*(cruise-ISLAND_Y));
-        const d=flyToward(e, e.dst.x, e.dst.z, ty, dt, dd<rw?Math.max(0.15,dd/rw):1);
-        if(d<ARRIVE){ aiPaxSequence(e); e.state='unload'; e.timer=5; e.dst=null; }
+        if(aiFlyRunway(e, e.dst.info, dt)){ aiPaxSequence(e); e.state='unload'; e.timer=5; e.dst=null; }
       } else if(e.state==='unload'){
         e.group.position.y += (ISLAND_Y-e.group.position.y)*Math.min(1,dt*3);
         e.timer-=dt; if(e.timer<=0){ e.paxLoad=0; assignMission(e); }
