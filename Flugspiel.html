@@ -2298,7 +2298,7 @@ addEventListener('keyup', e => { keys[e.code]=false; });
 let gamepadIndex = null;
 addEventListener('gamepadconnected', e => { gamepadIndex=e.gamepad.index;
   document.getElementById('pad').textContent='Controller: '+e.gamepad.id; });
-addEventListener('gamepaddisconnected', ()=>{ gamepadIndex=null;
+addEventListener('gamepaddisconnected', ()=>{ stopRumble(); gamepadIndex=null;
   document.getElementById('pad').textContent='Controller getrennt.'; });
 function deadzone(v, dz=0.15){ return Math.abs(v)<dz ? 0 : (v-Math.sign(v)*dz)/(1-dz); }
 
@@ -2327,6 +2327,24 @@ function rumble(durMs, strong, weak){
   }
   _rumDbg='kein Aktuator (va='+(!!va)+' ha='+(!!ha)+')';
 }
+// Laufende Vibration SOFORT beenden (beim Schließen/Verstecken/Trennen). Deckt dieselben
+// Aktuator-Varianten wie rumble() ab. reset() ist die saubere Stopp-API; sonst 0-Effekt.
+function stopRumble(){
+  if(gamepadIndex===null) return;
+  const gp = navigator.getGamepads()[gamepadIndex]; if(!gp) return;
+  const va = gp.vibrationActuator;
+  if(va){
+    try{ if(va.reset){ va.reset(); return; } }catch(e){}
+    try{ if(va.playEffect){ va.playEffect('dual-rumble', { startDelay:0, duration:0, strongMagnitude:0, weakMagnitude:0 }); return; } }catch(e){}
+    try{ if(va.pulse){ va.pulse(0, 0); return; } }catch(e){}
+  }
+  const ha = gp.hapticActuators && gp.hapticActuators[0];
+  if(ha && ha.pulse){ try{ ha.pulse(0, 0); }catch(e){} }
+}
+// Beim Verlassen/Verstecken der Seite die Vibration stoppen (pagehide feuert auch beim Tab-Schliessen).
+addEventListener('pagehide', stopRumble);
+addEventListener('blur', stopRumble);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) stopRumble(); });
 // Vibration an Ereignisse koppeln (Flankenerkennung): Crash stark, Landung sanft, Stall zittern.
 let _rumPrevCrashed=false, _rumPrevGround=true, _rumStallT=0;
 function updateRumble(dt){
