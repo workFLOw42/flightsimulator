@@ -3505,7 +3505,13 @@ function spawnFlyby(){
   const rightV=new THREE.Vector3(-fwd.z,0,fwd.x);
   const side=(Math.random()<0.5?-1:1)*(8+Math.random()*12);        // knapp seitlich
   const start=state.pos.clone().addScaledVector(fwd,-380).addScaledVector(rightV,side);
-  start.y=state.pos.y+4+Math.random()*12;                          // knapp darüber
+  // Die geplante Bahn (~1400 m nach vorn) auf Hindernisse abtasten. Frei -> tiefer, cooler
+  // Vorbeiflug knapp über dem Spieler. Über Stadt/Berg -> hoch genug spawnen, um sauber
+  // drüberzufliegen (statt mitten im Flug hart hochzuspringen).
+  let pathTop=0;
+  for(let d=0; d<=1400; d+=40){ pathTop=Math.max(pathTop, aiObstacleTopAt(start.x+fwd.x*d, start.z+fwd.z*d, 25)); }
+  const lowY=state.pos.y+4+Math.random()*12;                       // normaler tiefer Vorbeiflug
+  start.y = (pathTop > ISLAND_Y+2) ? Math.max(lowY, pathTop+40) : lowY;  // nur über Hindernissen hoch
   const group=new THREE.Group(), holder=new THREE.Group(); group.add(holder);
   const m=glbTemplates['AlphaJet'].clone(true); m.rotation.y=TRAFFIC_ROT['AlphaJet']; holder.add(m);
   group.position.copy(start); scene.add(group);
@@ -3515,10 +3521,11 @@ function spawnFlyby(){
 function updateFlyby(dt){
   if(!flyby){ flybyTimer-=dt; if(flybyTimer<=0){ spawnFlyby(); flybyTimer=16+Math.random()*20; } return; }
   const f=flyby; f.group.position.addScaledVector(f.vel,dt);
-  // Clamp an aktueller UND vorausliegender Position (Flyby ist sehr schnell -> sonst 1-Frame-Durchflug).
-  const aheadX=f.group.position.x+f.vel.x*dt, aheadZ=f.group.position.z+f.vel.z*dt;
-  const minY=Math.max(aiObstacleTopAt(f.group.position.x, f.group.position.z, 20),
-                      aiObstacleTopAt(aheadX, aheadZ, 20))+30;   // über Türme/Berge heben
+  // Sicherheitsnetz: Korridor bis ~500 m voraus abtasten und ueber Hindernisse halten
+  // (Spawn-Hoehe deckt das i.d.R. schon ab; das hier faengt Restfaelle sauber auf).
+  let minY=0;
+  for(let d=0; d<=500; d+=50){ minY=Math.max(minY, aiObstacleTopAt(f.group.position.x+f.vel.x/(SOUND_SPEED+60)*d, f.group.position.z+f.vel.z/(SOUND_SPEED+60)*d, 20)); }
+  minY+=30;
   if(f.group.position.y < minY) f.group.position.y = minY;
   faceTowards(f.group, f.group.position.x+f.vel.x, f.group.position.z+f.vel.z);
   f.life-=dt;
