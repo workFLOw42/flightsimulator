@@ -3053,7 +3053,7 @@ function spawnPlane(model, x, z){
             bank:0, wave:0, waveCd:3, aeroT:0,
             state:'', timer:0, dst:null, fireXZ:null, fireGrp:null, tank:0,
             crateLoad:0, dropQueue:0, dropTimer:0, paxLoad:0, loadCx:0, loadCz:0,
-            onFinal:false, rolling:false, carrier:null, info:null, rt:null, s:0 };
+            onFinal:false, rolling:false, rollRun:0, carrier:null, info:null, rt:null, s:0 };
   assignMission(e);
   return e;
 }
@@ -3062,7 +3062,7 @@ function assignMission(e){
   if(e.spray) e.spray.visible=false;
   if(e.drop)  e.drop.visible=false;
   e.dst=null; e.fireXZ=null; e.tank=0; e.crateLoad=0; e.dropQueue=0; e.dropTimer=0;
-  e.paxLoad=0; e.carrier=null; e.info=null; e.rt=null; e.timer=0; e.onFinal=false; e.rolling=false;
+  e.paxLoad=0; e.carrier=null; e.info=null; e.rt=null; e.timer=0; e.onFinal=false; e.rolling=false; e.rollRun=0;
   if(e.model==='Canadair')      e.state='toWater';
   else if(e.model==='Transall') e.state='toLoad';
   else if(e.model==='Airbus')   e.state='toBoard';
@@ -3090,7 +3090,7 @@ function aiRunwayApproach(e, info){
   const nearSign=(e.group.position.z >= info.wz) ? 1 : -1;      // dem Flieger zugewandte Schwelle
   return { thx:info.wx, thz:info.wz + nearSign*half,            // Schwelle = Aufsetzpunkt
            apx:info.wx, apz:info.wz + nearSign*(half+260),      // Anflugfixpunkt (auf Achse, weit draußen)
-           midx:info.wx, midz:info.wz, half };                  // Bahnmitte (Roll-/Ladepunkt)
+           midx:info.wx, midz:info.wz, half, nearSign, iwz:info.wz };  // Bahnmitte + Seite
 }
 // 3-Phasen-Landung: (1) hoch auf die Bahnachse einschwenken, (2) Gleitpfad HART an die Distanz
 // gekoppelt (kein Absacken) zur Schwelle, (3) auf der Bahn bis zur Mitte ausrollen.
@@ -3101,15 +3101,16 @@ function aiFlyRunway(e, info, dt){
     if(d < ARRIVE*1.5) e.onFinal=true;
     return false;
   }
-  if(e.onFinal){                                               // Phase 2: Gleitpfad zur Schwelle
-    const dz=Math.abs(e.group.position.z - a.thz);
-    const glide=ISLAND_Y + Math.min(1, dz/260)*(APP-ISLAND_Y);
-    const d=flyToward(e, a.thx, a.thz, glide, dt, 0.7);
+  if(e.onFinal){                                               // Phase 2: Gleitpfad ÜBER die Schwelle zur Mitte
+    const dz=Math.abs(e.group.position.z - a.thz);             // Distanz bis zur Schwelle (Höhe daran gekoppelt)
+    const glide=ISLAND_Y + Math.min(1, dz/260)*(APP-ISLAND_Y); // Aufsetzhöhe = Boden GENAU an der Schwelle
+    flyToward(e, a.midx, a.midz, glide, dt, 0.7);              // Ziel = Bahnmitte -> zieht über die Schwelle
     e.group.position.y = glide;                                // Höhe HART setzen -> exakter Gleitpfad
-    if(d < 14){ e.onFinal=false; e.rolling=true; }
+    // Erst "gelandet"/rollend, wenn die Schwelle WIRKLICH überflogen ist (auf der Bahn).
+    if(a.nearSign*(e.group.position.z - a.iwz) <= a.half){ e.onFinal=false; e.rolling=true; }
     return false;
   }
-  const d=flyToward(e, a.midx, a.midz, ISLAND_Y, dt, 0.35);    // Phase 3: auf der Bahn ausrollen (am Boden)
+  const d=flyToward(e, a.midx, a.midz, ISLAND_Y, dt, 0.35);    // Phase 3: auf der Bahn zur Mitte ausrollen
   e.group.position.y = ISLAND_Y;
   if(d < ARRIVE){ e.rolling=false; return true; }
   return false;
@@ -3118,9 +3119,18 @@ function aiFlyRunway(e, info, dt){
 // dann erst frei navigieren. Braucht kein Ziel — hält den bauwerksfreien Bahnkorridor.
 function aiDepartRunway(e, dt){
   const APP=Math.max(cruiseAltFor(e), 90);
-  const tx=e.group.position.x - Math.sin(e.heading)*300, tz=e.group.position.z - Math.cos(e.heading)*300;
-  flyToward(e, tx, tz, APP, dt, 0.85);
-  return (e.group.position.y >= APP-8);
+  e.rollRun=(e.rollRun||0) + e.spd*dt;                          // zurückgelegte Startrollstrecke (m)
+  const tx=e.group.position.x - Math.sin(e.heading)*400, tz=e.group.position.z - Math.cos(e.heading)*400;
+  if(e.rollRun < 130){                                          // Phase A: Bodenlauf (rollt, hebt noch nicht ab)
+    flyToward(e, tx, tz, ISLAND_Y, dt, 0.5 + Math.min(0.5, e.rollRun/130));
+    e.group.position.y = ISLAND_Y;
+    return false;
+  }
+  const climb=ISLAND_Y + Math.min(1,(e.rollRun-130)/520)*(APP-ISLAND_Y);  // Phase B: flach steigen (streckengekoppelt)
+  flyToward(e, tx, tz, climb, dt, 1);
+  e.group.position.y = climb;
+  if(climb >= APP-2){ e.rollRun=0; return true; }
+  return false;
 }
 // ---- KI-Feuer (Canadair): in aiFires registriert, damit auch der SPIELER es löschen kann ----
 const aiFires = [];
@@ -3165,7 +3175,7 @@ function stepMission(e, dt){
       } else if(e.state==='loading'){
         e.group.position.y = ISLAND_Y;                        // steht auf der Bahn
         e.crateLoad=Math.min(4, e.crateLoad+dt*2.5);
-        if(e.crateLoad>=4){ e.state='depart'; }
+        if(e.crateLoad>=4){ e.state='depart'; e.rollRun=0; }
       } else if(e.state==='depart'){
         if(aiDepartRunway(e, dt)){ e.state='toTarget'; e.dst=null; }
       } else if(e.state==='toTarget'){
@@ -3186,7 +3196,7 @@ function stepMission(e, dt){
       } else if(e.state==='boarding'){
         e.group.position.y = ISLAND_Y;                        // steht auf der Bahn
         e.timer-=dt; e.paxLoad=Math.min(4, (2-e.timer)/2*4);
-        if(e.timer<=0){ e.paxLoad=4; e.state='depart'; }
+        if(e.timer<=0){ e.paxLoad=4; e.state='depart'; e.rollRun=0; }
       } else if(e.state==='depart'){
         if(aiDepartRunway(e, dt)){ e.state='toFar'; e.dst=null; }
       } else if(e.state==='toFar'){
