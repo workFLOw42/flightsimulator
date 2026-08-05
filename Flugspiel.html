@@ -3367,9 +3367,16 @@ function aiObstacleTopAt(x, z, margin){
   const pcx=Math.round(x/CELL), pcz=Math.round(z/CELL);
   let top=0;
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
-    const info=islandInfo(pcx+dx,pcz+dz); if(!info) continue;
-    const list=islandBuildings(pcx+dx,pcz+dz); if(!list) continue;
+    const cx=pcx+dx, cz=pcz+dz;
+    const info=islandInfo(cx,cz); if(!info) continue;
     const lx=x-info.wx, lz=z-info.wz;
+    // Wolkenkratzer-Stadt = geschlossener BLOCK: volle Turmhöhe über die ganze Stadtfläche.
+    // (Sonst rutschen schnelle Jets durch die ~26 m breiten Gassen zwischen den Türmen.)
+    if(cellRnd(cx,cz,99)<0.10){
+      if(Math.hypot(lx,lz) < info.radius*0.94 + margin){ if(165>top)top=165; }
+      continue;
+    }
+    const list=islandBuildings(cx,cz); if(!list) continue;
     for(const b of list){
       if(b.type==='hill'){
         const rBase=30+b.r1*50, hh=20+b.r2*40, dr=Math.hypot(lx-b.x,lz-b.z);
