@@ -3496,7 +3496,12 @@ function updateTraffic(dt){
 }
 
 // -------- Alpha-Jet-Überschall-Vorbeiflug (sporadisch, von hinten) --------
+// Fliegt tief (Action-Zone). Hindernisse (Stadt/Berg/Haus) sind REAL: weit genug weg -> hochziehen,
+// zu nah/zu tief -> Absprung (Schleudersitz) + Crash, wie bei der frei fliegenden Flotte.
 let flyby=null, flybyTimer=10+Math.random()*12;
+const FLYBY_MAX_CLIMB=140;   // max. vertikale Steigrate (m/s); reicht die Distanz nicht -> Crash
+const FLYBY_LOOK=800;        // Vorausschau-Reichweite (m) im Korridor
+const FLYBY_CLR=25;          // Sicherheitsabstand ueber der Hindernisspitze (m)
 function makeFlybyCone(){ const c=new THREE.Mesh(new THREE.ConeGeometry(6,9,20,1,true),aiVaporMat); c.renderOrder=996; scene.add(c); return c; }
 function spawnFlyby(){
   if(!glbTemplates['AlphaJet']) return;
@@ -3505,13 +3510,7 @@ function spawnFlyby(){
   const rightV=new THREE.Vector3(-fwd.z,0,fwd.x);
   const side=(Math.random()<0.5?-1:1)*(8+Math.random()*12);        // knapp seitlich
   const start=state.pos.clone().addScaledVector(fwd,-380).addScaledVector(rightV,side);
-  // Die geplante Bahn (~1400 m nach vorn) auf Hindernisse abtasten. Frei -> tiefer, cooler
-  // Vorbeiflug knapp über dem Spieler. Über Stadt/Berg -> hoch genug spawnen, um sauber
-  // drüberzufliegen (statt mitten im Flug hart hochzuspringen).
-  let pathTop=0;
-  for(let d=0; d<=1400; d+=40){ pathTop=Math.max(pathTop, aiObstacleTopAt(start.x+fwd.x*d, start.z+fwd.z*d, 25)); }
-  const lowY=state.pos.y+4+Math.random()*12;                       // normaler tiefer Vorbeiflug
-  start.y = (pathTop > ISLAND_Y+2) ? Math.max(lowY, pathTop+40) : lowY;  // nur über Hindernissen hoch
+  start.y=state.pos.y+4+Math.random()*12;                          // tiefer Vorbeiflug (Action-Zone)
   const group=new THREE.Group(), holder=new THREE.Group(); group.add(holder);
   const m=glbTemplates['AlphaJet'].clone(true); m.rotation.y=TRAFFIC_ROT['AlphaJet']; holder.add(m);
   group.position.copy(start); scene.add(group);
@@ -3520,13 +3519,20 @@ function spawnFlyby(){
 }
 function updateFlyby(dt){
   if(!flyby){ flybyTimer-=dt; if(flybyTimer<=0){ spawnFlyby(); flybyTimer=16+Math.random()*20; } return; }
-  const f=flyby; f.group.position.addScaledVector(f.vel,dt);
-  // Sicherheitsnetz: Korridor bis ~500 m voraus abtasten und ueber Hindernisse halten
-  // (Spawn-Hoehe deckt das i.d.R. schon ab; das hier faengt Restfaelle sauber auf).
-  let minY=0;
-  for(let d=0; d<=500; d+=50){ minY=Math.max(minY, aiObstacleTopAt(f.group.position.x+f.vel.x/(SOUND_SPEED+60)*d, f.group.position.z+f.vel.z/(SOUND_SPEED+60)*d, 20)); }
-  minY+=30;
-  if(f.group.position.y < minY) f.group.position.y = minY;
+  const f=flyby;
+  if(f.crashed){ flybyStepCrash(dt); return; }
+  f.group.position.addScaledVector(f.vel,dt);
+  // Dynamisch (Flughoehe / Steigrate / Hindernishoehe): fuer JEDES Hindernis im Korridor voraus die
+  // noetige Steigrate = (Hindernis+Puffer - Flughoehe) / Distanz. Das Maximum entscheidet:
+  // schaffbar (<= FLYBY_MAX_CLIMB) -> rechtzeitig hochziehen; sonst -> Absprung + Crash (kein Durchflug).
+  const spd=SOUND_SPEED+60, dirx=f.vel.x/spd, dirz=f.vel.z/spd;
+  let needVy=0;
+  for(let d=40; d<=FLYBY_LOOK; d+=25){
+    const raw=aiObstacleTopAt(f.group.position.x+dirx*d, f.group.position.z+dirz*d, 20);
+    if(raw > f.group.position.y){ const v=(raw+FLYBY_CLR - f.group.position.y)*spd/d; if(v>needVy) needVy=v; }
+  }
+  if(needVy > FLYBY_MAX_CLIMB){ flybyCrash(); return; }             // zu nah/zu tief -> Crash
+  if(needVy > 0){ f.group.position.y += Math.min(needVy, FLYBY_MAX_CLIMB)*dt; }   // rechtzeitig steigen
   faceTowards(f.group, f.group.position.x+f.vel.x, f.group.position.z+f.vel.z);
   f.life-=dt;
   const ahead=f.group.position.clone().sub(state.pos).dot(f.fwd);
@@ -3537,7 +3543,48 @@ function updateFlyby(dt){
   } else f.cone.visible=false;
   if(f.life<=0 || ahead>900) clearFlyby();
 }
-function clearFlyby(){ if(!flyby) return; scene.remove(flyby.group); scene.remove(flyby.cone); flyby=null; }
+// Flyby-Crash: Schleudersitz + trudelnder Sturz + Wrack + eigene Feuerwehr (wie Flotte).
+function flybyCrash(){
+  const f=flyby; if(!f || f.crashed) return;
+  f.crashed=true; f.crashT=0; f.vy=0; f.spin=2.5+Math.random()*2; f.wrecked=false;
+  f.cone.visible=false;
+  const chute=makeParachute(); chute.position.copy(f.group.position); scene.add(chute);
+  f.chute={ group:chute, vy:-9 };
+}
+function flybyStepCrash(dt){
+  const f=flyby; f.crashT+=dt;
+  if(f.chute){
+    f.chute.group.position.y += f.chute.vy*dt;
+    f.chute.group.position.x += Math.sin(f.chute.group.position.y*0.1)*2*dt;
+    const cs=isOnCarrier(f.chute.group.position.x,f.chute.group.position.z)?fordDeckY:(isOnLand(f.chute.group.position.x,f.chute.group.position.z)?ISLAND_Y:0);
+    if(f.chute.group.position.y<=cs+1) f.chute.group.position.y=cs+1;
+  }
+  if(!f.wrecked){
+    f.vy=Math.max(f.vy-14*dt, -55);
+    f.group.position.y += f.vy*dt;
+    f.group.position.x += f.fwd.x*60*dt; f.group.position.z += f.fwd.z*60*dt;   // trudelt noch etwas vorwaerts
+    f.holder.rotation.z += f.spin*dt; f.holder.rotation.x += f.spin*0.6*dt;
+    const gy=isOnCarrier(f.group.position.x,f.group.position.z)?fordDeckY:(isOnLand(f.group.position.x,f.group.position.z)?ISLAND_Y:0);
+    if(f.group.position.y <= gy+1.5){
+      f.group.position.y=gy+1.5; f.wrecked=true; f.crashT=0;
+      const fg=new THREE.Group();
+      for(let i=0;i<6;i++){ const fl=new THREE.Mesh(new THREE.ConeGeometry(1.6,5,6), flameMat); fl.position.set((Math.random()-0.5)*8, gy+2.5, (Math.random()-0.5)*8); fg.add(fl); }
+      fg.position.set(f.group.position.x,0,f.group.position.z); scene.add(fg); f.crashFire=fg;
+      f.rescue=aiSpawnRescue(f.group.position.x, f.group.position.z);
+    }
+    return;
+  }
+  if(f.rescue) aiStepRescue(f, dt);
+  if(f.crashT > 8) clearFlyby();   // aufraeumen (clearFlyby entfernt auch chute/fire/rescue)
+}
+function clearFlyby(){
+  if(!flyby) return;
+  scene.remove(flyby.group); scene.remove(flyby.cone);
+  if(flyby.chute){ scene.remove(flyby.chute.group); }
+  if(flyby.crashFire){ scene.remove(flyby.crashFire); }
+  if(flyby.rescue){ for(const r of flyby.rescue){ scene.remove(r.group); scene.remove(r.jet); } }
+  flyby=null;
+}
 
 function updateTrafficAll(dt){
   worldClock+=dt;
