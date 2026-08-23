@@ -112,11 +112,14 @@ und nicht sofort in den Hyperraum rutscht.
 Auf dem **Todesstern** kann man **im Hangar landen**: einfach anfliegen wie einen Planeten. Drinnen
 schwebt man mittig über dem Hangarboden (20 % Schub) und setzt mit 10 % auf; wer hinausfliegt oder
 hochsteigt, ist wieder im All. **Dort startet der X-Wing auch** — beim Spielstart und nach jedem
-Reset. Die **Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
+Reset. Genauso funktionieren die **Star Destroyer**: drei davon stehen im Raum verteilt und sind die
+Flugzeugträger des Weltalls — anfliegen, im selben Hangar landen, wieder hinausfliegen. Rundherum
+sieht man **andere Schiffe einfliegen**. Die **Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
 zu ihr hin, seitlich fliegt man weiter.
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (5×),
-**Razor Crest** (4×) und **Serenity** fliegen ihre eigenen Kurse durchs All. Ihr Tempo liegt nahe an
+**Razor Crest** (4×), **Serenity**, **USS Voyager** und **USS Enterprise-D** fliegen ihre eigenen
+Kurse durchs All — etwa jedes dritte Schiff steuert einen Star Destroyer an. Ihr Tempo liegt nahe an
 deinem — manche überholen dich langsam, andere werden überholt, mancher zieht einfach quer durchs
 Bild. **Rammen kann man sie nicht**, und Waffen haben sie keine; **nur X-Wings schießen** auf
 Asteroiden. Der Todesstern bleibt stumm: für ihn zeigt das HUD bewusst kein Symbol.
@@ -199,6 +202,9 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Perseverance (NASA Mars Landing 2021) | **Thomas Flynn** |
 | Death Star (Star Wars) | **Sebastian Sosnowski** |
 | Star Wars Hangar Interior | **Aditya Voxel** |
+| Star Destroyer (Star Wars) | **rubaun** |
+| USS Voyager (Star Trek) | **CGI Tutorials** |
+| USS Enterprise-D (Star Trek) | **LoganRolphh** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 

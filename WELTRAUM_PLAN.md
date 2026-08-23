@@ -490,6 +490,23 @@ base64). Das Bundle liegt damit bei **232 MB**. Im Hangar stehen rund 650.000 Dr
 vergleichbar mit dem Weltall, aber der erste Download wächst deutlich. Wenn das zu viel wird, wäre
 dieses Modell der erste Kandidat für einen kleineren Ersatz.
 
+### Phase 8 — Star Destroyer als Träger (23.08.2026)
+
+- **Drei Star Destroyer** (1200 m lang, nur 10.964 Dreiecke — angenehm billig) stehen 6–18 km
+  entfernt im Raum und treiben mit 90 % der eigenen Fahrt mit, damit sie nicht sofort außer Sicht
+  sind. Näher als **700 m** führt die Landung in **denselben Hangar** wie beim Todesstern.
+- Der Hangar merkt sich seinen **Gastgeber** (`hangarHost`): beim Verlassen kommt man knapp über dem
+  angeflogenen Objekt heraus, nicht mehr pauschal über dem Todesstern.
+- **Etwa jedes dritte fremde Schiff** steuert einen Destroyer an und wird bei knapp der halben
+  Schiffslänge Abstand neu eingesetzt — es sieht also aus, als würde es einfliegen.
+- Zwei neue Verkehrsschiffe: **USS Voyager** (340 m, 147.206 Dreiecke) und **USS Enterprise-D**
+  (640 m, 49.588). Nase-Richtungen vermessen: Destroyer und Voyager liegen schon auf −Z, die
+  Enterprise braucht 180°.
+
+**Bundle-Größe: 271,5 MB.** Die vier größten Posten sind Hangar (48,6 MB / 613.000 Dreiecke),
+Serenity (31 MB / 289.000), Voyager (22,4 MB / 147.000, 4K-Texturen) und Rover (19 MB / 199.000) —
+zusammen rund 120 MB. Das sind die Kandidaten, falls der erste Download zu lange dauert.
+
 ---
 
 ## Verifikation (alle Etappen)
