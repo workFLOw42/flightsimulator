@@ -783,6 +783,44 @@ werten den Rückgabewert aus.
 
 ---
 
+### Nachtrag 10 — Texturen halbiert (23.08.2026)
+
+Der Start ruckelte nach dem Wechsel in den Hangar minutenlang, auch wenn alles im Cache lag. Die
+Analyse zeigte, dass nicht die Dateigröße das Problem ist, sondern der **Grafikspeicher**: Texturen
+liegen dort unkomprimiert. Gemessen mit `C:\tmp\texanalyse.js`:
+
+| | vorher | nachher |
+|---|---|---|
+| Bilder | 181 | 181 |
+| Pixel | 144,9 Megapixel | **36,2 Megapixel** |
+| Grafikspeicher (RGBA + Mipmaps) | **735 MB** | **184 MB** |
+| Dateien (nur Texturen) | 77,1 MB | 23,0 MB |
+| Modell-Bundle | 169,9 MB | **97,7 MB** |
+
+Auf einem Tablet mit typisch 512 MB bis 1 GB nutzbarem Grafikspeicher passten 735 MB nicht hinein —
+der Treiber räumte dauernd um, und das war das Ruckeln. Dazu kommt, dass three.js Texturen **faul**
+lädt: ein Bild geht erst dann zur GPU, wenn das Objekt zum ersten Mal gerendert wird. Auf der Insel
+sind nur die Erdwelt-Texturen dran, beim Wechsel in den Hangar dann fast alle anderen gleichzeitig —
+deshalb wirkte der Ortswechsel wie der Verursacher.
+
+Der Weg dorthin, in drei Schritten (`C:\tmp\tex1_extract.js`, `tex2_resize.ps1`, `tex3_rebuild.js`):
+Bilder aus den GLBs herausschreiben, mit .NET (`System.Drawing`, bikubisch, JPEG-Qualität 88) auf die
+halbe Kantenlänge bringen, GLBs neu zusammenbauen. Der BIN-Block wird dabei komplett neu aufgebaut,
+weil sich alle Offsets verschieben; Accessoren und Geometrie bleiben unberührt. Bilder unter 64 px
+bleiben, wie sie sind.
+
+Gegengeprüft mit `C:\tmp\tex4_verify.js` für alle 27 betroffenen Modelle: Dreiecke, Vertexzahl,
+Accessor-Anzahl und die aus den echten Vertexdaten gerechnete Bounding-Box sind **identisch**, jedes
+Bild ist halbiert, und alle bufferViews liegen innerhalb des neuen BIN-Blocks. Damit sind Kollision,
+Landung und die vermessenen Höhen (Hangarboden, Basisfläche, Terrains) unverändert gültig.
+
+Weitere Befunde der Analyse, noch offen: `boat_glb.js` hat **755.732 Dreiecke** für ein 16-m-Boot
+(52 % aller Dreiecke im Spiel), die 34 Modell-Skripte blockieren beim Start, die Base64-Texte bleiben
+mit rund 98 MB dauerhaft im Speicher (`window.*_GLB` wird nie freigegeben), und
+`stepGroundFields()` vermisst die Höhenraster von Mond und Mars auch dann, wenn man auf der Erde ist.
+
+---
+
 ## Verifikation (alle Etappen)
 
 Das Spiel ist eine statische Seite ohne Testsuite. Nach jeder Etappe:

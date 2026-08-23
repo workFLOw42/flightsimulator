@@ -223,10 +223,14 @@ Weitere verwendete Technik:
 ## 🔧 Technik (kurz)
 - Reines HTML + JavaScript + WebGL, keine Installation, kein Build. Alle Modelle/Sounds sind
   eingebettet (Base64) — das Spiel läuft sowohl online als auch per Doppelklick lokal.
-- Die eingebetteten Modelle sind **rund 170 MB**; der Service Worker cached sie beim ersten Start
+- Die eingebetteten Modelle sind **rund 98 MB**; der Service Worker cached sie beim ersten Start
   komplett und lädt sie bei einem Update erneut. Sechs schwere Modelle (Hangar, Serenity, Voyager,
   Rover, Enterprise, Razor Crest) wurden dafür **vereinfacht** — zusammen rund 100 MB und
-  1,1 Mio. Dreiecke gespart, bei gleichen Außenmaßen und unveränderten Texturen.
+  1,1 Mio. Dreiecke gespart, bei gleichen Außenmaßen.
+- Alle **181 Texturen** wurden zusätzlich auf die **halbe Kantenlänge** gebracht (meist 1024 → 512).
+  Entscheidend ist dabei nicht die Dateigröße, sondern der Grafikspeicher: dort liegen Texturen
+  unkomprimiert, und aus **735 MB wurden 184 MB** (145 → 36 Megapixel). Auf einem Tablet passte das
+  vorher nicht in den Grafikspeicher — genau das war der Grund für das lange Ruckeln nach dem Start.
 - Endlose, ortsfeste Inselwelt (deterministisch je Rasterzelle), animiertes Meer, Flugzeugträger,
   Häfen, Wolkenkratzer-Städte.
 
