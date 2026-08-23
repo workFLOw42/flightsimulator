@@ -2775,11 +2775,15 @@ function padSpot(p){
   p.x = (c ? c.x : state.pos.x) + Math.cos(a)*d;
   p.z = (c ? c.z : state.pos.z) + Math.sin(a)*d;
 }
+const PAD_LIFT = 3;                // Aufschlag: das Höhenraster kann eine Kuppe abschneiden, sonst
+                                   // steht das Schiff halb im Boden
 function updatePads(dt){
   if(!GROUNDS[locale]){ for(const p of pads) p.obj.visible = false; return; }
   ensurePads();
   for(const p of pads){
-    const gy = groundHeightAt(locale, p.x, p.z);
+    // Landeplatz nachziehen, wenn die Basis inzwischen woanders steht
+    if(_lastBase && Math.hypot(p.x - _lastBase.x, p.z - _lastBase.z) > 600) padSpot(p);
+    const gy = groundHeightAt(locale, p.x, p.z) + PAD_LIFT;
     p.obj.rotation.set(0, p.yaw, 0);                  // immer waagerecht, nur gedreht
     if(p.phase === 'down'){
       if(!p.obj.visible){
@@ -2870,9 +2874,12 @@ function nearestDestroyer(from){
 // 289.000 Dreiecke (22-mal so viel wie das Shuttle), mehrere Exemplare würden das Bild ausbremsen.
 // Nase-Richtung je Modell vermessen: Shuttle +Z, Razor Crest senkrecht (-Y), Serenity -X,
 // Star-Trek-Schiffe längs Z (Voyager -Z, Enterprise +Z). Alles wird auf „Nase = -Z" vorgedreht.
+// count = wie viele von der Sorte unterwegs sind. Die leichten Modelle gibt es öfter: Shuttle und
+// Razor Crest kosten 12.640 bzw. 38.112 Dreiecke, Serenity dagegen 288.678 und Voyager 147.206 —
+// die bleiben deshalb einzeln.
 const SHIP_DEFS = [
-  { key:'shuttle',    glb:()=>window.SHUTTLE_GLB,    len:37,  rot:[0, Math.PI, 0],    count:5 },
-  { key:'razor',      glb:()=>window.RAZOR_GLB,      len:30,  rot:[Math.PI/2, 0, 0],  count:4 },
+  { key:'shuttle',    glb:()=>window.SHUTTLE_GLB,    len:37,  rot:[0, Math.PI, 0],    count:7 },
+  { key:'razor',      glb:()=>window.RAZOR_GLB,      len:30,  rot:[Math.PI/2, 0, 0],  count:5 },
   { key:'serenity',   glb:()=>window.SERENITY_GLB,   len:60,  rot:[0, -Math.PI/2, 0], count:1 },
   { key:'voyager',    glb:()=>window.VOYAGER_GLB,    len:340, rot:[0, 0, 0],          count:1 },
   { key:'enterprise', glb:()=>window.ENTERPRISE_GLB, len:640, rot:[0, Math.PI, 0],    count:1 },
@@ -2909,14 +2916,18 @@ function preloadShips(){
 }
 function placeShip(s){
   const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-  s.obj.position.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*7000);
+  // Entfernung an der SCHIFFSLÄNGE ausrichten, damit alle etwa gleich groß im Bild stehen (~2–3°).
+  // Vorher lagen alle 2,5–9,5 km entfernt: ein 37-m-Shuttle war dort 0,4° groß und praktisch
+  // unsichtbar, während die 640 m lange Enterprise gut zu sehen war.
+  const dist = Math.max(500, s.def.len * 25 * (0.7 + Math.random()*0.8));
+  s.obj.position.copy(state.pos).addScaledVector(dir, dist);
   // eigener Kurs, mit dem sie „hin und her" ziehen — Waffen haben sie keine, nur die X-Wings schießen
   s.drift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize()
     .multiplyScalar(80 + Math.random()*170);
   // Gemischt: negativ = etwas schneller als der Spieler (überholt ihn langsam), positiv = langsamer
   // (wird überholt). Zusammen mit dem eigenen Kurs zieht mancher auch einfach quer durchs Bild.
   s.lag = -0.06 + Math.random()*0.20;
-  s.dock = Math.random() < 0.35;        // Anflug auf einen Star Destroyer statt freier Bahn
+  s.dock = Math.random() < 0.2;         // Anflug auf einen Star Destroyer statt freier Bahn
   s.obj.visible = true;
 }
 function updateShips(dt){
@@ -2952,7 +2963,8 @@ function updateShips(dt){
     s.vel.lerp(want, Math.min(1, 1.2*dt));
     s.obj.position.addScaledVector(s.vel, dt);
     if(s.vel.lengthSq() > 1) s.obj.lookAt(s.obj.position.clone().add(s.vel));   // Nase voraus
-    if(s.obj.position.distanceTo(state.pos) > 26000) placeShip(s);
+    // relativ zur eigenen Größe aufräumen: kleine Schiffe früher, damit sie nicht als Punkt enden
+    if(s.obj.position.distanceTo(state.pos) > Math.max(4000, s.def.len*90)) placeShip(s);
   }
 }
 
@@ -2962,7 +2974,8 @@ function updateShips(dt){
 // würde man sie bei Warp gar nicht sehen, geschweige denn treffen.
 const AST_COUNT = 20;              // wie viele gleichzeitig unterwegs sind
 const AST_NEAR = 2000, AST_FAR = 9000, AST_DROP = 16000;   // Spawn-Nähe/-Weite, Aufräum-Distanz
-const AI_XW_COUNT = 6;             // fremde X-Wings, die selbst auf Asteroiden schießen
+const AI_XW_COUNT = 4;             // fremde X-Wings, die selbst auf Asteroiden schießen
+                                   // (je 37.889 Dreiecke — dafür groß und nah, siehe spawnAiXwing)
 const LASER_SPEED = 2500, LASER_LIFE = 2.5;                // m/s über Eigenfahrt, Sekunden
 let asteroidTemplate = null, astHits = 0;
 const asteroids = [], bolts = [], flashes = [];
@@ -3026,10 +3039,10 @@ function spawnAiXwing(){
   const holder = new THREE.Group();
   const m = glbTemplates['XWing'].clone(true);
   m.rotation.y = Math.PI;                 // Nase auf -Z, wie beim Spieler
-  m.scale.setScalar(3);                   // im Weltall etwas größer, sonst sieht man sie nicht
+  m.scale.setScalar(6);                   // ~70 m — mit 36 m war auf 3 km Entfernung nichts zu sehen
   holder.add(m);
   const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-  holder.position.copy(state.pos).addScaledVector(dir, 900 + Math.random()*2600);
+  holder.position.copy(state.pos).addScaledVector(dir, 600 + Math.random()*1600);
   scene.add(holder);
   aiXwings.push({ grp:holder, target:null, cool:0.5 + Math.random(),
     speed: 300 + Math.random()*300,
@@ -3067,7 +3080,7 @@ function updateAiXwings(dt){
         w.cool = 0.8 + Math.random()*0.8;
       }
     }
-    if(w.grp.position.distanceTo(state.pos) > AST_DROP){   // zu weit weg -> neu einsetzen
+    if(w.grp.position.distanceTo(state.pos) > 6000){       // zu weit weg -> neu einsetzen
       scene.remove(w.grp); aiXwings.splice(i,1);
     }
   }

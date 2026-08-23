@@ -547,6 +547,35 @@ Die Ausrichtung gilt bei **jedem** Eintritt, egal aus welcher Richtung man anfli
 angepasst: 260 m vom Zentrum (200 lag zu dicht an der Öffnung), 50 m über dem Boden, und neu auch
 nach unten.
 
+### Nachtrag 7 — Raumschiffe sichtbar machen (23.08.2026)
+
+Gemeldet: „keine Raumschiffe außer der Enterprise", „keine X-Wings bemerkt", und der Bodenverkehr
+versank auf dem Mond.
+
+**Die Ursache war die Entfernung, nicht die Anzahl.** Alle Schiffe erschienen 2,5–9,5 km entfernt,
+unabhängig von ihrer Größe. Bei dieser Distanz ist ein 37 m langes Shuttle **0,4°** groß, die 640 m
+lange Enterprise dagegen **7°** — deshalb war nur sie zu sehen. Die Spawn-Entfernung hängt jetzt an
+der Schiffslänge (Länge × 25, gestreut), sodass alle etwa **2–3°** im Bild stehen; das Aufräumen ist
+ebenfalls größenabhängig.
+
+| Änderung | Wert |
+|---|---|
+| Shuttle | 7 Stück (war 5) |
+| Razor Crest | 5 (war 4) |
+| Serenity, Voyager, Enterprise | je 1 — 288.678 / 147.206 / 49.588 Dreiecke |
+| Andock-Quote | 20 % (war 35 %), damit mehr im Bild bleiben |
+| KI-X-Wings | 4 Stück (war 6), aber **sechsfach vergrößert** (~70 m) und nur 600–2200 m entfernt — mit 36 m auf 3,5 km waren sie nicht zu erkennen |
+| Bodenverkehr | 3 m Aufschlag gegen das Einsinken (das Höhenraster schneidet Kuppen ab) und Neuplatzierung, sobald die Basis über 600 m entfernt ist |
+
+**Dreiecksbilanz im Weltall: rund 1,0 Mio.** (Serenity 289k, Razor 191k, Voyager 147k, KI-X-Wings
+152k, Shuttle 88k, Enterprise 50k, ISS 38k, Destroyer 33k, Asteroiden 12k). Falls es ruckelt, sind
+Serenity und Voyager die größten Einzelposten.
+
+**Hangar-Ausrichtung, gegengeprüft**: Bild 2 des Nutzers entstand mit `yaw = 0`, also Nase auf −Z.
+90° im Uhrzeigersinn heißt −Z → +X, also `rotation.y = −π/2` — genau der Wert aus der Messung
+(Öffnung bei x-max). Die Startposition (110, Boden+25, 0) liegt im Hallenrechteck (x −103 … +131)
+und mittig in der 70 m hohen Halle.
+
 ---
 
 ## Verifikation (alle Etappen)
