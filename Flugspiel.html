@@ -2057,6 +2057,7 @@ const bodyOf = (key)=> bodies.find(b => b.def.key === key);
 
 let starDome = null, starMat = null, earthBall = null;
 let spacePlaced = false;      // wurden die Himmelskörper schon positioniert?
+let warpBrakeLock = 0;        // Sekunden, in denen die Hyperraum-Bremse ruht (nach Ortswechseln)
 // warpDrive = Aufbau des Antriebs (bestimmt, wie schnell er werden KANN; wächst bei 100 % Schub).
 // warpVis   = wie tief er tatsächlich im Hyperraum steckt — haengt allein an der GESCHWINDIGKEIT und
 //             blendet den Effekt gleitend ein, genau wie der Uebergang Himmel -> Weltall.
@@ -2259,6 +2260,7 @@ function clearGroundTiles(){
   }
   if(moonBaseObj) moonBaseObj.visible = false;
   if(roverObj)    roverObj.visible = false;
+  if(beaconObj)   beaconObj.visible = false;
 }
 
 // ---------- Mondbasis und ISS ----------
@@ -2277,29 +2279,49 @@ function preloadStationGLB(dataUrl, cb){
     wrap.visible = false; scene.add(wrap); cb(wrap);
   }, (err)=>{ console.warn('Station-GLB Ladefehler:', err); });
 }
-// Mondbasis bzw. Mars-Rover in der Nähe aufstellen — und zwar dort, wo man gerade unterwegs ist:
-// entfernt man sich weiter als BASE_FAR, tauchen sie beim nächsten Anflug wieder neben einem auf.
-// Wird jeden Frame aufgerufen, weil die Modelle asynchron laden und die Bodenhöhe erst feststeht,
-// wenn das Höhenraster ausgemessen ist (vorher stünden sie in der Luft).
-const BASE_FAR = 2000;
-const _basePos = { moon:null, mars:null };
-function baseSpot(key, dist){
-  const a = Math.random()*Math.PI*2;
-  return { x: state.pos.x + Math.cos(a)*dist, z: state.pos.z + Math.sin(a)*dist };
+// ---------- Mondbasis und Mars-Rover ----------
+// Mondbasis: auf JEDER Kachel steht eine, an einer aus der Kachelnummer abgeleiteten (also immer
+// gleichen) Stelle. Gerendert wird nur die der aktuellen Kachel — das Modell hat 37.758 Dreiecke,
+// neun Stück gleichzeitig wären zu viel. Rover: erscheint beim Landeanflug neben dem Aufsetzpunkt.
+// Über beiden steht eine Leuchtsäule, damit man sie aus der Luft findet; sie erscheint auch dann,
+// wenn das Modell selbst noch nicht geladen ist — dann weiß man trotzdem, wo es hingehört.
+let roverAnchor = null;
+const beaconMat = new THREE.MeshBasicMaterial({ color:0x9fd8ff, transparent:true, opacity:0.35,
+  blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide });
+const beaconGeo = new THREE.CylinderGeometry(6, 6, 260, 10, 1, true);
+let beaconObj = null;
+function showBeacon(x, y, z, col){
+  if(!beaconObj){ beaconObj = new THREE.Mesh(beaconGeo, beaconMat); beaconObj.renderOrder = 995; scene.add(beaconObj); }
+  beaconObj.position.set(x, y + 130, z);
+  beaconMat.color.setHex(col);
+  beaconObj.visible = true;
+}
+// Feste Stelle der Basis in einer Kachel (deterministisch, damit sie beim Wiederkommen dort steht)
+function baseSpotForTile(ix, iz){
+  const T = GROUNDS.moon.tile;
+  const r1 = cellRnd(ix, iz, 4711), r2 = cellRnd(ix, iz, 1337);
+  return { x: ix*T + (r1-0.5)*T*0.6, z: iz*T + (r2-0.5)*T*0.6 };
 }
 function placeGroundBase(){
   if(moonBaseObj && locale !== 'moon') moonBaseObj.visible = false;
   if(roverObj    && locale !== 'mars') roverObj.visible = false;
-  for(const key of ['moon','mars']){
-    const obj = (key === 'moon') ? moonBaseObj : roverObj;
-    if(locale !== key || !obj) continue;
-    let p = _basePos[key];
-    if(!p || Math.hypot(p.x - state.pos.x, p.z - state.pos.z) > BASE_FAR){
-      p = baseSpot(key, (key === 'moon') ? 380 + Math.random()*220 : 90 + Math.random()*70);
-      _basePos[key] = p;
+  if(beaconObj && !GROUNDS[locale]) beaconObj.visible = false;
+  if(locale === 'moon'){
+    const T = GROUNDS.moon.tile;
+    const p = baseSpotForTile(Math.round(state.pos.x/T), Math.round(state.pos.z/T));
+    const y = groundHeightAt('moon', p.x, p.z);
+    if(moonBaseObj){ moonBaseObj.position.set(p.x, y, p.z); moonBaseObj.visible = true; }
+    showBeacon(p.x, y, p.z, 0x9fd8ff);
+  } else if(locale === 'mars'){
+    // beim Sinkflug mit 10 % Schub steht der Landepunkt praktisch fest -> Rover daneben setzen
+    const landing = (state.throttle <= VTOL_LAND && !state.onGround);
+    if(!roverAnchor || (landing && Math.hypot(roverAnchor.x - state.pos.x, roverAnchor.z - state.pos.z) > 260)){
+      const a = Math.random()*Math.PI*2, d = 45 + Math.random()*35;
+      roverAnchor = { x: state.pos.x + Math.cos(a)*d, z: state.pos.z + Math.sin(a)*d };
     }
-    obj.position.set(p.x, groundHeightAt(key, p.x, p.z), p.z);
-    obj.visible = true;
+    const y = groundHeightAt('mars', roverAnchor.x, roverAnchor.z);
+    if(roverObj){ roverObj.position.set(roverAnchor.x, y, roverAnchor.z); roverObj.visible = true; }
+    showBeacon(roverAnchor.x, y, roverAnchor.z, 0xffb060);
   }
 }
 
@@ -2335,7 +2357,7 @@ function enterSpace(){
   locale = 'space';
   // Erst mal umschauen: der Schub geht auf die Hälfte, sonst rutscht man mit 100 % direkt in den
   // Hyperraum und ist weg, bevor man Erde, ISS und Mond gesehen hat.
-  warpDrive = 0; warpVis = 0;
+  warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
   if(state.throttle > 0.5) state.throttle = 0.5;
   // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
   if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
@@ -2386,9 +2408,10 @@ function enterGround(key){
   showSpaceHint(b ? b.def.sym : '🌙');
 }
 function leaveGround(){
+  roverAnchor = null;
   const from = locale;
   locale = 'space';
-  warpDrive = 0; warpVis = 0;
+  warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
   if(state.throttle > 0.5) state.throttle = 0.5;    // erst umschauen, nicht gleich in den Hyperraum
   clearGroundTiles();
   const b = bodyOf(from);
@@ -2452,11 +2475,13 @@ function updateSpaceBodies(){
     if(!b.obj) continue;
     const d = state.pos.distanceTo(b.center);
     // Kurz vor dem Himmelskörper aus dem Hyperraum fallen, damit man ihn in Ruhe ansehen kann —
-    // aber nur, wenn er ihn auch ANFLIEGT. Beim Wegfliegen wäre das lästig (er käme in Körpernähe
-    // nie in den Hyperraum, obwohl er sich entfernt).
-    if(d < b.def.r*3 && warpDrive > 0.02){
-      const closing = state.vel.dot(_bodyDir.copy(b.center).sub(state.pos).normalize()) > 0;
-      if(closing){
+    // aber NUR beim Anflug. Die Fahrt muss dafür zu mindestens 30 % auf den Körper zeigen: mit einer
+    // reinen "größer null"-Prüfung reichte schon ein leichtes Schwenken beim Wegfliegen aus. Dazu
+    // ruht die Bremse kurz nach jedem Ortswechsel, weil man da noch dicht am Körper startet.
+    if(d < b.def.r*3 && warpDrive > 0.02 && warpBrakeLock <= 0){
+      const v = state.vel.length();
+      const toward = v > 1 ? state.vel.dot(_bodyDir.copy(b.center).sub(state.pos).normalize())/v : 0;
+      if(toward > 0.3){
         warpDrive = 0;
         if(state.throttle > 0.5) state.throttle = 0.5;
         showSpaceHint('🛑', 2);
@@ -2478,6 +2503,7 @@ function updateSpaceBodies(){
 // Hyperraum: kein Tor und kein Schalter — wer im Weltall 100 % hält, wird immer schneller
 // (Antriebsaufbau bis Warp 10), und der Hyperraum blendet sich GLEITEND MIT DER GESCHWINDIGKEIT ein.
 function updateWarp(dt){
+  if(warpBrakeLock > 0) warpBrakeLock -= dt;
   const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
   warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
   // Sicht-Anteil rein aus dem Tempo: der Ring erscheint erst AB Lichtgeschwindigkeit (Warp 1) und
@@ -2524,8 +2550,10 @@ function updateSpaceBlend(dt){
     starDome.position.copy(state.pos);      // Kuppel bleibt immer gleich weit weg
     if(starMat) starMat.opacity = f;
   }
-  // Auf dem Mond hängt die Erde als Kugel am Himmel und wandert mit (wie eine Kulisse)
-  if(locale === 'moon' && earthBall){
+  // Auf Mond UND Mars hängt die Erde als Kugel am Himmel und wandert mit (wie eine Kulisse).
+  // Ohne das Umsetzen stünde sie weiter dort, wo sie beim Verlassen der Atmosphäre lag — nämlich
+  // mit dem Mittelpunkt 20 km unter dem Startpunkt, also als "Unterbau" unter der Landschaft.
+  if(GROUNDS[locale] && earthBall){
     earthBall.visible = true;
     earthBall.position.set(state.pos.x + 90000, 45000, state.pos.z - 60000);
   }

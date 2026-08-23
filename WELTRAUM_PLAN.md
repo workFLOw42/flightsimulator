@@ -454,6 +454,15 @@ Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: 
 | Warp fällt beim Wegfliegen aus | **Denkfehler behoben**: die Hyperraum-Bremse prüfte nur die Entfernung zum Körper, nicht die Richtung. Jetzt greift sie nur, wenn er sich dem Körper wirklich **nähert** (Geschwindigkeit zeigt hin) |
 | Übergang ins Weltall zu hektisch | Sowohl beim Verlassen der Erde als auch beim Start von Mond oder Mars geht der Schub auf **50 %** und der Warp-Aufbau auf null — erst umschauen, dann beschleunigen |
 
+### Nachtrag 3 (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| Auf dem Mars liegt die Erde als „Unterbau" | **Fehler gefunden**: die Erdkugel wurde nur beim Ort `moon` an den Himmel versetzt. Auf dem Mars blieb sie dort, wo sie beim Verlassen der Atmosphäre lag — Mittelpunkt 20 km unter dem Startpunkt, Radius 20 km, also genau unter der Landschaft. Jetzt gilt das Umsetzen für **alle** Oberflächen |
+| Basis/Rover nicht zu finden | Mondbasis steht jetzt auf **jeder Kachel** an einer aus der Kachelnummer abgeleiteten (also immer gleichen) Stelle; gerendert wird nur die der aktuellen Kachel, weil das Modell 37.758 Dreiecke hat. Der Rover setzt sich beim Sinkflug mit 10 % Schub **45–80 m neben den Aufsetzpunkt** |
+| dito | Über beiden steht eine **Leuchtsäule** (260 m, additiv) — sie erscheint auch, wenn das Modell noch nicht geladen ist. Damit ist immer sichtbar, wo Basis bzw. Rover stehen |
+| Warp bricht beim Wegfliegen ab | Die Richtungsprüfung war zu empfindlich: sie akzeptierte jede positive Komponente, also schon ein leichtes Schwenken. Jetzt muss die Fahrt zu **mindestens 30 %** auf den Körper zeigen. Dazu ruht die Bremse **6 s nach jedem Ortswechsel**, weil man direkt nach dem Start von Mond oder Mars noch dicht am Körper ist |
+
 ---
 
 ## Verifikation (alle Etappen)

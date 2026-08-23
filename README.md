@@ -102,8 +102,9 @@ Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250
 **Landen** kann man auf **Mond** und **Mars**: unter dem X-Wing liegt dann eine echte Landschaft, die
 sich endlos fortsetzt — auf dem Mond der **Giordano-Bruno-Krater** mit einem Sechstel der Erdanziehung
 und einer **Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel Anziehung und dem
-**Perseverance-Rover**. Basis und Rover tauchen immer dort auf, wo man gerade unterwegs ist — man
-findet sie also bei jeder Landung in der Nähe. Am Himmel steht dabei die Erde.
+**Perseverance-Rover**. Auf dem Mond steht auf **jeder Kachel** eine Basis an einer festen Stelle, und
+der Rover setzt sich beim Landeanflug (10 % Schub) direkt **neben den Aufsetzpunkt**. Über beiden steht
+eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei die Erde.
 
 Beim Übergang ins Weltall geht der Schub automatisch auf **50 %**, damit man sich erst umsehen kann
 und nicht sofort in den Hyperraum rutscht.
