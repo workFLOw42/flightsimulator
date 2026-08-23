@@ -860,6 +860,55 @@ Zellenraster erledigen, braucht aber die Umrechnung der Spiegel-Kachelung.
 
 ---
 
+### Nachtrag 12 — alle Landehöhen an der Mondbasis durchgerechnet (23.08.2026)
+
+**Die Schiffe selbst sind in Ordnung** (`C:\tmp\shipcheck.js`, nachgerechnet wird genau der Weg des
+Spiels: Rotation aus `SHIP_DEFS`, Normierung auf `def.len`, dann auf `PAD_LEN = 34`, Schwerpunkt in den
+Ursprung, Unterseite auf y = 0):
+
+| Schiff | Größe im Spiel | Längsachse | Bauchhöhe | Punkte unten |
+|---|---|---|---|---|
+| Shuttle | 22,0 × 34,0 × 12,1 m | waagerecht | 0,61 m | 1,93 % |
+| Razor Crest | 21,0 × 34,0 × 11,1 m | waagerecht | 0,31 m | 3,47 % |
+| Serenity | 21,8 × 34,0 × 9,5 m | waagerecht | 0,34 m | 3,31 % |
+| Voyager | 13,3 × 34,0 × 6,5 m | waagerecht | 0,34 m | 0,60 % |
+| Enterprise | 24,7 × 34,0 × 7,4 m | waagerecht | 0,31 m | 2,90 % |
+
+Die *Bauchhöhe* ist der Abstand vom tiefsten Punkt zum 2. Perzentil aller Höhen: kleine Werte heißen,
+das Schiff steht auf einer Fläche und nicht auf einer Antennenspitze. Alle liegen unter 0,7 m, und
+keines steht senkrecht.
+
+**Der Fehler lag an der Basis selbst.** Sie ist ein starres Modell und sitzt mit dem Kraterwert ihres
+**Zentrums** — der Krater ringsum hat aber viel mehr Relief als ihre Fläche Gefälle. Gemessen mit
+`C:\tmp\basefit.js` über 240 mögliche Standorte, Landeplatzring 110–255 m:
+
+| | Wert |
+|---|---|
+| Krater-Relief im Ring | bis **80,2 m** |
+| Gefälle der Fläche über denselben Ring | 25,3 → 11,1 m, also **14,2 m** |
+| Standorte, an denen der Krater die Fläche überragt | **171 von 240** |
+| schlimmster Fall | **67,6 m** |
+
+Dort steckt die Fläche im Hang, und ein Schiff, dessen Aufsetzhöhe korrekt auf der Fläche gemessen
+wurde, stand damit **unter** dem sichtbaren Boden. Genau das war das ursprünglich gemeldete
+Verschwinden im helleren Bereich — der Landeplatz-Abstand war nur ein Teil der Geschichte.
+
+Zwei Maßnahmen, weil eine allein nicht reicht:
+
+1. Die Basis nimmt die **flachste von 16 Stellen** je Kachel (deterministisch aus der Kachelnummer,
+   Ergebnis gemerkt). Das drückt die Höhenstreuung im Ring von 55 m auf 14 m. Gegengerechnet mit
+   `C:\tmp\basefit2.js` über 120 Kacheln: Standorte mit eintauchender Fläche 92 → **20**, schlimmster
+   Fall 64,3 → **15,6 m**. Es reicht also nicht allein — das Relief des Giordano-Bruno-Kraters ist
+   stärker als das Gefälle der Fläche.
+2. Die Aufsetzhöhe ist deshalb das **Maximum aus Fläche und Kraterboden**. Wo die Fläche doch
+   eintaucht, stehen die Schiffe auf dem sichtbaren Boden statt darunter — sichtbar in jedem Fall.
+
+Der Spieler-X-Wing war schon abgedeckt: `stepGroundExact()` nimmt seit Nachtrag 9 den höchsten
+Treffer aus Terrain **und** Basis. Auf dem Mars gibt es das Problem nicht — der Rover ist 10 m groß
+und bringt keine eigene Fläche mit.
+
+---
+
 ## Verifikation (alle Etappen)
 
 Das Spiel ist eine statische Seite ohne Testsuite. Nach jeder Etappe:

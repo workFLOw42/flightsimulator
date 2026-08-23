@@ -2511,11 +2511,39 @@ function showBeacon(x, y, z, col){
   beaconMat.color.setHex(col);
   beaconObj.visible = true;
 }
-// Feste Stelle der Basis in einer Kachel (deterministisch, damit sie beim Wiederkommen dort steht)
+// Feste Stelle der Basis in einer Kachel (deterministisch, damit sie beim Wiederkommen dort steht).
+// Gewählt wird die FLACHSTE von 16 Kandidaten: die Basis ist ein starres Modell und sitzt auf dem
+// Kraterwert ihres Zentrums, der Krater hat aber bis 80 m Relief, während ihre Fläche nur 14 m
+// abfällt (vermessen, C:\tmp\basefit.js). An einer welligen Stelle steckt die Fläche im Hang. Die
+// Auswahl drückt die Höhenstreuung im Landeplatzring von 55 m auf 14 m (C:\tmp\basefit2.js).
+const _baseSpots = new Map();
 function baseSpotForTile(ix, iz){
-  const T = GROUNDS.moon.tile;
-  const r1 = cellRnd(ix, iz, 4711), r2 = cellRnd(ix, iz, 1337);
-  return { x: ix*T + (r1-0.5)*T*0.6, z: iz*T + (r2-0.5)*T*0.6 };
+  const key = ix + ',' + iz;
+  const known = _baseSpots.get(key);
+  if(known) return known;
+  const T = GROUNDS.moon.tile, cand = [];
+  for(let c = 0; c < 16; c++){
+    const r1 = cellRnd(ix, iz, 4711 + c*97), r2 = cellRnd(ix, iz, 1337 + c*89);
+    cand.push({ x: ix*T + (r1-0.5)*T*0.6, z: iz*T + (r2-0.5)*T*0.6 });
+  }
+  // Ohne fertiges Höhenraster lässt sich nichts vergleichen — dann vorläufig der erste Kandidat,
+  // und beim nächsten Aufruf (Raster fertig) wird richtig gewählt und gemerkt.
+  const G = GROUNDS.moon;
+  if(!G.field || G.row < GROUND_FIELD_N) return cand[0];
+  let best = cand[0], bestSpread = Infinity;
+  for(const c of cand){
+    let mn = Infinity, mx = -Infinity;
+    for(let r = 120; r <= 250; r += 26) for(let k = 0; k < 8; k++){
+      const a = k/8*Math.PI*2;
+      const y = groundHeightAt('moon', c.x + Math.cos(a)*r, c.z + Math.sin(a)*r);
+      if(y < mn) mn = y;
+      if(y > mx) mx = y;
+    }
+    if(mx - mn < bestSpread){ bestSpread = mx - mn; best = c; }
+  }
+  _baseSpots.set(key, best);
+  console.log('Mondbasis-Standort Kachel', key, '-> Ring-Streuung', bestSpread.toFixed(1), 'm');
+  return best;
 }
 function placeGroundBase(){
   if(moonBaseObj && locale !== 'moon') moonBaseObj.visible = false;
@@ -3053,10 +3081,12 @@ function padSurfaceY(x, z){
   const base = (locale === 'moon') ? moonBaseObj : null;
   const raster = groundHeightAt(locale, x, z);
   if(base && base.visible){
-    _gRay.set(_gFrom.set(x, raster + 500, z), _gDown);
+    _gRay.set(_gFrom.set(x, raster + 800, z), _gDown);
     let top = null;
     for(const h of _gRay.intersectObject(base, true)) if(top === null || h.point.y > top) top = h.point.y;
-    if(top !== null) return top;
+    // Das Höhere von beiden zählt: wo der Krater über die Fläche steigt (er hat bis 80 m Relief, die
+    // Fläche fällt nur 14 m ab), stünde ein Schiff auf der Fläche sonst UNTER dem sichtbaren Boden.
+    if(top !== null) return Math.max(top, raster);
   }
   return raster + PAD_LIFT;
 }
