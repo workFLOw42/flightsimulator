@@ -473,6 +473,23 @@ Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: 
 | Verkehr an Basis und Rover | Zwei Schiffe pendeln dauerhaft: absteigen, kurz stehen, aufsteigen, an anderer Stelle wieder herunterkommen. Sie sind Klone der Weltraum-Modelle (kein zusätzlicher Speicher) und reine Kulisse |
 | Mehr Raumschiffe, gut beobachtbar | Shuttle 5×, Razor Crest 4×, Serenity 1×. Der Rückstand reicht jetzt von **−6 % bis +14 %**: manche überholen langsam, andere werden überholt, mancher zieht mit seinem eigenen Kurs quer. Kollision gibt es bei ihnen nicht |
 
+### Phase 7 — Landung im Todesstern-Hangar (23.08.2026)
+
+- Der Todesstern ist jetzt anfliegbar wie ein Planet; die Landung führt in den **Hangar** — einen
+  Innenraum statt einer Landschaft. Eigener Ort `death` mit künstlicher Schwerkraft (4,0 m/s²).
+- **Boden**: eben, wird beim Laden **einmal** per Raycast ausgemessen (der tiefste Punkt des Modells
+  ist irgendein Detail, nicht der Boden). Deshalb kein Höhenraster und kein Raycast pro Frame.
+- **Eintritt**: mittig, schwebend 45 m über dem Boden, Schub auf Schwebestufe (20 %) — von dort mit
+  10 % aufsetzen. **Austritt**: 200 m vom Zentrum oder 130 m über dem Boden.
+- **Startort**: der X-Wing beginnt dort — beim Spielstart, sobald das Modell geladen ist, und bei
+  jedem Reset. Andere Modelle starten weiter in der Inselwelt; ein Modellwechsel führt zur Erde.
+- Wände haben keine Kollision: wer hindurchfliegt, landet über die Austrittsgrenze wieder im All.
+
+**Größe**: Das Hangar-Modell ist ein Voxel-Bau mit **613.824 Dreiecken** und 36,5 MB (48,6 MB
+base64). Das Bundle liegt damit bei **232 MB**. Im Hangar stehen rund 650.000 Dreiecke im Bild —
+vergleichbar mit dem Weltall, aber der erste Download wächst deutlich. Wenn das zu viel wird, wäre
+dieses Modell der erste Kandidat für einen kleineren Ersatz.
+
 ---
 
 ## Verifikation (alle Etappen)

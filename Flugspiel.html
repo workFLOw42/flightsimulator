@@ -95,6 +95,7 @@
     <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 4 km Weltall · zurück unter 2,2 km</b></div>
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10 · beim Anflug auf einen Himmelskörper bremst er selbst · nach jedem Übergang startet er mit 50 %</b></div>
     <div class="hrow"><span>🌙 Mond &amp; 🔴 Mars</span><b>anfliegen und mit 10 % landen — Mondbasis bzw. Mars-Rover stehen in der Nähe · ☀️ Sonne und Todesstern nur umkreisen</b></div>
+    <div class="hrow"><span>🛰️ Todesstern</span><b>anfliegen = Landung im Hangar · dort schwebt man mittig, mit 10 % aufsetzen · hinausfliegen = zurück ins All</b></div>
     <div class="hrow"><span>🛸 Weltall</span><b>ISS in Erdnähe · Shuttle, Razor Crest und Serenity ziehen ihre Bahnen (ohne Waffen)</b></div>
     <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · nur unter Warp 1 · fremde X-Wings schießen mit</b></div>
     <div class="hrow"><span>🌙 suchen</span><b>oben links steht das angeflogene Ziel mit Entfernung · über dem Flieger blitzt es kurz auf, wenn sich etwas ändert · das Radar zeigt die Richtung</b></div>
@@ -135,6 +136,7 @@
 <script src="serenity_glb.js"></script>
 <script src="rover_glb.js"></script>
 <script src="deathstar_glb.js"></script>
+<script src="hangar_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -355,7 +357,8 @@ function isOnCarrier(x, z){ return !!carrierAt(x, z); }
 //  Airbus/AlphaJet: NUR Landebahn (Insel) — AlphaJet zusätzlich Trägerdeck.
 //  Mustang zusätzlich Trägerdeck. Canadair (Löschflugboot): Wasser ODER Landebahn.
 function canLandHere(x, z) {
-  if(locale === 'moon') return true;     // Mondboden: überall aufsetzbar (nur der X-Wing kommt hin)
+  // Außerhalb der Erde ist jede Fläche landbar (Mond, Mars, Hangarboden) — dorthin kommt nur der X-Wing.
+  if(GROUNDS[locale] || locale === 'death') return true;
   const model = MODEL_NAMES[currentModel];
   const onLand = isOnLand(x, z);
   const onRunway = isOnRunway(x, z);
@@ -2020,9 +2023,11 @@ function preloadHarbor(){
 //   'space' = Weltall (schwarz, Sterne, Erdkugel unter einem, Mond in der Ferne)
 //   'moon'  = Mondoberfläche (kachelnde Kraterlandschaft, kein Meer, keine Inseln)
 //   'mars'  = Marsoberfläche (kachelnde Aram-Chaos-Landschaft)
+//   'death' = Hangar im Todesstern (ein Innenraum statt einer Landschaft)
 // Die x/z-Koordinaten laufen durch: die Inselwelt ist unendlich, man taucht also genau dort
 // wieder ein, wo man absinkt — es braucht keine Rückrechnung auf den Startpunkt.
 let locale = 'earth';
+let wantHangarStart = true;   // beim Spielstart einmal in den Todesstern-Hangar wechseln
 // Höhengrenzen: unter 80 % Schub riegelt der Höhendeckel des Modells ab (X-Wing 3000 m). Ab 80 %
 // ist der Deckel offen: ab 3000 m dunkelt der Himmel ein, bei 6000 m ist man im Weltall.
 const ATMO_TOP  = 3000;     // ab hier wird der Himmel dunkler
@@ -2034,7 +2039,8 @@ const SPACE_THR = 0.8;      // erst ab 80 % Schub traegt die Fahrt aus der Atmos
 const EARTH_R   = 20000;    // Radius der Erdkugel
 // (Die Kantenlängen und Abflughöhen der Oberflächen stehen unten in GROUNDS.)
 // Schwerkraft je Ort: Mond ein Sechstel, Mars gut ein Drittel, Weltall schwerelos.
-const GRAV_AT = { earth: 9.81, moon: 1.62, mars: 3.71, space: 0 };
+// Im Todesstern-Hangar wirkt künstliche Schwerkraft — angenehm niedrig zum Aufsetzen.
+const GRAV_AT = { earth: 9.81, moon: 1.62, mars: 3.71, death: 4.0, space: 0 };
 const STAR_R    = 1200000;  // Radius der Sternenkuppel (muss hinter allen Himmelskörpern liegen)
 // Tempo im Weltall: 100 % Schub = Warp 1 ("Lichtgeschwindigkeit" im Spielmaßstab). Wer 100 % hält,
 // rutscht in den Hyperraum und wird weiter schneller — bis Warp 10.
@@ -2048,7 +2054,7 @@ const BODY_DEFS = [
   { key:'moon', r:12000,  dist:150000, yaw: 0,    up:0.35, sym:'🌙', land:true  },
   { key:'mars', r:30000,  dist:400000, yaw: 2.1,  up:0.50, sym:'🔴', land:true  },
   { key:'sun',  r:120000, dist:900000, yaw:-2.1,  up:0.80, sym:'☀️', land:false },
-  { key:'death',r:20000,  dist:250000, yaw: 1.05, up:0.45, sym:'',   land:false },   // bewusst ohne Symbol
+  { key:'death',r:20000,  dist:250000, yaw: 1.05, up:0.45, sym:'',   land:true  },   // Hangar-Landung   // bewusst ohne Symbol
 ];
 const BODY_GLB = { moon:()=>window.MOON_GLB, mars:()=>window.MARS_GLB, sun:()=>window.SUN_GLB,
                    death:()=>window.DEATHSTAR_GLB };
@@ -2113,6 +2119,7 @@ function preloadSpace(){
     roverObj = g;
   });
   preloadShips();
+  preloadHangar();
 }
 // Hyperraum-Ring (Spacedrive-Torus): liegt im Modell flach in der XZ-Ebene, wird aufgestellt und
 // zentriert, damit er als Röhre um den Flieger sitzt. Eigenes additives Material -> leuchtet immer.
@@ -2292,6 +2299,72 @@ function preloadStationGLB(dataUrl, cb){
     wrap.visible = false; scene.add(wrap); cb(wrap);
   }, (err)=>{ console.warn('Station-GLB Ladefehler:', err); });
 }
+// ---------- Hangar im Todesstern ----------
+// Ein Innenraum statt einer Landschaft: das Modell steht fest im Ursprung, der Boden ist eben und
+// wird beim Laden EINMAL per Raycast ausgemessen (kein Höhenraster nötig). Wer weit genug hinaus-
+// oder hochfliegt, ist wieder im Weltall.
+const HANGAR_SPAN = 300;           // Kantenlänge, auf die das Modell normiert wird
+const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All
+const HANGAR_OUT_H = 130;          // so hoch über dem Boden -> zurück ins All
+let hangarObj = null, hangarFloorY = 0;
+function preloadHangar(){
+  if(!window.HANGAR_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.HANGAR_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    const box0 = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box0.getSize(size);
+    obj.scale.setScalar(HANGAR_SPAN / Math.max(size.x, size.y, size.z));
+    const box1 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box1.getCenter(c);
+    obj.position.set(-c.x, -box1.min.y, -c.z);        // mittig, tiefster Punkt auf y=0
+    const wrap = new THREE.Group(); wrap.add(obj);
+    wrap.visible = false; scene.add(wrap);
+    hangarObj = wrap;
+    // Bodenhöhe in der Mitte messen: der tiefste Punkt des Modells ist irgendein Detail, nicht der Boden
+    wrap.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    let best = null;
+    for(const [dx,dz] of [[0,0],[10,0],[-10,0],[0,10],[0,-10]]){
+      ray.set(new THREE.Vector3(dx, HANGAR_SPAN, dz), new THREE.Vector3(0,-1,0));
+      const hit = ray.intersectObject(wrap, true);
+      if(hit.length && (best === null || hit[0].point.y > best)) best = hit[0].point.y;
+    }
+    hangarFloorY = (best === null) ? 0 : best;
+  }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
+}
+function enterHangar(){
+  if(!hangarObj) return false;
+  locale = 'death';
+  warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
+  for(const b of bodies) if(b.obj) b.obj.visible = false;
+  if(earthBall) earthBall.visible = false;
+  earthWorldVisible(false);
+  clearGroundTiles();
+  hangarObj.visible = true;
+  // Mitte, Mitte, Mitte: schwebend über dem Hangarboden, Schub auf Schwebestufe -> Landen mit 10 %
+  state.pos.set(0, hangarFloorY + 45, 0);
+  state.vel.set(0, 0, 0);
+  state.quat.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+  state.throttle = VTOL_HOVER; state.onGround = false; state.stalling = false;
+  showSpaceHint('🛰️');
+  return true;
+}
+function leaveHangar(){
+  locale = 'space';
+  if(hangarObj) hangarObj.visible = false;
+  const b = bodyOf('death');
+  if(b) state.pos.copy(b.center).add(new THREE.Vector3(0, b.def.r*1.4, 0));
+  for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
+  if(earthBall) earthBall.visible = true;
+  warpBrakeLock = 6;
+  if(state.throttle > 0.5) state.throttle = 0.5;
+  showSpaceHint('🚀');
+}
+
 // ---------- Mondbasis und Mars-Rover ----------
 // Mondbasis: auf JEDER Kachel steht eine, an einer aus der Kachelnummer abgeleiteten (also immer
 // gleichen) Stelle. Gerendert wird nur die der aktuellen Kachel — das Modell hat 37.758 Dreiecke,
@@ -2344,6 +2417,7 @@ function placeGroundBase(){
 
 // Oberflächenhöhe an (x,z) — je Ort: Erde (Meer/Insel/Trägerdeck) oder Mondboden.
 function surfaceY(x, z){
+  if(locale === 'death') return hangarFloorY;          // ebener Hangarboden
   if(GROUNDS[locale]){
     // in Bodennähe der exakte Wert aus dem Raycast, sonst der Rasterwert
     if(groundHitY !== null && Math.abs(x-groundHitX) < 5 && Math.abs(z-groundHitZ) < 5) return groundHitY;
@@ -2404,6 +2478,7 @@ function enterEarth(){
   if(earthBall) earthBall.visible = false;
   for(const b of bodies) if(b.obj) b.obj.visible = false;
   if(issObj) issObj.visible = false;
+  if(hangarObj) hangarObj.visible = false;
   clearGroundTiles();
   earthWorldVisible(true);
   showSpaceHint('🌍');
@@ -2444,6 +2519,10 @@ function updateLocale(){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
     if(!updateSpaceBodies() && state.pos.y < EARTH_Y) enterEarth();
+  } else if(locale === 'death'){
+    // hinaus durch die Hangaröffnung oder nach oben -> wieder im Weltall
+    if(Math.hypot(state.pos.x, state.pos.z) > HANGAR_OUT_R ||
+       state.pos.y - hangarFloorY > HANGAR_OUT_H) leaveHangar();
   } else {
     const G = GROUNDS[locale];
     if(G && state.pos.y - surfaceY(state.pos.x, state.pos.z) > G.leave) leaveGround();
@@ -2505,7 +2584,10 @@ function updateSpaceBodies(){
       }
     }
     if(b.def.land){
-      if(d < b.def.r + 1500){ enterGround(b.def.key); return true; }
+      if(d < b.def.r + 1500){
+        if(b.def.key === 'death'){ if(enterHangar()) return true; }
+        else { enterGround(b.def.key); return true; }
+      }
     } else if(d < b.def.r + 300){
       // Orbit-Grenze: nur die Bewegung ZUM Körper hin wird gestoppt, seitlich fliegt er weiter.
       // So kann man ihn umkreisen, ohne hineinzufliegen (Landung dort kommt später).
@@ -3250,7 +3332,9 @@ function toggleSound(){
 
 // ---------- Flugzustand ----------
 function resetPlane() {
-  if(locale !== 'earth') enterEarth();     // aus Weltall/Mond zurück in die Inselwelt
+  // Der X-Wing beginnt im Hangar des Todessterns, alle anderen Modelle in der Inselwelt.
+  const toHangar = (MODEL_NAMES[currentModel] === 'XWing') && hangarObj;
+  if(locale !== 'earth' && !toHangar) enterEarth();
   state.water = 0;
   state.scoopTime = 0;
   placeAtStart(MODEL_NAMES[currentModel]);   // modellgerechte Startposition (Stadt/Träger/Hafen/Bahn)
@@ -3261,6 +3345,7 @@ function resetPlane() {
   paxBoardQueue=0; paxDropQueue=0; paxDropping=false; paxServiced=false;
   for(const pfg of activePax) scene.remove(pfg.group); activePax.length=0;
   showBig('');
+  if(toHangar) enterHangar();               // überschreibt die Erd-Startposition
 }
 
 // ---------- Eingaben ----------
@@ -3868,7 +3953,7 @@ function updateHUD(){
   // Im Weltall gibt es keine sinnvolle Höhe -> Zeile ausblenden. Auf dem Mond zählt die Höhe
   // ÜBER DEM KRATERBODEN (der schwankt um ±60 m).
   if(elAltRow) elAltRow.style.display = (locale === 'space') ? 'none' : '';
-  const altRef = GROUNDS[locale] ? surfaceY(state.pos.x, state.pos.z) : 0.3;
+  const altRef = (GROUNDS[locale] || locale === 'death') ? surfaceY(state.pos.x, state.pos.z) : 0.3;
   elAlt.textContent=Math.max(0,Math.round(state.pos.y-altRef));
   // Im Weltall wird in Warp gerechnet (Warp 1 = 100 % Schub), sonst in km/h.
   if(locale === 'space'){
@@ -3913,6 +3998,7 @@ function updateHUD(){
     const aim = aimedBody();
     nav = '🚀' + ((aim && aim.def.sym) ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
   } else if(GROUNDS[locale]){ const hb = bodyOf(locale); nav = hb ? hb.def.sym : '🌙'; }
+  else if(locale === 'death') nav = '🛰️';
   elStat.textContent = nav ? (nav + ' ' + s) : s;
 }
 
@@ -4758,6 +4844,9 @@ function loop(now){
   if(locale === 'earth') updateSea(dt);   // animierte Meereswellen (nur in der Erdwelt)
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
+  // Erststart: sobald der Hangar geladen ist, beginnt der X-Wing dort (siehe resetPlane)
+  if(wantHangarStart && hangarObj && MODEL_NAMES[currentModel] === 'XWing' && locale === 'earth'
+     && !state.crashed && state.onGround){ wantHangarStart = false; enterHangar(); }
   stepGroundFields();        // Höhenraster von Mond und Mars in Häppchen ausmessen
   stepGroundExact();         // exakte Bodenhöhe unter dem Flieger (nur in Bodennähe)
   updateLocale();            // Erde <-> Weltall <-> Mond

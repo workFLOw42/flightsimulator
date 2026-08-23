@@ -109,8 +109,11 @@ eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei 
 Beim Übergang ins Weltall geht der Schub automatisch auf **50 %**, damit man sich erst umsehen kann
 und nicht sofort in den Hyperraum rutscht.
 
-**Todesstern und Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
-zu ihnen hin, seitlich fliegt man weiter.
+Auf dem **Todesstern** kann man **im Hangar landen**: einfach anfliegen wie einen Planeten. Drinnen
+schwebt man mittig über dem Hangarboden (20 % Schub) und setzt mit 10 % auf; wer hinausfliegt oder
+hochsteigt, ist wieder im All. **Dort startet der X-Wing auch** — beim Spielstart und nach jedem
+Reset. Die **Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
+zu ihr hin, seitlich fliegt man weiter.
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (5×),
 **Razor Crest** (4×) und **Serenity** fliegen ihre eigenen Kurse durchs All. Ihr Tempo liegt nahe an
@@ -195,6 +198,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Serenity | **mohamedhussien** |
 | Perseverance (NASA Mars Landing 2021) | **Thomas Flynn** |
 | Death Star (Star Wars) | **Sebastian Sosnowski** |
+| Star Wars Hangar Interior | **Aditya Voxel** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
