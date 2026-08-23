@@ -24,7 +24,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | Vollgas | — | Leertaste |
 | **Boost** (halten): 100 % + extra Schub | X | Shift |
 | **Bremse / Umkehrschub** (halten) | A | C |
-| Aktion (modellabhängig, s.u.) | B | B |
+| Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
 | Aufgaben an/aus | RB | T |
 | Flugverkehr an/aus | LB | J |
 | Modell wechseln | Y | M |
@@ -38,8 +38,9 @@ Oben rechts: **Radar** (zeigt die Richtung zum Ziel) und darunter ein **Gyroskop
 Horizont** — sein Ring wird **grün**, wenn die Fluglage für eine sanfte Landung passt.
 
 ## ✈️ Flugzeuge & Aufgaben
-Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugzeugträger).
-**Das Spiel startet mit dem X-Wing**; mit **Y** bzw. **M** schaltet man durch die Modelle:
+Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugzeugträger) — der
+**X-Wing im Hangar des Todessterns**. **Das Spiel startet mit ihm**; mit **Y** bzw. **M** schaltet man
+durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
 
 - **Canadair CL-215** (Löschflugboot) — 🔥 **Waldbrand löschen**: tief übers Wasser fliegen füllt den
   Tank, über dem Feuer **B** = Wasser ablassen.
@@ -72,10 +73,10 @@ Im Strömungsabriss kippt die Nase nach unten und der Flieger **fällt wirklich*
 7–10 s unten): kein Auftrieb, keine Ruderwirksamkeit, und der Leerlauf bremst den Sturz nicht ab.
 Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
 
-## 🌍 Ins Weltall und zum Mond (nur X-Wing)
+## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
 Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und die Sterne kommen, ab
-**6 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei **3 km** ab — erst die volle Fahrt
+**4 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei **3 km** ab — erst die volle Fahrt
 trägt hinaus. Alle anderen Flugzeuge behalten ihren gewohnten Höhendeckel; **nur der X-Wing** kommt ins
 Weltall, und ein **Modellwechsel bringt sofort zur Erde zurück**.
 
@@ -89,12 +90,12 @@ Hyperraum**, damit man ihn in Ruhe ansehen kann.
 Der Schub ist im Weltall **linear**: 10 % sind Warp 0,1, 50 % sind Warp 0,5, 100 % ist Warp 1.
 
 **Suchhilfe**: Über dem Flieger blitzen — genauso groß wie die Wassertropfen und Kisten — für drei
-Sekunden Symbole auf: beim Ortswechsel (🌍 🚀 🌙), wenn man ein neues Ziel ansteuert (mit Entfernung)
-und bei jedem Asteroiden-Treffer der Zähler (💥). Dauerhaft und klein steht oben links der Ort mit der
-Entfernung zum **angeflogenen** Himmelskörper (🌙 Mond, 🔴 Mars, ☀️ Sonne) — nicht zum nächstgelegenen;
-das Radar zeigt die Richtung. Der Mond
-liegt immer genau in der Richtung, in die man die Atmosphäre verlassen hat. Zurück auf die Erde geht es
-erst **unter 2,5 km** — beim Suchen fällt man also nicht versehentlich heim.
+Sekunden Symbole auf, und zwar nur bei einem **echten Wechsel**: beim Ortswechsel (🌍 🚀 🌙 🛰️), wenn man
+ein neues Ziel eine Sekunde lang stabil ansteuert, und bei jedem Asteroiden-Treffer der Zähler (💥).
+Dauerhaft und klein steht oben links der Ort mit der Entfernung zum **angeflogenen** Himmelskörper
+(🌙 Mond, 🔴 Mars, ☀️ Sonne) — nicht zum nächstgelegenen; das Radar zeigt die Richtung. Der Mond liegt
+immer genau in der Richtung, in die man die Atmosphäre verlassen hat. Zurück auf die Erde geht es erst
+**unter 2,2 km** — beim Suchen fällt man also nicht versehentlich heim.
 
 Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250 km), der **Mars**
 (400 km) und die **Sonne** (900 km).
@@ -215,6 +216,9 @@ Weitere verwendete Technik:
 ## 🔧 Technik (kurz)
 - Reines HTML + JavaScript + WebGL, keine Installation, kein Build. Alle Modelle/Sounds sind
   eingebettet (Base64) — das Spiel läuft sowohl online als auch per Doppelklick lokal.
+- Die eingebetteten Modelle sind inzwischen **rund 270 MB**; der Service Worker cached sie beim
+  ersten Start komplett und lädt sie bei einem Update erneut. Die größten Posten sind der
+  Hangar (49 MB), Serenity (31 MB), Voyager (22 MB) und der Rover (19 MB).
 - Endlose, ortsfeste Inselwelt (deterministisch je Rasterzelle), animiertes Meer, Flugzeugträger,
   Häfen, Wolkenkratzer-Städte.
 
