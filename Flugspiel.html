@@ -89,7 +89,9 @@
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, über Ziel-Insel B = abwerfen</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um</b></div>
-    <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % senkrecht steigen · ab 30 % vorwärts · 0 % = Antrieb aus</b></div>
+    <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
+    <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit <b>80–100 %</b> steil steigen: ab 3 km wird der Himmel dunkel, ab 9 km Weltall</b></div>
+    <div class="hrow"><span>🌙 Mond</span><b>im Weltall zum Mond fliegen, dort landen (10 %). Hochsteigen = zurück ins Weltall</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -111,6 +113,10 @@
 <script src="ford_glb.js"></script>
 <script src="harbor_glb.js"></script>
 <script src="xwing_glb.js"></script>
+<script src="stars_glb.js"></script>
+<script src="earth_glb.js"></script>
+<script src="moon_glb.js"></script>
+<script src="crater_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -119,8 +125,10 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87b8e8);
 scene.fog = new THREE.Fog(0x87b8e8, 900, 3000);
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 8000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// far muss bis zu den Himmelskoerpern reichen (Mond ~26 km, Sternenkuppel 40 km). Bei diesem
+// Tiefenbereich braucht es einen logarithmischen Tiefenpuffer, sonst flimmern nahe Flaechen.
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 120000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
@@ -129,7 +137,8 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x557755, 1.0));
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x557755, 1.0);
+scene.add(hemiLight);
 const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(200, 400, 100); scene.add(sun);
 
@@ -328,6 +337,7 @@ function isOnCarrier(x, z){ return !!carrierAt(x, z); }
 //  Airbus/AlphaJet: NUR Landebahn (Insel) — AlphaJet zusätzlich Trägerdeck.
 //  Mustang zusätzlich Trägerdeck. Canadair (Löschflugboot): Wasser ODER Landebahn.
 function canLandHere(x, z) {
+  if(locale === 'moon') return true;     // Mondboden: überall aufsetzbar (nur der X-Wing kommt hin)
   const model = MODEL_NAMES[currentModel];
   const onLand = isOnLand(x, z);
   const onRunway = isOnRunway(x, z);
@@ -1605,6 +1615,8 @@ function updatePax(dt){
 // wird mit sinkender Höhe kleiner+dunkler (nah am Flieger = klein/scharf).
 const SHADOW_MAXALT = 20;
 function updateShadow(){
+  // Im Weltall gibt es keinen Boden, auf dem Mond keine Insel-Referenzhöhe -> Schatten aus.
+  if(locale !== 'earth'){ if(planeShadow) planeShadow.visible = false; return; }
   // Oberfläche: über Land = Inselhöhe, über Wasser = Meer (y=0)
   const overLand = isOnLand(state.pos.x, state.pos.z);
   const surfY = overLand ? ISLAND_Y : 0;
@@ -1977,6 +1989,242 @@ function preloadHarbor(){
   }, (err)=>{ console.warn('Harbor-GLB Ladefehler:', err); });
 }
 
+// ============================================================
+//  Weltraum: Übergang Himmel -> Weltall, Erdkugel, Mond
+// ============================================================
+// Ein einziger Zustand schaltet den Ort um:
+//   'earth' = flache Inselwelt (Meer, Inseln, Träger, Verkehr, Wolken)
+//   'space' = Weltall (schwarz, Sterne, Erdkugel unter einem, Mond in der Ferne)
+//   'moon'  = Mondoberfläche (kachelnde Kraterlandschaft, kein Meer, keine Inseln)
+// Die x/z-Koordinaten laufen durch: die Inselwelt ist unendlich, man taucht also genau dort
+// wieder ein, wo man absinkt — es braucht keine Rückrechnung auf den Startpunkt.
+let locale = 'earth';
+const ATMO_TOP  = 3000;     // ab hier wird der Himmel dunkler
+const SPACE_Y   = 9000;     // ab hier ist man im Weltall
+const SPACE_THR = 0.8;      // erst ab 80 % Schub traegt die Fahrt aus der Atmosphäre heraus
+const EARTH_R   = 6000;     // Radius der Erdkugel
+const MOON_R    = 2500;     // Radius der Mondkugel
+const MOON_DIST = 25000;    // Entfernung des Mondes vom Austrittspunkt
+const MOON_ENTER = MOON_R + 1500;   // so nah am Mond -> Wechsel auf die Mondoberfläche
+const MOON_LEAVE_ALT = 4000;        // so hoch über dem Mondboden -> zurück ins Weltall
+const MOON_TILE = 2999;             // Kantenlänge des Krater-Patches (aus der GLB vermessen)
+const GRAV_AT = { earth: 9.81, moon: 1.62, space: 0 };   // Mond: 1/6 der Erdanziehung
+
+let starDome = null, starMat = null, earthBall = null, moonBall = null, craterTemplate = null;
+const moonCenter = new THREE.Vector3();
+let spaceBlend = 0;                 // 0 = Tageshimmel, 1 = Weltall
+const SKY_DAY = new THREE.Color(0x87b8e8), SKY_SPACE = new THREE.Color(0x02030a);
+const _skyC = new THREE.Color();
+
+// Lädt ein Kugel-GLB und normiert es auf einen Zielradius (die Modelle sind r=100).
+function preloadSphereGLB(dataUrl, radius, cb){
+  if(!dataUrl || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = dataUrl.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(radius*2 / Math.max(size.x, size.y, size.z));
+    const wrap = new THREE.Group(); wrap.add(obj);
+    cb(wrap);
+  }, (err)=>{ console.warn('Weltraum-GLB Ladefehler:', err); });
+}
+function preloadSpace(){
+  // Sternenkuppel: exakte Kugelschale, von innen sichtbar, lichtunabhängig, blendet mit der Höhe ein
+  preloadSphereGLB(window.STARS_GLB, 40000, (g)=>{
+    starMat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide,
+                                            transparent:true, opacity:0, depthWrite:false });
+    g.traverse(o=>{ if(o.isMesh){ o.material = starMat; o.renderOrder = -1; } });
+    g.visible = false; starDome = g; scene.add(g);
+  });
+  preloadSphereGLB(window.EARTH_GLB, EARTH_R, (g)=>{ g.visible = false; earthBall = g; scene.add(g); });
+  preloadSphereGLB(window.MOON_GLB,  MOON_R,  (g)=>{ g.visible = false; moonBall  = g; scene.add(g); });
+  preloadCrater();
+}
+
+// ---------- Mondoberfläche: kachelnde Kraterlandschaft ----------
+// Die Ränder des Patches passen NICHT zusammen (bis ~60 m Höhensprung), deshalb wird jede zweite
+// Kachel gespiegelt: dann trifft jeder Rand auf sich selbst und die Landschaft ist nahtlos.
+const moonTiles = new Map();        // "ix,iz" -> Group
+function preloadCrater(){
+  if(!window.CRATER_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.CRATER_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    // Sockel-Mesh (schwarze Unterseite bis y=-245) verwerfen — es würde an den Kanten hochstehen
+    const drop = [];
+    obj.traverse(o=>{
+      if(o.isMesh && (/Bruno_LP_2/.test(o.name||'') ||
+                      (o.material && o.material.name === 'material_1'))) drop.push(o);
+    });
+    for(const o of drop) if(o.parent) o.parent.remove(o);
+    // Spiegelung kehrt die Flächenorientierung um -> von beiden Seiten sichtbar machen
+    obj.traverse(o=>{ if(o.isMesh && o.material) o.material.side = THREE.DoubleSide; });
+    craterTemplate = obj;
+    startMoonField();
+  }, (err)=>{ console.warn('Krater-GLB Ladefehler:', err); });
+}
+// Höhenraster der Kachel: wird per Raycast aus der ECHTEN Geometrie ausgemessen (nicht geschätzt),
+// eine Rasterzeile pro Frame, damit der Start nicht blockiert.
+const MOON_FIELD_N = 96;
+let moonField = null, moonFieldRow = 0, moonFieldRay = null;
+function startMoonField(){
+  moonField = new Float32Array(MOON_FIELD_N*MOON_FIELD_N);
+  moonFieldRow = 0;
+  moonFieldRay = new THREE.Raycaster();
+  craterTemplate.updateMatrixWorld(true);
+}
+function stepMoonField(){
+  if(!moonField || !craterTemplate || moonFieldRow >= MOON_FIELD_N) return;
+  const N = MOON_FIELD_N, half = MOON_TILE/2, step = MOON_TILE/(N-1), iz = moonFieldRow;
+  const down = new THREE.Vector3(0,-1,0), from = new THREE.Vector3();
+  for(let ix=0; ix<N; ix++){
+    from.set(-half + ix*step, 600, -half + iz*step);
+    moonFieldRay.set(from, down);
+    const hit = moonFieldRay.intersectObject(craterTemplate, true);
+    moonField[iz*N+ix] = hit.length ? hit[0].point.y : 0;
+  }
+  moonFieldRow++;
+}
+// Bodenhöhe auf dem Mond: Spiegel-Kachelung + bilineare Interpolation im Höhenraster.
+function moonHeightAt(x, z){
+  if(!moonField || moonFieldRow < MOON_FIELD_N) return 0;
+  const N = MOON_FIELD_N, T = MOON_TILE;
+  const ix = Math.round(x/T), iz = Math.round(z/T);
+  let lx = x - ix*T, lz = z - iz*T;          // lokal in der Kachel: -T/2 .. +T/2
+  if(ix & 1) lx = -lx;                       // jede zweite Kachel gespiegelt
+  if(iz & 1) lz = -lz;
+  const fx = (lx + T/2)/T*(N-1), fz = (lz + T/2)/T*(N-1);
+  const x0 = Math.max(0, Math.min(N-2, Math.floor(fx))), z0 = Math.max(0, Math.min(N-2, Math.floor(fz)));
+  const tx = fx - x0, tz = fz - z0;
+  const h00 = moonField[z0*N+x0],     h10 = moonField[z0*N+x0+1];
+  const h01 = moonField[(z0+1)*N+x0], h11 = moonField[(z0+1)*N+x0+1];
+  return (h00*(1-tx)+h10*tx)*(1-tz) + (h01*(1-tx)+h11*tx)*tz;
+}
+function updateMoonTiles(){
+  if(!craterTemplate) return;
+  const pix = Math.round(state.pos.x/MOON_TILE), piz = Math.round(state.pos.z/MOON_TILE);
+  const need = new Set();
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const ix = pix+dx, iz = piz+dz, key = ix+','+iz;
+    need.add(key);
+    if(!moonTiles.has(key)){
+      const g = craterTemplate.clone(true);
+      g.scale.set((ix & 1) ? -1 : 1, 1, (iz & 1) ? -1 : 1);
+      g.position.set(ix*MOON_TILE, 0, iz*MOON_TILE);
+      scene.add(g); moonTiles.set(key, g);
+    }
+  }
+  for(const [key, g] of moonTiles){ if(!need.has(key)){ scene.remove(g); moonTiles.delete(key); } }
+}
+function clearMoonTiles(){ for(const [,g] of moonTiles) scene.remove(g); moonTiles.clear(); }
+
+// Oberflächenhöhe an (x,z) — je Ort: Erde (Meer/Insel/Trägerdeck) oder Mondboden.
+function surfaceY(x, z){
+  if(locale === 'moon')  return moonHeightAt(x, z);
+  if(locale === 'space') return -1e9;                  // im Weltall gibt es keinen Boden
+  return isOnCarrier(x, z) ? fordDeckY : (isOnLand(x, z) ? ISLAND_Y : 0);
+}
+
+// ---------- Ortswechsel ----------
+// Erdwelt beim Verlassen abräumen (und beim Zurückkommen wieder aufbauen lassen).
+function earthWorldVisible(on){
+  ground.visible = on;
+  for(const cl of clouds) cl.visible = on;
+  if(!on){
+    for(const [,isl] of islandCells) if(isl) scene.remove(isl);
+    islandCells.clear();
+    for(const [,grp] of carrierCells) if(grp) scene.remove(grp);
+    carrierCells.clear();
+    for(const e of fleet) removePlane(e);
+    fleet.length = 0; clearFlyby(); clearAiEffects();
+    clearRescue();
+  } else {
+    updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
+  }
+}
+function enterSpace(){
+  locale = 'space';
+  // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
+  if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
+  if(moonBall){
+    moonCenter.set(state.pos.x + MOON_DIST*0.8, SPACE_Y + MOON_DIST*0.5, state.pos.z - MOON_DIST*0.4);
+    moonBall.position.copy(moonCenter); moonBall.visible = true;
+  }
+  earthWorldVisible(false);
+  showBig('🚀');
+}
+function enterEarth(){
+  locale = 'earth';
+  if(earthBall) earthBall.visible = false;
+  if(moonBall)  moonBall.visible  = false;
+  clearMoonTiles();
+  earthWorldVisible(true);
+  showBig('🌍');
+}
+function enterMoon(){
+  locale = 'moon';
+  if(moonBall) moonBall.visible = false;              // man ist jetzt darauf
+  earthWorldVisible(false);
+  // Landeanflug: über der Basiskachel einsetzen, Fahrt auf ein handliches Maß bringen
+  state.pos.set(0, moonHeightAt(0,0) + 900, 0);
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  state.vel.copy(fwd).multiplyScalar(Math.min(state.vel.length(), 120));
+  state.throttle = 0.4; state.onGround = false; state.stalling = false;
+  updateMoonTiles();
+  showBig('🌙');
+}
+function leaveMoon(){
+  locale = 'space';
+  clearMoonTiles();
+  // knapp über der Mondkugel wieder ins Weltall setzen (Fahrt und Blickrichtung bleiben)
+  state.pos.copy(moonCenter).add(new THREE.Vector3(0, MOON_R + 1800, 0));
+  if(moonBall)  moonBall.visible  = true;
+  if(earthBall) earthBall.visible = true;
+  showBig('🚀');
+}
+function updateLocale(){
+  if(state.crashed || state.ejected || state.falling) return;
+  if(locale === 'earth'){
+    if(state.pos.y >= SPACE_Y) enterSpace();
+  } else if(locale === 'space'){
+    if(moonBall && state.pos.distanceTo(moonCenter) < MOON_ENTER) enterMoon();
+    else if(state.pos.y < SPACE_Y) enterEarth();
+  } else {
+    if(state.pos.y - moonHeightAt(state.pos.x, state.pos.z) > MOON_LEAVE_ALT) leaveMoon();
+  }
+}
+// Sanfter Übergang Himmel -> Weltall: Farben, Nebel, Licht, Sterne, Erdkugel.
+function updateSpaceBlend(dt){
+  const target = (locale === 'earth')
+    ? Math.max(0, Math.min(1, (state.pos.y - ATMO_TOP)/(SPACE_Y - ATMO_TOP))) : 1;
+  spaceBlend += (target - spaceBlend) * Math.min(1, 3*dt);
+  const f = spaceBlend;
+  _skyC.copy(SKY_DAY).lerp(SKY_SPACE, f);
+  scene.background.copy(_skyC);
+  scene.fog.color.copy(_skyC);
+  scene.fog.near = 900  + f*60000;          // Nebel praktisch aus, sobald es dunkel wird
+  scene.fog.far  = 3000 + f*400000;
+  hemiLight.intensity = 1.0  - 0.85*f;      // im All bleibt nur wenig Streulicht
+  sun.intensity       = 0.85 + 0.35*f;      // dafür knallt die Sonne härter
+  if(starDome){
+    starDome.visible = f > 0.02;
+    starDome.position.copy(state.pos);      // Kuppel bleibt immer gleich weit weg
+    if(starMat) starMat.opacity = f;
+  }
+  // Auf dem Mond hängt die Erde als Kugel am Himmel und wandert mit (wie eine Kulisse)
+  if(locale === 'moon' && earthBall){
+    earthBall.visible = true;
+    earthBall.position.set(state.pos.x + 26000, 14000, state.pos.z - 18000);
+  }
+}
+
 // ---------- Höhen-Schatten am Boden (Hilfe fürs Kind, ab <=20 m) ----------
 // Flacher, flugzeugförmiger Umriss (Kreuz aus zwei Ellipsen: Rumpf + Flügel),
 // folgt der X/Z-Position, liegt knapp über dem Boden. Bei niedriger Höhe größer/dunkler.
@@ -2040,14 +2288,16 @@ const PLANE_SPECS = {
 // Der Schub steuert unter 30 % nicht die Fahrt, sondern das SENKRECHTE Steigen/Sinken:
 //   0 %  Antrieb aus -> freier Fall (Absturz möglich, wie ein Strömungsabriss)
 //  10 %  saubere Senkrechtlandung (sinkt langsam, Nase wird waagerecht gezogen)
-//  20 %  senkrecht steigen (Start von Landebahn, Wiese, Trägerdeck oder Wasser)
-//  25 %  Übergangszone (Steigen klingt aus, Vorwärtsschub setzt ein)
+//  20 %  abheben und SCHWEBEN: steigt auf 20 m über Grund und bleibt dort stehen; ist er schon
+//        höher, hält er einfach seine Höhe (Start von Landebahn, Wiese, Trägerdeck oder Wasser)
+//  25 %  Übergangszone (Schweben klingt aus, Vorwärtsschub setzt ein)
 //  30 %+ normaler Vorwärtsflug — ab hier greift die unveränderte Flugphysik
 const VTOL_LAND  = 0.10;   // bis hier: sinken
 const VTOL_HOVER = 0.20;   // hier: senkrecht steigen
 const VTOL_FWD   = 0.30;   // ab hier: kein VTOL mehr
 const VTOL_SINK  = -10;    // m/s Sinkrate bei VTOL_LAND (zügig, damit man nicht wartet)
 const VTOL_CLIMB = 10;     // m/s Steigrate bei VTOL_HOVER
+const VTOL_HOVER_ALT = 20; // m über Grund: Schwebehöhe bei VTOL_HOVER (Boden, Deck oder Mondkrater)
 const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 18, pitch: 1.2, roll: 2.2, turn: 1.0 };
 let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
 
@@ -2289,6 +2539,7 @@ function toggleSound(){
 
 // ---------- Flugzustand ----------
 function resetPlane() {
+  if(locale !== 'earth') enterEarth();     // aus Weltall/Mond zurück in die Inselwelt
   state.water = 0;
   state.scoopTime = 0;
   placeAtStart(MODEL_NAMES[currentModel]);   // modellgerechte Startposition (Stadt/Träger/Hafen/Bahn)
@@ -2524,7 +2775,7 @@ function stepPhysics(dt, inp){
     // rascher Sturz: Nase runter + starke Schwerkraft, wenig Bremsung
     state.vel.y -= 26 * dt;
     state.pos.addScaledVector(state.vel, dt);
-    const wreckY = isOnCarrier(state.pos.x,state.pos.z) ? fordDeckY : (isOnLand(state.pos.x,state.pos.z) ? ISLAND_Y : 0);
+    const wreckY = surfaceY(state.pos.x, state.pos.z);
     if(state.pos.y <= wreckY){
       // Aufschlag -> Feuerwehr (3 s), Fallschirm schwebt im Hintergrund weiter
       state.pos.y = wreckY;
@@ -2582,7 +2833,8 @@ function stepPhysics(dt, inp){
   // 30 % Schub -> ~30 % vMax und BLEIBT dort (kein Weiterbeschleunigen). Auftrieb auf 1 g
   // gedeckelt -> kein Selbst-Steigen; Höhe kommt aus der Nase (Pitch). Sturz beschleunigt,
   // Steigflug bremst (über die Vektorzerlegung von Schwerkraft/Nase).
-  const GRAV=9.81, vMax=spec.vMax;
+  const GRAV = GRAV_AT[locale] !== undefined ? GRAV_AT[locale] : 9.81;   // Mond leichter, Weltall schwerelos
+  const vMax = spec.vMax;
   const speed = state.vel.length();
   // X-Wing (VTOL): unter 30 % Schub übernehmen die Repulsoren. vtolMix blendet Vortrieb,
   // Schwerkraft und Auftrieb aus (1 = ganz aus bei <= 20 %, 0 = normaler Flug ab 30 %), damit
@@ -2613,8 +2865,12 @@ function stepPhysics(dt, inp){
   accel.y -= GRAV * vtolRest;                                  // Schwerkraft (immer -Y)
   // Auftrieb ⟂ Flügel, GEDECKELT auf 1 g: ab vTO hält er das Gewicht (waagerecht = Höhe halten),
   // darunter reicht er nicht -> Flieger sinkt (Gleitflug/Stall). Nie mehr als 1 g -> kein Hochschießen.
-  // Im Strömungsabriss gibt es keinen Auftrieb mehr — sonst trägt sich der Flieger im Sturz selbst.
-  const liftF = Math.min(1, (speed*speed)/(spec.vTO*spec.vTO)) * (state.stalling ? 0 : 1);
+  // Der X-Wing hat Repulsorlift: solange der Antrieb läuft (> 0 %), trägt er sich unabhängig von der
+  // Fahrt. Deshalb sackt er beim Wechsel vom Schweben in den Vorwärtsflug nicht durch, sondern
+  // beschleunigt waagerecht. Bei 0 % Schub ist der Repulsor aus -> er fällt wie jeder andere auch.
+  // Flügel-Flieger brauchen Fahrt; im Strömungsabriss gibt es gar keinen Auftrieb.
+  const repulsor = !!spec.vtol && state.throttle > 0.001;
+  const liftF = repulsor ? 1 : Math.min(1, (speed*speed)/(spec.vTO*spec.vTO)) * (state.stalling ? 0 : 1);
   accel.addScaledVector(upV, GRAV * liftF * vtolRest);
   state.vel.addScaledVector(accel, dt);
 
@@ -2626,7 +2882,10 @@ function stepPhysics(dt, inp){
 
   // Höhen-Deckel: sanft abriegeln (kein hartes Ruckeln, kein "Anstoßen"/Crash). In den letzten
   // 120 m vor maxAlt wird die Steig-Geschwindigkeit gedämpft; bei maxAlt ist Schluss nach oben.
-  if(spec.maxAlt){
+  // Der Deckel gilt nur in der Erdatmosphäre — und der X-Wing schiebt sich ab 80 % Schub hindurch
+  // (genug Fahrt, um die Erde zu verlassen).
+  const altCapOn = (locale === 'earth') && !(spec.vtol && state.throttle >= SPACE_THR);
+  if(spec.maxAlt && altCapOn){
     const over = (state.pos.y - ISLAND_Y) - (spec.maxAlt - 120);
     if(over > 0 && state.vel.y > 0){
       const damp = Math.max(0, 1 - over/120);                  // 1 -> 0 über die letzten 120 m
@@ -2652,12 +2911,20 @@ function stepPhysics(dt, inp){
   // --- X-Wing (VTOL): Steig-/Sinkrate aus dem Schub anregeln. Läuft NACH der Ruderwirksamkeit,
   // damit das senkrechte Steigen nicht Richtung Nase weggedreht wird (vtolMix siehe oben).
   if(vtolMix > 0){
-    // Zielrate aus dem Schub: 10 % -> Sinken, 20 % -> Steigen (linear dazwischen)
-    let tv = state.throttle <= VTOL_LAND ? VTOL_SINK
-      : VTOL_SINK + (VTOL_CLIMB - VTOL_SINK) * (state.throttle - VTOL_LAND) / (VTOL_HOVER - VTOL_LAND);
-    tv = Math.min(VTOL_CLIMB, tv);
+    // Zielrate aus dem Schub: 10 % sinken (Landung), 20 % schweben. Beim Schweben wird nicht endlos
+    // gestiegen, sondern die Schwebehöhe angeregelt: unter 20 m über Grund steigt er, darüber bleibt
+    // er stehen (nie von selbst sinken — sonst könnte man nicht in der Luft warten).
+    let tv;
+    if(state.throttle <= VTOL_LAND){
+      tv = VTOL_SINK;
+    } else {
+      const agl = state.pos.y - surfaceY(state.pos.x, state.pos.z);          // Höhe über Grund
+      const hov = Math.max(0, Math.min(VTOL_CLIMB, (VTOL_HOVER_ALT - agl) * 0.5));
+      const kH  = Math.min(1, (state.throttle - VTOL_LAND) / (VTOL_HOVER - VTOL_LAND));
+      tv = VTOL_SINK + (hov - VTOL_SINK) * kH;                               // 10 % -> sinken, 20 % -> schweben
+    }
     // Höhendeckel auch beim Senkrechtsteigen einhalten (sanft über die letzten 120 m)
-    if(spec.maxAlt && tv > 0){
+    if(spec.maxAlt && altCapOn && tv > 0){
       const over = (state.pos.y - ISLAND_Y) - (spec.maxAlt - 120);
       if(over > 0) tv *= Math.max(0, 1 - over/120);
     }
@@ -2682,7 +2949,7 @@ function stepPhysics(dt, inp){
   // 50 % der Abhebegeschwindigkeit, um wieder herauszukommen — sonst flackert der Zustand im Sturz
   // (Sinkfahrt zaehlt als Fahrt) und der Sturz bleibt bei ~10 m/s haengen statt zu beschleunigen.
   const vStall = spec.vTO * (state.stalling ? 0.5 : 0.20);
-  if(!state.onGround && speed < vStall && vtolMix <= 0){
+  if(locale === 'earth' && !repulsor && !state.onGround && speed < vStall && vtolMix <= 0){
     state.stalling = true;
     // Nase konsequent nach unten zwingen (bis ~ -75° Pitch), Querlage rausnehmen -> kein Trudeln.
     const eS = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
@@ -2710,7 +2977,7 @@ function stepPhysics(dt, inp){
   state.pos.addScaledVector(state.vel, dt);
 
   // ---- Gebäude-Kollision: Prallt am Haus ab (fliegt NICHT durch) und fällt GERADE nach unten ----
-  if(!state.falling && hitsBuilding(state.pos.x, state.pos.y, state.pos.z, state.onGround)){
+  if(locale === 'earth' && !state.falling && hitsBuilding(state.pos.x, state.pos.y, state.pos.z, state.onGround)){
     state.falling = true;
     playCrash();                       // 1. Geräusch: Aufprall gegen das Hindernis
     state.throttle = 0;
@@ -2727,7 +2994,7 @@ function stepPhysics(dt, inp){
     state.vel.x = 0; state.vel.z = 0;                      // strikt senkrecht (nicht durchs Haus driften)
     state.vel.y -= 22*dt;                                  // fällt beschleunigt gerade runter
     state.pos.y += state.vel.y * dt;
-    const gy = isOnCarrier(state.pos.x, state.pos.z) ? fordDeckY : (isOnLand(state.pos.x, state.pos.z) ? ISLAND_Y : 0);
+    const gy = surfaceY(state.pos.x, state.pos.z);
     if(state.pos.y <= gy){
       state.pos.y = gy; state.falling = false;
       state.crashed = true; state.crashTimer = 3.0;
@@ -2746,7 +3013,7 @@ function stepPhysics(dt, inp){
   // Oberfläche ortsabhängig: über Land = Inselhöhe, über Trägerdeck = Deckhöhe, sonst Meer (y=0).
   const overLand = isOnLand(state.pos.x, state.pos.z);
   const onCarrierDeck = isOnCarrier(state.pos.x, state.pos.z);
-  const GROUND_Y = onCarrierDeck ? fordDeckY : (overLand ? ISLAND_Y : 0);
+  const GROUND_Y = surfaceY(state.pos.x, state.pos.z);
   const wasGround = state.onGround;
   if(state.pos.y <= GROUND_Y){
     const vspeed = speed;
@@ -2878,7 +3145,9 @@ function recycleWorld(){
 const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd'),
       elThr=document.getElementById('thr'), elStat=document.getElementById('status');
 function updateHUD(){
-  elAlt.textContent=Math.max(0,Math.round(state.pos.y-0.3));
+  // Auf dem Mond die Höhe ÜBER DEM KRATERBODEN zeigen (der schwankt um ±60 m).
+  const altRef = (locale === 'moon') ? moonHeightAt(state.pos.x, state.pos.z) : 0.3;
+  elAlt.textContent=Math.max(0,Math.round(state.pos.y-altRef));
   elSpd.textContent=Math.round(state.vel.length()*3.6);
   elThr.textContent=Math.round(state.throttle*100);
   // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
@@ -2906,7 +3175,8 @@ function updateHUD(){
       s = mission + ('🧍'.repeat(paxLoad) || '·');   // eingestiegene Menschen
     }
   }
-  elStat.textContent = s;
+  // Ort voranstellen: 🚀 Weltall · 🌙 Mond (auf der Erde kein Extra-Symbol)
+  elStat.textContent = (locale === 'space' ? '🚀 ' : (locale === 'moon' ? '🌙 ' : '')) + s;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
@@ -3739,10 +4009,14 @@ function loop(now){
   updateParachute(dt);       // Schleudersitz-Fallschirm (AlphaJet)
   updateSonic(dt);           // Überschallknall + Vapor-Cone (AlphaJet ab Schallgeschwindigkeit)
   updateShadow();            // Höhen-Schatten am Boden (ab <=20 m)
-  updateSea(dt);             // animierte Meereswellen
+  if(locale === 'earth') updateSea(dt);   // animierte Meereswellen (nur in der Erdwelt)
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
-  updateTrafficAll(dt);     // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
-  recycleWorld();
+  if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
+  stepMoonField();           // Höhenraster des Mondes in Häppchen ausmessen
+  updateLocale();            // Erde <-> Weltall <-> Mond
+  updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
+  if(locale === 'earth') recycleWorld();
+  else if(locale === 'moon') updateMoonTiles();
   updateCamera();
   updateHUD();
   renderer.render(scene,camera);
@@ -3755,6 +4029,7 @@ preloadTruck();        // Feuerwehrauto-GLB laden
 preloadParachute();    // Fallschirm-GLB laden (Transall-Kisten & AlphaJet/Mustang-Schleudersitz)
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
+preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft
 placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (Canadair) im Hafen aufstellen
 camera.position.set(state.pos.x, state.pos.y+10, state.pos.z+25);
 camera.lookAt(state.pos);

@@ -19,7 +19,7 @@ fliegt und dort landet. Mars und Sonne kann er umkreisen.
 ## Status
 
 - [x] **Etappe 1** — X-Wing als spielbares Modell mit VTOL (Erde) — *fertig 23.08.2026*
-- [ ] **Etappe 2** — Weltall-Übergang, Erdkugel, Mondlandung
+- [x] **Etappe 2** — Weltall-Übergang, Erdkugel, Mondlandung — *fertig 23.08.2026*
 - [ ] **Etappe 3** — Hyperraum, Mars, Sonne
 
 ---
@@ -219,6 +219,65 @@ Z-Fighting bei diesem Distanzverhältnis.
 **Test** — mit 100 % steil steigen → Himmel dunkelt, Sterne kommen, Erde wird Kugel · Richtung
 Mond → Mondmodus, Landung im Krater · hochsteigen → zurück in den Weltraum · absinken → flache
 Erdwelt am Austrittspunkt.
+
+### Stand: erledigt (23.08.2026)
+
+Umgesetzt wie geplant. Abweichungen und Ergänzungen:
+
+- **Kein Rückrechnen auf den Austrittspunkt nötig.** Die x/z-Koordinaten laufen durch alle Orte
+  durch — die Inselwelt ist unendlich, also taucht man einfach dort wieder ein, wo man absinkt.
+  Der Plan sah ein Zurücksetzen auf den Austrittspunkt vor; das wäre überflüssige Mechanik.
+- **Schwerkraft pro Ort** (`GRAV_AT`): Erde 9,81 · Mond 1,62 (ein Sechstel) · Weltall 0. Weil der
+  gedeckelte Auftrieb im Spielmodell mit der Schwerkraft skaliert, bleibt das Flugverhalten stimmig —
+  auf dem Mond fühlt sich alles nur leichter an.
+- **Eine gemeinsame Bodenfunktion** `surfaceY(x,z)` ersetzt die drei Stellen, an denen die
+  Oberflächenhöhe getrennt berechnet wurde (Meer / Insel / Trägerdeck), und liefert jetzt auch den
+  Mondboden bzw. „kein Boden" im Weltall.
+- **Strömungsabriss, Gebäudekollision, Meer, Inseln, KI-Verkehr, Wolken und Bodenschatten** laufen
+  nur noch in der Erdwelt. Beim Verlassen werden Inselzellen, Träger und Flotte abgeräumt, beim
+  Zurückkommen neu aufgebaut (die Flotte spawnt von selbst nach).
+- **Renderer** mit `logarithmicDepthBuffer`, Kamera-`far` 120000 — nötig, weil Mond (26 km) und
+  Sternenkuppel (40 km) gleichzeitig mit nahen Flächen im Bild sind.
+
+**Mondoberfläche — nachgemessen** (`C:\tmp\moonfield_check.js`, direkt aus der GLB-Geometrie):
+
+| Prüfung | Ergebnis |
+|---|---|
+| Sockel-Mesh erkannt und verworfen | 304 Dreiecke raus, 2667 Terrain-Dreiecke bleiben |
+| Höhenraster 96×96 (Raycast von oben) | alle 9216 Punkte treffen Geometrie, keine Löcher |
+| Höhen | −72,4 m bis +49,1 m |
+| **Naht bei Mirror-Tiling** | **0,000 m Höhensprung** an beiden Kachelgrenzen |
+| Naht ohne Spiegelung (Gegenprobe) | 78,3 m Sprung — deshalb ist die Spiegelung zwingend |
+| Rasterfehler gegen echte Geometrie | im Mittel 0,28 m, maximal 3,25 m (Rasterweite 31,6 m) |
+
+Das Höhenraster wird beim Laden **eine Zeile pro Frame** ausgemessen (96 Frames ≈ 1,6 s), damit der
+Spielstart nicht blockiert.
+
+### Nachtrag: Schweben statt Dauersteigen (Rückmeldung aus dem Testflug)
+
+Gemeldet: „Wenn man von 20 auf 30 % geht und er schon schwebt, senkt sich sofort die Nase und man
+kracht in den Boden." Ursache: Beim Schweben hat er fast keine Fahrt — beim Umschalten auf 30 %
+griffen deshalb sofort **Strömungsabriss** (Nase kippt auf −75°) und **fehlender Auftrieb**
+(der hängt am Quadrat der Fahrt). Behoben:
+
+1. **Repulsorlift**: solange der Antrieb läuft (> 0 %), trägt sich der X-Wing unabhängig von der
+   Fahrt und hat **keinen Strömungsabriss**. Bei 0 % ist der Repulsor aus — dann fällt er wie jeder
+   andere (so gewollt).
+2. **20 % ist jetzt Schweben, nicht Dauersteigen**: er steigt auf **20 m über Grund** (Boden,
+   Trägerdeck, Wasser, Mondkrater — über die gemeinsame Bodenfunktion) und bleibt dort stehen; ist er
+   schon höher, hält er seine Höhe. Von selbst sinken tut er nie.
+
+Nachgerechnet (`C:\tmp\vtolsim6.js`):
+
+| Fall | Ergebnis |
+|---|---|
+| 20 % vom Boden | steigt auf exakt 20,0 m und bleibt dort |
+| 20 % in 300 m Höhe | bleibt bei 299,7 m stehen (weder steigen noch sinken) |
+| **schweben → 30 %** | **Höhe bleibt (119,7 m), Nase 0°**, beschleunigt waagerecht auf 741 km/h |
+| schweben in 20 m → 30 % | Höhe bleibt 20,0 m, waagerecht auf 741 km/h |
+| schweben → 50 % | Höhe bleibt, Fahrt geht auf 1235 km/h = Mach 1 |
+| schweben → 10 % | sinkt mit 10 m/s und setzt sauber auf |
+| schweben → 0 % | Repulsor aus, fällt mit 45 m/s, Nase −70°, Aufschlag |
 
 ---
 

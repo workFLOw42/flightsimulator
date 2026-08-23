@@ -51,9 +51,15 @@ Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugze
 - **P-51 Mustang** — flotter Warbild (Kunstflug), **B = Schleudersitz**. Startet auf einem Flugzeugträger.
 - **X-Wing** 🚀 — **Senkrechtstarter** und mit Abstand der schnellste: **Schallmauer schon bei 50 %**
   Schub, **Mach 2 bei Vollgas** (2470 km/h). Unter 30 % steuert der Schub nicht die Fahrt, sondern die
-  Senkrechte: **20 % = senkrecht steigen** mit 10 m/s (von Landebahn, Wiese, Trägerdeck oder Wasser),
-  **ab 30 % fliegt er vorwärts** (Steuerung wie der Alpha-Jet), **10 % = Senkrechtlandung** mit 10 m/s,
-  **0 % = Antrieb aus** — dann fällt er. Er darf **überall landen**.
+  Senkrechte:
+  - **20 % = abheben und schweben** — er steigt auf 20 m über Grund (Landebahn, Wiese, Trägerdeck,
+    Wasser oder Mondkrater) und **bleibt dort stehen**. Ist er schon höher, hält er einfach seine Höhe.
+  - **ab 30 % = waagerechter Vorwärtsflug** — die Höhe bleibt, er beschleunigt geradeaus. Steigen und
+    Sinken kommen dann aus der Nase, wie beim Alpha-Jet.
+  - **10 % = Senkrechtlandung** mit 10 m/s, setzt immer sauber auf. **0 % = Antrieb aus** — dann fällt er.
+
+  Er darf **überall landen**. Solange der Antrieb läuft, trägt ihn sein Repulsorlift: er sackt nie
+  durch und hat keinen Strömungsabriss.
 
 **Leitsystem**: eine weiche Pfeilkette führt zum Ziel — **rot** = leer/hinfliegen, **gelb** = beladen,
 **grün** = jetzt! Ein **Radar** zeigt die Richtung immer an. Aufgaben lassen sich per **RB / T**
@@ -64,6 +70,21 @@ aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, B
 Im Strömungsabriss kippt die Nase nach unten und der Flieger **fällt wirklich** (aus 300 m ist er in
 7–10 s unten): kein Auftrieb, keine Ruderwirksamkeit, und der Leerlauf bremst den Sturz nicht ab.
 Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
+
+## 🌍 Ins Weltall und zum Mond (nur X-Wing)
+
+Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und die Sterne kommen, ab
+**9 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei 3 km ab — erst die volle Fahrt
+trägt hinaus. Alle anderen Flugzeuge behalten ihren gewohnten Höhendeckel.
+
+Im Weltall wird die Erde zur **Kugel** unter einem, es ist **schwerelos**, und in der Ferne hängt der
+**Mond**. Wer dorthin fliegt, wechselt automatisch in den **Landeanflug**: unter dem X-Wing liegt dann
+eine **echte Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt. Dort gilt
+**ein Sechstel der Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
+
+**Zurück** geht es jederzeit: Auf dem Mond einfach hochsteigen (über 4 km) → Weltall. Im Weltall
+absinken → wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), und auf dem
+Mond die Höhe über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück.
 
 ## ✈️ Flugverkehr in der Luft (Taste J / LB)
 Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
@@ -111,6 +132,9 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Gerald R. Ford Aircraft Carrier | **Usman Zia** |
 | The Wharf – Fishing Harbor | **Mehdi Shahsavan** |
 | X-Wing 2.0 | **GaryPhelps** |
+| Earth · Moon | **Akshat** |
+| Moon – Giordano Bruno Crater | **Sebastian Sosnowski** |
+| Minecraft Java Edition Stars | **AjaxGb** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
