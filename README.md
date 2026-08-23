@@ -107,8 +107,10 @@ Drittel Anziehung und dem **Perseverance-Rover**. Am Himmel steht dabei die Erde
 **Todesstern und Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
 zu ihnen hin, seitlich fliegt man weiter.
 
-Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle**,
-**Razor Crest** und **Serenity** fliegen ihre eigenen Kurse durchs All.
+Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle**
+(3×), **Razor Crest** (3×) und **Serenity** fliegen ihre eigenen Kurse durchs All. Sie halten mit
+deinem Tempo mit, damit man sie in Ruhe ansehen kann — Waffen haben sie keine; **nur X-Wings
+schießen** auf Asteroiden. Der Todesstern bleibt stumm: für ihn zeigt das HUD bewusst kein Symbol.
 
 **Asteroiden abschießen**: Im Weltall treiben 20 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
 Sie **passen ihr Tempo dem Flieger an** und bleiben nur 2–8 % zurück — man zieht also langsam an ihnen

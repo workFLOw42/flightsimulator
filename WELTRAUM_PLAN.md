@@ -436,6 +436,15 @@ Rover 19 MB). Auch die Dreiecksbilanz ist gewachsen: im Weltall grob 675.000 Dre
 Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: `AI_XW_COUNT`
 (6 → 3 spart 114.000 Dreiecke), `AST_COUNT`, und das Kachelraster der Marsfläche (3×3 → 2×2).
 
+### Nachtrag (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| Todesstern ohne Totenkopf | Sein Symbol ist leer; Körper ohne Symbol melden sich weder über dem Flieger noch in der HUD-Zeile |
+| ISS, Mondbasis und Rover unsichtbar | **Derselbe Fehler wie zuvor bei den Himmelskörpern**: sie wurden nur beim Ankommen einmal platziert. Lädt das Modell erst danach fertig (Rover 19 MB, Basis 7,5 MB), stand es nie am richtigen Ort — die ISS bei (0,0,0), Basis und Rover auf Höhe 0 statt auf dem Boden, weil auch das Höhenraster noch nicht fertig war. Jetzt zieht `placeBodies()` bzw. `placeGroundBase()` beides **jeden Frame** nach |
+| Mehr Raumschiffe | Shuttle 3×, Razor Crest 3×, Serenity 1× (ihr Modell hat 289.000 Dreiecke, 22-mal so viel wie das Shuttle — mehrere Exemplare würden das Bild ausbremsen). Klone teilen Geometrie und Texturen |
+| Tempo wie bei den Asteroiden | Ihr Kurs wird an die Fliegergeschwindigkeit angeglichen, minus 4–14 % Rückstand, plus eigener Drift (80–250 m/s). Sie ziehen also „hin und her", bleiben aber im Blick statt nach hinten zu verschwinden |
+
 ---
 
 ## Verifikation (alle Etappen)

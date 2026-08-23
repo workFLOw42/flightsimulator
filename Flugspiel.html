@@ -95,7 +95,7 @@
     <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 6 km Weltall</b></div>
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10, vor jedem Himmelskörper bremst er selbst</b></div>
     <div class="hrow"><span>🌙 Mond &amp; 🔴 Mars</span><b>anfliegen und mit 10 % landen — Mondbasis bzw. Mars-Rover stehen dort · ☀️ Sonne und 💀 Todesstern nur umkreisen</b></div>
-    <div class="hrow"><span>🛸 Weltall</span><b>ISS, Shuttle, Razor Crest und Serenity ziehen ihre Bahnen</b></div>
+    <div class="hrow"><span>🛸 Weltall</span><b>ISS in Erdnähe · Shuttle, Razor Crest und Serenity ziehen ihre Bahnen (ohne Waffen)</b></div>
     <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · nur unter Warp 1 · fremde X-Wings schießen mit</b></div>
     <div class="hrow"><span>🌙 suchen</span><b>über dem Flieger steht das angeflogene Ziel mit Entfernung, das Radar zeigt die Richtung</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
@@ -2048,7 +2048,7 @@ const BODY_DEFS = [
   { key:'moon', r:12000,  dist:150000, yaw: 0,    up:0.35, sym:'🌙', land:true  },
   { key:'mars', r:30000,  dist:400000, yaw: 2.1,  up:0.50, sym:'🔴', land:true  },
   { key:'sun',  r:120000, dist:900000, yaw:-2.1,  up:0.80, sym:'☀️', land:false },
-  { key:'death',r:20000,  dist:250000, yaw: 1.05, up:0.45, sym:'💀', land:false },
+  { key:'death',r:20000,  dist:250000, yaw: 1.05, up:0.45, sym:'',   land:false },   // bewusst ohne Symbol
 ];
 const BODY_GLB = { moon:()=>window.MOON_GLB, mars:()=>window.MARS_GLB, sun:()=>window.SUN_GLB,
                    death:()=>window.DEATHSTAR_GLB };
@@ -2264,6 +2264,7 @@ function clearGroundTiles(){
 // ---------- Mondbasis und ISS ----------
 // Die Mondbasis steht neben dem Landepunkt auf dem Mond, die ISS hängt im Weltall in Erdnähe.
 let moonBaseObj = null, issObj = null, roverObj = null;
+const issCenter = new THREE.Vector3();     // fester Platz der ISS im Weltall (in Erdnähe)
 function preloadStationGLB(dataUrl, cb){
   if(!dataUrl || !THREE.GLTFLoader) return;
   const gl = new THREE.GLTFLoader();
@@ -2275,10 +2276,12 @@ function preloadStationGLB(dataUrl, cb){
     wrap.visible = false; scene.add(wrap); cb(wrap);
   }, (err)=>{ console.warn('Station-GLB Ladefehler:', err); });
 }
-// Mondbasis bzw. Mars-Rover neben dem Aufsetzpunkt aufstellen (dort, wo man landet).
+// Mondbasis bzw. Mars-Rover neben dem Aufsetzpunkt aufstellen (dort, wo man landet). Wird jeden
+// Frame aufgerufen: die Modelle laden asynchron, und die Bodenhöhe steht erst fest, wenn das
+// Höhenraster fertig ausgemessen ist — vorher stünden sie in der Luft.
 function placeGroundBase(){
-  if(moonBaseObj) moonBaseObj.visible = false;
-  if(roverObj)    roverObj.visible = false;
+  if(moonBaseObj && locale !== 'moon') moonBaseObj.visible = false;
+  if(roverObj    && locale !== 'mars') roverObj.visible = false;
   if(locale === 'moon' && moonBaseObj){
     moonBaseObj.position.set(340, groundHeightAt('moon', 340, 240), 240);
     moonBaseObj.visible = true;
@@ -2333,8 +2336,10 @@ function enterSpace(){
     b.center.copy(state.pos).addScaledVector(d, b.def.dist);
   }
   spacePlaced = true;
-  // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite
-  if(issObj){ issObj.position.copy(state.pos).add(new THREE.Vector3(700, 500, -1600)); issObj.visible = true; }
+  // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
+  // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
+  // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
+  issCenter.copy(state.pos).add(new THREE.Vector3(700, 500, -1600));
   earthWorldVisible(false);
   showSpaceHint('🚀');
 }
@@ -2415,7 +2420,11 @@ function placeBodies(){
   }
   const here = bodyOf(locale);
   if(here && here.obj) here.obj.visible = false;                  // man steht darauf
-  if(issObj) issObj.visible = (locale === 'space');
+  if(issObj){
+    issObj.visible = (locale === 'space') && spacePlaced;
+    if(issObj.visible) issObj.position.copy(issCenter);
+  }
+  placeGroundBase();          // Mondbasis / Mars-Rover ebenfalls jeden Frame nachziehen
 }
 // Himmelskörper im Weltall: Anflug, Hyperraum-Bremse und Orbit-Grenze.
 // Gibt true zurück, wenn der Ort gewechselt wurde.
@@ -2525,7 +2534,10 @@ function updateSpaceHint(dt){
     if(key && key !== lastAimKey){
       if(key === aimCand){
         aimCandT += dt;
-        if(aimCandT >= 1.0){ showSpaceHint(aim.def.sym); lastAimKey = key; aimCand = ''; aimCandT = 0; }
+        if(aimCandT >= 1.0){
+          if(aim.def.sym) showSpaceHint(aim.def.sym);    // Körper ohne Symbol melden sich nicht
+          lastAimKey = key; aimCand = ''; aimCandT = 0;
+        }
       } else { aimCand = key; aimCandT = 0; }
     } else if(!key){ aimCand = ''; aimCandT = 0; }   // lastAimKey bleibt: kein Neu-Auslösen
   } else { lastAimKey = ''; aimCand = ''; aimCandT = 0; }
@@ -2545,10 +2557,12 @@ function updateSpaceHint(dt){
 // Die Modelle liegen in ihren Dateien unterschiedlich: das Shuttle zeigt mit der Nase auf +Z, die
 // Razor Crest steht senkrecht (Nase −Y), die Serenity liegt längs (Nase −X). Deshalb wird jedes
 // Modell in einem Wrapper vorgedreht, sodass außen einheitlich „Nase = −Z" gilt (wie beim Spieler).
+// count = wie viele von der Sorte unterwegs sind. Die Serenity bleibt einmalig: ihr Modell hat
+// 289.000 Dreiecke (22-mal so viel wie das Shuttle), mehrere Exemplare würden das Bild ausbremsen.
 const SHIP_DEFS = [
-  { key:'shuttle',  glb:()=>window.SHUTTLE_GLB,  len:37, rot:[0, Math.PI, 0] },
-  { key:'razor',    glb:()=>window.RAZOR_GLB,    len:30, rot:[Math.PI/2, 0, 0] },
-  { key:'serenity', glb:()=>window.SERENITY_GLB, len:60, rot:[0, -Math.PI/2, 0] },
+  { key:'shuttle',  glb:()=>window.SHUTTLE_GLB,  len:37, rot:[0, Math.PI, 0],       count:3 },
+  { key:'razor',    glb:()=>window.RAZOR_GLB,    len:30, rot:[Math.PI/2, 0, 0],     count:3 },
+  { key:'serenity', glb:()=>window.SERENITY_GLB, len:60, rot:[0, -Math.PI/2, 0],    count:1 },
 ];
 const ships = [];
 function preloadShips(){
@@ -2568,25 +2582,35 @@ function preloadShips(){
       const box1 = new THREE.Box3().setFromObject(obj);
       const c = new THREE.Vector3(); box1.getCenter(c);
       obj.position.sub(c);                       // Schwerpunkt in den Ursprung
-      const wrap = new THREE.Group(); wrap.add(obj);
-      wrap.visible = false; scene.add(wrap);
-      ships.push({ obj:wrap, def, vel:new THREE.Vector3(0,0,-1), speed:200 });
+      for(let i = 0; i < (def.count || 1); i++){
+        const wrap = new THREE.Group();
+        wrap.add(i === 0 ? obj : obj.clone(true));      // Klone teilen Geometrie und Texturen
+        wrap.visible = false; scene.add(wrap);
+        ships.push({ obj:wrap, def, vel:new THREE.Vector3(0,0,-1),
+                     drift:new THREE.Vector3(), lag: 0.04 + Math.random()*0.10 });
+      }
     }, (err)=>{ console.warn('Raumschiff-GLB Ladefehler ('+def.key+'):', err); });
   }
 }
 function placeShip(s){
   const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-  s.obj.position.copy(state.pos).addScaledVector(dir, 3000 + Math.random()*7000);
-  s.vel.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-  s.speed = 150 + Math.random()*350;
-  s.obj.lookAt(s.obj.position.clone().add(s.vel));
+  s.obj.position.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*7000);
+  // eigener Kurs, mit dem sie „hin und her" ziehen — Waffen haben sie keine, nur die X-Wings schießen
+  s.drift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize()
+    .multiplyScalar(80 + Math.random()*170);
+  s.lag = 0.04 + Math.random()*0.10;
   s.obj.visible = true;
 }
 function updateShips(dt){
   if(locale !== 'space'){ for(const s of ships) s.obj.visible = false; return; }
   for(const s of ships){
     if(!s.obj.visible){ placeShip(s); continue; }
-    s.obj.position.addScaledVector(s.vel, s.speed*dt);
+    // wie bei den Asteroiden: Tempo des Fliegers minus kleinem Rückstand, dazu der eigene Kurs.
+    // So bleiben sie im Blick, statt bei Warp 0,5 sofort nach hinten zu verschwinden.
+    const want = state.vel.clone().multiplyScalar(1 - s.lag).add(s.drift);
+    s.vel.lerp(want, Math.min(1, 1.2*dt));
+    s.obj.position.addScaledVector(s.vel, dt);
+    if(s.vel.lengthSq() > 1) s.obj.lookAt(s.obj.position.clone().add(s.vel));   // Nase voraus
     if(s.obj.position.distanceTo(state.pos) > 26000) placeShip(s);
   }
 }
@@ -3759,7 +3783,7 @@ function updateHUD(){
   let nav = '';
   if(locale === 'space'){
     const aim = aimedBody();
-    nav = '🚀' + (aim ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
+    nav = '🚀' + ((aim && aim.def.sym) ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
   } else if(GROUNDS[locale]){ const hb = bodyOf(locale); nav = hb ? hb.def.sym : '🌙'; }
   elStat.textContent = nav ? (nav + ' ' + s) : s;
 }
