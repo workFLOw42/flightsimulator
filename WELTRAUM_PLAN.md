@@ -445,6 +445,15 @@ Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: 
 | Mehr Raumschiffe | Shuttle 3×, Razor Crest 3×, Serenity 1× (ihr Modell hat 289.000 Dreiecke, 22-mal so viel wie das Shuttle — mehrere Exemplare würden das Bild ausbremsen). Klone teilen Geometrie und Texturen |
 | Tempo wie bei den Asteroiden | Ihr Kurs wird an die Fliegergeschwindigkeit angeglichen, minus 4–14 % Rückstand, plus eigener Drift (80–250 m/s). Sie ziehen also „hin und her", bleiben aber im Blick statt nach hinten zu verschwinden |
 
+### Nachtrag 2 (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| ISS zu schnell aus dem Bild | Sie zieht jetzt mit 92 % des Fliegertempos mit, plus 40 m/s eigenem Kurs; ab 12 km Abstand kommt die nächste Station in 2,5–5,5 km Sichtweite vorbei |
+| Rover soll beim Landen da sein | Basis und Rover haben einen Standort, der neu gewürfelt wird, sobald man mehr als 2 km entfernt ist — bei jeder Landung stehen sie also in der Nähe (Basis 380–600 m, Rover 90–160 m) |
+| Warp fällt beim Wegfliegen aus | **Denkfehler behoben**: die Hyperraum-Bremse prüfte nur die Entfernung zum Körper, nicht die Richtung. Jetzt greift sie nur, wenn er sich dem Körper wirklich **nähert** (Geschwindigkeit zeigt hin) |
+| Übergang ins Weltall zu hektisch | Sowohl beim Verlassen der Erde als auch beim Start von Mond oder Mars geht der Schub auf **50 %** und der Warp-Aufbau auf null — erst umschauen, dann beschleunigen |
+
 ---
 
 ## Verifikation (alle Etappen)

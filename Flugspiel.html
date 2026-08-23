@@ -2264,7 +2264,8 @@ function clearGroundTiles(){
 // ---------- Mondbasis und ISS ----------
 // Die Mondbasis steht neben dem Landepunkt auf dem Mond, die ISS hängt im Weltall in Erdnähe.
 let moonBaseObj = null, issObj = null, roverObj = null;
-const issCenter = new THREE.Vector3();     // fester Platz der ISS im Weltall (in Erdnähe)
+const issCenter = new THREE.Vector3();     // aktueller Platz der ISS
+const issDrift = new THREE.Vector3();      // ihr eigener, langsamer Kurs
 function preloadStationGLB(dataUrl, cb){
   if(!dataUrl || !THREE.GLTFLoader) return;
   const gl = new THREE.GLTFLoader();
@@ -2276,19 +2277,29 @@ function preloadStationGLB(dataUrl, cb){
     wrap.visible = false; scene.add(wrap); cb(wrap);
   }, (err)=>{ console.warn('Station-GLB Ladefehler:', err); });
 }
-// Mondbasis bzw. Mars-Rover neben dem Aufsetzpunkt aufstellen (dort, wo man landet). Wird jeden
-// Frame aufgerufen: die Modelle laden asynchron, und die Bodenhöhe steht erst fest, wenn das
-// Höhenraster fertig ausgemessen ist — vorher stünden sie in der Luft.
+// Mondbasis bzw. Mars-Rover in der Nähe aufstellen — und zwar dort, wo man gerade unterwegs ist:
+// entfernt man sich weiter als BASE_FAR, tauchen sie beim nächsten Anflug wieder neben einem auf.
+// Wird jeden Frame aufgerufen, weil die Modelle asynchron laden und die Bodenhöhe erst feststeht,
+// wenn das Höhenraster ausgemessen ist (vorher stünden sie in der Luft).
+const BASE_FAR = 2000;
+const _basePos = { moon:null, mars:null };
+function baseSpot(key, dist){
+  const a = Math.random()*Math.PI*2;
+  return { x: state.pos.x + Math.cos(a)*dist, z: state.pos.z + Math.sin(a)*dist };
+}
 function placeGroundBase(){
   if(moonBaseObj && locale !== 'moon') moonBaseObj.visible = false;
   if(roverObj    && locale !== 'mars') roverObj.visible = false;
-  if(locale === 'moon' && moonBaseObj){
-    moonBaseObj.position.set(340, groundHeightAt('moon', 340, 240), 240);
-    moonBaseObj.visible = true;
-  }
-  if(locale === 'mars' && roverObj){
-    roverObj.position.set(160, groundHeightAt('mars', 160, 120), 120);
-    roverObj.visible = true;
+  for(const key of ['moon','mars']){
+    const obj = (key === 'moon') ? moonBaseObj : roverObj;
+    if(locale !== key || !obj) continue;
+    let p = _basePos[key];
+    if(!p || Math.hypot(p.x - state.pos.x, p.z - state.pos.z) > BASE_FAR){
+      p = baseSpot(key, (key === 'moon') ? 380 + Math.random()*220 : 90 + Math.random()*70);
+      _basePos[key] = p;
+    }
+    obj.position.set(p.x, groundHeightAt(key, p.x, p.z), p.z);
+    obj.visible = true;
   }
 }
 
@@ -2322,6 +2333,10 @@ function earthWorldVisible(on){
 }
 function enterSpace(){
   locale = 'space';
+  // Erst mal umschauen: der Schub geht auf die Hälfte, sonst rutscht man mit 100 % direkt in den
+  // Hyperraum und ist weg, bevor man Erde, ISS und Mond gesehen hat.
+  warpDrive = 0; warpVis = 0;
+  if(state.throttle > 0.5) state.throttle = 0.5;
   // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
   if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
   // Himmelskörper setzen: waagerechte Ausflugrichtung als Bezug, dann pro Körper drehen und anheben
@@ -2340,6 +2355,7 @@ function enterSpace(){
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
   issCenter.copy(state.pos).add(new THREE.Vector3(700, 500, -1600));
+  issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   earthWorldVisible(false);
   showSpaceHint('🚀');
 }
@@ -2372,6 +2388,8 @@ function enterGround(key){
 function leaveGround(){
   const from = locale;
   locale = 'space';
+  warpDrive = 0; warpVis = 0;
+  if(state.throttle > 0.5) state.throttle = 0.5;    // erst umschauen, nicht gleich in den Hyperraum
   clearGroundTiles();
   const b = bodyOf(from);
   // knapp über der Kugel wieder ins Weltall setzen (Fahrt und Blickrichtung bleiben)
@@ -2428,15 +2446,21 @@ function placeBodies(){
 }
 // Himmelskörper im Weltall: Anflug, Hyperraum-Bremse und Orbit-Grenze.
 // Gibt true zurück, wenn der Ort gewechselt wurde.
+const _bodyDir = new THREE.Vector3();
 function updateSpaceBodies(){
   for(const b of bodies){
     if(!b.obj) continue;
     const d = state.pos.distanceTo(b.center);
-    // Kurz vor dem Himmelskörper aus dem Hyperraum fallen, damit man ihn in Ruhe ansehen kann
+    // Kurz vor dem Himmelskörper aus dem Hyperraum fallen, damit man ihn in Ruhe ansehen kann —
+    // aber nur, wenn er ihn auch ANFLIEGT. Beim Wegfliegen wäre das lästig (er käme in Körpernähe
+    // nie in den Hyperraum, obwohl er sich entfernt).
     if(d < b.def.r*3 && warpDrive > 0.02){
-      warpDrive = 0;
-      if(state.throttle > 0.5) state.throttle = 0.5;
-      showSpaceHint('🛑', 2);
+      const closing = state.vel.dot(_bodyDir.copy(b.center).sub(state.pos).normalize()) > 0;
+      if(closing){
+        warpDrive = 0;
+        if(state.throttle > 0.5) state.throttle = 0.5;
+        showSpaceHint('🛑', 2);
+      }
     }
     if(b.def.land){
       if(d < b.def.r + 1500){ enterGround(b.def.key); return true; }
@@ -2603,6 +2627,15 @@ function placeShip(s){
 }
 function updateShips(dt){
   if(locale !== 'space'){ for(const s of ships) s.obj.visible = false; return; }
+  // Die ISS zieht mit: sonst ist sie nach wenigen Sekunden aus dem Bild. Sie folgt dem Flieger mit
+  // 92 % seines Tempos plus ihrem eigenen langsamen Kurs; ist sie doch zu weit weg, kommt die
+  // nächste Station in Sichtweite vorbei.
+  issCenter.addScaledVector(state.vel, 0.92*dt).addScaledVector(issDrift, dt);
+  if(issCenter.distanceTo(state.pos) > 12000){
+    const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.4+0.1, Math.random()-0.5).normalize();
+    issCenter.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*3000);
+    issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
+  }
   for(const s of ships){
     if(!s.obj.visible){ placeShip(s); continue; }
     // wie bei den Asteroiden: Tempo des Fliegers minus kleinem Rückstand, dazu der eigene Kurs.
