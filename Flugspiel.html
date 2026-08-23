@@ -2500,6 +2500,7 @@ function leaveHangar(){
 // wenn das Modell selbst noch nicht geladen ist — dann weiß man trotzdem, wo es hingehört.
 let roverAnchor = null;
 let _lastBase = null;      // wo Basis bzw. Rover gerade stehen (für den Start-/Landeverkehr)
+let _lastBaseY = 0;        // und auf welcher Höhe — die Landeplätze rechnen damit
 // Dünner, blasser Lichtstrahl: der erste Versuch war so breit, dass er die Basis verdeckte.
 const beaconMat = new THREE.MeshBasicMaterial({ color:0x9fd8ff, transparent:true, opacity:0.12,
   blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide });
@@ -2545,6 +2546,42 @@ function baseSpotForTile(ix, iz){
   console.log('Mondbasis-Standort Kachel', key, '-> Ring-Streuung', bestSpread.toFixed(1), 'm');
   return best;
 }
+// Höhenprofil der Basisfläche über ihrer eigenen Nullhöhe — vermessen mit C:\tmp\baseprobe2.js
+// (Faktor 5,52, je Ring 72 Punkte). Zwischen 100 und 260 m ist die Fläche rundum frei und flach
+// (Höhenstreuung unter 1 m); die Aufbauten stehen bei 40–80 m, ab 280 m fällt der Rand ab.
+const BASE_PROFILE = [[100,25.3],[120,24.1],[140,22.6],[160,20.9],[180,19.0],
+                      [200,17.1],[220,15.1],[240,13.1],[260,11.1]];
+function basePlatformY(r){
+  const P = BASE_PROFILE;
+  if(r < P[0][0] || r > P[P.length-1][0]) return null;
+  for(let i = 1; i < P.length; i++) if(r <= P[i][0]){
+    const [r0,h0] = P[i-1], [r1,h1] = P[i];
+    return h0 + (h1-h0)*(r-r0)/(r1-r0);
+  }
+  return null;
+}
+// Höhe, auf der die Basis sitzt: der Kraterwert ihres Zentrums, aber so weit angehoben, dass ihre
+// Fläche nirgends im Hang versinkt. Der Krater hat bis 80 m Relief, die Fläche fällt nur 14 m ab —
+// ohne das steckte sie oft im Boden, und alles, was darauf landet, war unsichtbar.
+const _baseYs = new Map();
+function baseGroundY(p){
+  const key = p.x.toFixed(0) + ',' + p.z.toFixed(0);
+  if(_baseYs.has(key)) return _baseYs.get(key);
+  const c = groundHeightAt('moon', p.x, p.z);
+  let lift = 0;
+  for(let r = 110; r <= 260; r += 25){
+    const plat = basePlatformY(r);
+    if(plat === null) continue;
+    for(let k = 0; k < 12; k++){
+      const a = k/12*Math.PI*2;
+      const y = groundHeightAt('moon', p.x + Math.cos(a)*r, p.z + Math.sin(a)*r);
+      if(y - (c + plat) + 2 > lift) lift = y - (c + plat) + 2;    // 2 m Luft
+    }
+  }
+  const out = c + Math.max(0, lift);
+  if(GROUNDS.moon.field && GROUNDS.moon.row >= GROUND_FIELD_N) _baseYs.set(key, out);
+  return out;
+}
 function placeGroundBase(){
   if(moonBaseObj && locale !== 'moon') moonBaseObj.visible = false;
   if(roverObj    && locale !== 'mars') roverObj.visible = false;
@@ -2554,10 +2591,13 @@ function placeGroundBase(){
     const p = _basePosMoon && Math.hypot(_basePosMoon.x - state.pos.x, _basePosMoon.z - state.pos.z) < T*0.7
       ? _basePosMoon
       : baseSpotForTile(Math.round(state.pos.x/T), Math.round(state.pos.z/T));
-    const y = groundHeightAt('moon', p.x, p.z);
-    if(moonBaseObj){ moonBaseObj.position.set(p.x, y, p.z); moonBaseObj.visible = true; }
+    const y = baseGroundY(p);
+    if(moonBaseObj){
+      moonBaseObj.position.set(p.x, y, p.z); moonBaseObj.visible = true;
+      moonBaseObj.updateMatrixWorld(true);      // sonst raycastet der Bodencheck gegen die alte Stelle
+    }
     showBeacon(p.x, y, p.z, 0x9fd8ff);
-    _lastBase = p;
+    _lastBase = p; _lastBaseY = y;
   } else if(locale === 'mars'){
     // beim Sinkflug mit 10 % Schub steht der Landepunkt praktisch fest -> Rover daneben setzen
     const landing = (state.throttle <= VTOL_LAND && !state.onGround);
@@ -2566,7 +2606,10 @@ function placeGroundBase(){
       roverAnchor = { x: state.pos.x + Math.cos(a)*d, z: state.pos.z + Math.sin(a)*d };
     }
     const y = groundHeightAt('mars', roverAnchor.x, roverAnchor.z);
-    if(roverObj){ roverObj.position.set(roverAnchor.x, y, roverAnchor.z); roverObj.visible = true; }
+    if(roverObj){
+      roverObj.position.set(roverAnchor.x, y, roverAnchor.z); roverObj.visible = true;
+      roverObj.updateMatrixWorld(true);
+    }
     showBeacon(roverAnchor.x, y, roverAnchor.z, 0xffb060);
     _lastBase = roverAnchor;
   }
@@ -3074,21 +3117,17 @@ function ensurePads(){
 }
 const PAD_LIFT = 3;                // Aufschlag: das Höhenraster kann eine Kuppe abschneiden, sonst
                                    // steht das Schiff halb im Boden
-// Aufsetzhöhe eines Landeplatzes. Auf dem Mond stehen die Schiffe auf der Fläche der Basis, die
-// höher liegt als der Krater und nach außen abfällt — ein Strahl von oben liefert sie exakt (dann
-// braucht es auch keinen Aufschlag). Ohne Treffer, und auf dem Mars, zählt das Höhenraster.
+// Aufsetzhöhe eines Landeplatzes: auf dem Mond aus dem vermessenen Profil der Basisfläche, gerechnet
+// von der Höhe, auf der die Basis tatsächlich steht. Bewusst OHNE Raycast — ein Raycast arbeitet mit
+// obj.matrixWorld, und die aktualisiert three.js erst beim Rendern, während placeGroundBase() die
+// Basis erst NACH updatePads() setzt. Landeplätze, die in so einem Frame entstanden, fielen deshalb
+// auf den Kraterboden zurück und standen unter der Fläche: unsichtbar.
 function padSurfaceY(x, z){
-  const base = (locale === 'moon') ? moonBaseObj : null;
-  const raster = groundHeightAt(locale, x, z);
-  if(base && base.visible){
-    _gRay.set(_gFrom.set(x, raster + 800, z), _gDown);
-    let top = null;
-    for(const h of _gRay.intersectObject(base, true)) if(top === null || h.point.y > top) top = h.point.y;
-    // Das Höhere von beiden zählt: wo der Krater über die Fläche steigt (er hat bis 80 m Relief, die
-    // Fläche fällt nur 14 m ab), stünde ein Schiff auf der Fläche sonst UNTER dem sichtbaren Boden.
-    if(top !== null) return Math.max(top, raster);
+  if(locale === 'moon' && _lastBase && moonBaseObj && moonBaseObj.visible){
+    const plat = basePlatformY(Math.hypot(x - _lastBase.x, z - _lastBase.z));
+    if(plat !== null) return _lastBaseY + plat;
   }
-  return raster + PAD_LIFT;
+  return groundHeightAt(locale, x, z) + PAD_LIFT;
 }
 function padSpot(p){
   const c = _lastBase;
@@ -3099,7 +3138,6 @@ function padSpot(p){
   const d = (locale === 'moon') ? 110 + Math.random()*145 : 120 + Math.random()*90;
   p.x = (c ? c.x : state.pos.x) + Math.cos(a)*d;
   p.z = (c ? c.z : state.pos.z) + Math.sin(a)*d;
-  p.gy = padSurfaceY(p.x, p.z);                 // einmal messen, nicht jeden Frame
 }
 function updatePads(dt){
   if(!GROUNDS[locale]){ for(const p of pads) p.obj.visible = false; return; }
@@ -3107,7 +3145,9 @@ function updatePads(dt){
   for(const p of pads){
     // Landeplatz nachziehen, wenn die Basis inzwischen woanders steht
     if(_lastBase && Math.hypot(p.x - _lastBase.x, p.z - _lastBase.z) > 600) padSpot(p);
-    const gy = (p.gy === undefined) ? padSurfaceY(p.x, p.z) : p.gy;
+    // Jeden Frame frisch: die Rechnung ist nur noch eine Interpolation im Profil, und ein gemerkter
+    // Wert wäre falsch, sobald die Basis ihre Höhe ändert (Standortwechsel oder Anhebung).
+    const gy = padSurfaceY(p.x, p.z);
     p.obj.rotation.set(0, p.yaw, 0);                  // immer waagerecht, nur gedreht
     if(p.phase === 'down'){
       if(!p.obj.visible){

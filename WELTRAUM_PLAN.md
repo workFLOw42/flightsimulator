@@ -909,6 +909,43 @@ und bringt keine eigene Fläche mit.
 
 ---
 
+### Nachtrag 13 — warum die Schiffe verschwanden: ein Raycast zur falschen Zeit (23.08.2026)
+
+Nachtrag 12 hat die Höhen richtig berechnet und trotzdem alles schlimmer gemacht — erst waren einzelne
+Schiffe unsichtbar, danach alle. Die Ursache lag nicht in der Rechnung, sondern im **Zeitpunkt**:
+
+`padSurfaceY()` ermittelte die Aufsetzhöhe per **Raycast** gegen die Basis. Ein Raycast rechnet mit
+`obj.matrixWorld`, und die aktualisiert three.js erst beim **Rendern**. `placeGroundBase()` setzt die
+Basisposition aber **nach** `updatePads()` im Loop. Entstand ein Landeplatz in so einem Frame, traf sein
+Strahl die Basis an ihrer alten Stelle — also gar nicht —, und die Höhe fiel auf den Kraterboden zurück.
+Das Schiff stand damit **unter** der Fläche. Weil die Höhe zudem nur **einmal** beim Setzen des Pads
+berechnet und gemerkt wurde, blieb der Fehler für den ganzen Zyklus bestehen. Und seit die Basis sich
+die flachste Stelle sucht, **springt** sie beim ersten fertigen Höhenraster einmal um: von da an traf es
+alle Pads gleichzeitig.
+
+Die Lehre: eine Höhe, die aus einem Raycast gegen ein Objekt kommt, dessen Position im selben Frame
+gesetzt wird, ist nicht verlässlich — unabhängig davon, wie genau man vorher vermessen hat.
+
+Jetzt kommt die Höhe **ohne Raycast** aus dem vermessenen Profil der Fläche (`BASE_PROFILE`), gerechnet
+von der Höhe, auf der die Basis tatsächlich steht (`_lastBaseY`). Keine `matrixWorld`, kein Rasterstand,
+kein gemerkter Wert — die Rechnung ist eine Interpolation und läuft jeden Frame frisch.
+
+Gegengeprüft mit `C:\tmp\profilecheck.js`: 2160 Punkte im Landeplatzring (alle 5 m, je 72 Richtungen),
+Profil gegen die echte Geometrie — mittlere Abweichung **0,24 m**, größte **0,68 m**, kein Punkt ohne
+Geometrie. Bei einem 34 m langen Schiff ist das unsichtbar.
+
+Zwei Dinge packen dasselbe Problem an der Wurzel:
+
+- **Basis und Rover werden nach dem Setzen ihrer Position sofort durchgerechnet**
+  (`updateMatrixWorld`). Sonst arbeitet auch `stepGroundExact()` — der Bodencheck des Spielers — einen
+  Frame lang mit der alten Stelle.
+- **Die Basis wird angehoben, soweit nötig**, damit ihre Fläche nirgends im Hang versinkt. Gemessen mit
+  `C:\tmp\baselift.js` über 90 Kacheln (jeweils flachster von 16 Standorten): nötig bei **12 von 90**,
+  im Mittel **1 m**, größte **12,7 m**. Die Lücke unter dem Außenrand bleibt im Mittel 5 m — bei 552 m
+  Breite kaum zu sehen, eine versunkene Fläche dagegen sofort.
+
+---
+
 ## Verifikation (alle Etappen)
 
 Das Spiel ist eine statische Seite ohne Testsuite. Nach jeder Etappe:
