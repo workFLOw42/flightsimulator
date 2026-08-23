@@ -516,6 +516,23 @@ zusammen rund 120 MB. Das sind die Kandidaten, falls der erste Download zu lange
 | Enterprise stand senkrecht, riesig, halb im Boden | Der Start-/Landeverkehr nutzte die **Weltraum-Größe** (Enterprise 640 m), drehte per `lookAt` in die Bewegungsrichtung (Nase nach unten) und hatte den Ursprung im Schwerpunkt. Jetzt: alle Landeplatz-Schiffe auf **34 m** normiert, **Unterseite** auf dem Boden, **waagerecht** bleibend und senkrecht auf-/absteigend wie der X-Wing |
 | Nach dem Start aus dem Todesstern sofort auf dem Mars | Ohne vorherigen Weltraum-Besuch waren die Körper-Zentren nicht gesetzt, lagen also **alle bei (0,0,0)**. Beim Verlassen stand man 28 km über dem Ursprung — wo auch der Mars (30 km Radius) lag, dessen Landung damit sofort griff. Das Setzen steckt jetzt in `layoutBodies()` und läuft auch beim Hangar-Eintritt; `updateSpaceBodies()` prüft nichts, solange nicht platziert ist |
 
+### Nachtrag 6 — Hangar vermessen statt geraten (23.08.2026)
+
+Gemeldet: „beim Start im Hangar hängt man in einer Ecke", und die Nase soll zum Ausgang zeigen.
+Statt zu schätzen habe ich den Innenraum aus der GLB-Geometrie ausgemessen
+(`C:\tmp\hangarmap2.js`: Raster über die Grundfläche, Hindernisse im Höhenband Boden+4 … Boden+30,
+größtes freies Rechteck, freie Randzellen je Kante):
+
+| Messung | Ergebnis | Folge |
+|---|---|---|
+| Boden | 43 m, Modell 80 m hoch | Innenraum nur **37 m** — die alte Schwebehöhe Boden+45 lag **über dem Dach** → jetzt Boden+15 |
+| Größte freie Fläche | **14 × 300 m**, Mitte (−134, 0) | Der Rest der Grundfläche ist mit Aufbauten belegt; dort steht der Flieger jetzt statt in einer Ecke |
+| Freie Randzellen | x-min 60, x-max 0, z-min 50, z-max 50 | Die **Öffnung liegt bei x-min** → Nase dorthin: `rotation.y = +π/2` (die Nase liegt auf −Z) |
+
+Die Ausrichtung gilt bei **jedem** Eintritt, egal aus welcher Richtung man anfliegt. Austrittsgrenzen
+angepasst: 260 m vom Zentrum (200 lag zu dicht an der Öffnung), 50 m über dem Boden, und neu auch
+nach unten.
+
 ---
 
 ## Verifikation (alle Etappen)

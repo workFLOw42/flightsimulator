@@ -2309,8 +2309,15 @@ function preloadStationGLB(dataUrl, cb){
 // wird beim Laden EINMAL per Raycast ausgemessen (kein Höhenraster nötig). Wer weit genug hinaus-
 // oder hochfliegt, ist wieder im Weltall.
 const HANGAR_SPAN = 300;           // Kantenlänge, auf die das Modell normiert wird
-const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All
-const HANGAR_OUT_H = 130;          // so hoch über dem Boden -> zurück ins All
+// Aus der Geometrie vermessen (C:\tmp\hangarmap2.js): der begehbare Bereich ist ein Streifen von
+// 14 x 300 m an der OFFENEN x-min-Kante mit Mittelpunkt (-134, 0); der Innenraum ist nur 37 m hoch
+// (Boden bei 43 m, Modell 80 m). Deshalb steht der Flieger dort und schwebt nur 15 m über dem Boden.
+const HANGAR_X = -134;             // Startplatz im freien Streifen
+const HANGAR_Z = 0;
+const HANGAR_HOVER = 15;           // Schwebehöhe über dem Hangarboden
+const HANGAR_YAW = Math.PI/2;      // Nase (liegt auf -Z) zeigt damit auf -X, also zum Ausgang
+const HANGAR_OUT_R = 260;          // so weit vom Zentrum -> zurück ins All
+const HANGAR_OUT_H = 50;           // so hoch über dem Boden -> zurück ins All (Decke liegt bei ~37 m)
 let hangarObj = null, hangarFloorY = 0;
 // Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern oder ein Star Destroyer.
 let hangarHost = null;      // { pos: Vector3, up: number }
@@ -2358,10 +2365,11 @@ function enterHangar(host){
   earthWorldVisible(false);
   clearGroundTiles();
   hangarObj.visible = true;
-  // Mitte, Mitte, Mitte: schwebend über dem Hangarboden, Schub auf Schwebestufe -> Landen mit 10 %
-  state.pos.set(0, hangarFloorY + 45, 0);
+  // Auf dem freien Streifen schwebend, Nase zum Ausgang, Schub auf Schwebestufe -> Landen mit 10 %.
+  // Das gilt für jeden Eintritt, egal aus welcher Richtung man angeflogen kam.
+  state.pos.set(HANGAR_X, hangarFloorY + HANGAR_HOVER, HANGAR_Z);
   state.vel.set(0, 0, 0);
-  state.quat.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+  state.quat.setFromEuler(new THREE.Euler(0, HANGAR_YAW, 0, 'YXZ'));
   state.throttle = VTOL_HOVER; state.onGround = false; state.stalling = false;
   showSpaceHint('🛰️');
   return true;
@@ -2541,7 +2549,8 @@ function updateLocale(){
   } else if(locale === 'death'){
     // hinaus durch die Hangaröffnung oder nach oben -> wieder im Weltall
     if(Math.hypot(state.pos.x, state.pos.z) > HANGAR_OUT_R ||
-       state.pos.y - hangarFloorY > HANGAR_OUT_H) leaveHangar();
+       state.pos.y - hangarFloorY > HANGAR_OUT_H ||
+       state.pos.y < hangarFloorY - 20) leaveHangar();     // auch nach unten hinaus
   } else {
     const G = GROUNDS[locale];
     if(G && state.pos.y - surfaceY(state.pos.x, state.pos.z) > G.leave) leaveGround();
