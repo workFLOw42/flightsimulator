@@ -132,9 +132,50 @@ Schubmodell → vCap → Höhendeckel → Ruderwirksamkeit → VTOL-Regelung →
 | 0 % aus 500 m | fällt, Stall-Flag gesetzt → Bodenkontakt ergibt Absturz |
 | Höhendeckel 3000 m | riegelt sanft bei 2987 m ab |
 
-Hinweis fürs Spielen: 6 m/s Steigen sind bewusst „Helikopter-Tempo" zum Abheben — Höhe gewinnt man
-danach mit ≥ 30 % Schub und Nase hoch. Falls das beim Testen zu zäh wirkt, ist `VTOL_CLIMB` die
-einzige Stellschraube.
+### Nachjustierung nach dem ersten Testflug (23.08.2026)
+
+Rückmeldung: Landung darf schneller gehen, der X-Wing soll schneller sein, und im Strömungsabriss
+soll er richtig sinken — „nur weil er 0 km/h vorwärts hat, sinkt er doch nicht nur mit ein paar
+Metern die Sekunde" (gilt für **alle** Flugzeuge).
+
+**Geändert**
+
+| Was | Wert |
+|---|---|
+| Senkrecht steigen / sinken | 10 m/s statt 6 / 4 (`VTOL_CLIMB`, `VTOL_SINK`) |
+| X-Wing `vMax` | 686 m/s → Schallmauer genau bei 50 % Schub, Mach 2 bei 100 %, 80 % = Mach 1,6 |
+| X-Wing `accel` | 60 m/s² (war 28), sonst dauert Vollgas zu lange |
+| Kamera | zieht bei hoher Fahrt straffer nach (sonst 190 m Rückstand bei Mach 2) — betrifft alle Modelle |
+| Strömungsabriss | fällt jetzt wirklich (siehe unten) |
+
+**Warum der Sturz so hartnäckig war** — drei Ursachen, alle erst durch die Nachrechnung sichtbar:
+
+1. Der Zielgeschwindigkeits-Regler bremste bei 0 % Schub mit bis zu `accel` (60 m/s²!) **entgegen der
+   Nase**. Zeigte die Nase nach unten, wirkte diese „Bremse" nach oben und fing den Sturz auf.
+   → Bremsen wirkt jetzt wie Luftwiderstand: entgegen der **Fahrt** und nur **waagerecht**.
+2. Selbst dann blieb der Sturz bei ~25 m/s stehen: die Ruderwirksamkeit lenkte die Sinkfahrt in die
+   Waagerechte, wo die Bremse sie sofort vernichtete — ein Kreisprozess.
+   → Die Bremse blendet mit steigender Sinkrate aus (voll bis −4 m/s, ab −12 m/s gar nicht mehr).
+   Der Umkehrschub (A/C) bremst weiterhin immer.
+3. Der Abriss flackerte: die wachsende Sinkfahrt zählt als „Fahrt", also endete er sofort wieder.
+   → Hysterese: Einstieg bei 20 % der Abhebegeschwindigkeit, Ausstieg erst bei 50 %. Dazu im Abriss
+   kein Auftrieb mehr (physikalisch korrekt).
+
+**Nachgerechnet** (`C:\tmp\vtolsim5.js`) — Motor aus in 1000 m, Sinkrate nach 5 / 10 s:
+
+| Modell | Sinkrate | Aus 300 m am Boden |
+|---|---|---|
+| X-Wing | 60 → 103 m/s | 7,0 s |
+| Alpha-Jet | 56 → 99 m/s | 7,5 s |
+| Airbus | 58 → 101 m/s | 7,4 s |
+| Mustang | 44 → 82 m/s | 8,6 s |
+| Canadair / Transall | 38 → 66 m/s | 9,6 s |
+
+Vorher: 8–25 m/s, dauerhaft konstant (Schweben statt Absturz).
+
+Gegenproben, die unverändert bleiben mussten und es tun: Reiseflug hält Höhe und Zielgeschwindigkeit
+exakt (alle sechs Modelle), Abbremsen im Waagerechtflug greift wie vorher, der Landeanflug mit 30 %
+Schub bremst weiter sauber ein, und der X-Wing-VTOL ist unberührt.
 
 ---
 

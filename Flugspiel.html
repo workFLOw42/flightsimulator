@@ -2030,8 +2030,10 @@ const PLANE_SPECS = {
   Canadair:   { vTO: 40, vMax: 63,  accel: 16,  pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 }, // ~228 km/h
   // Alpha-Jet: sau schnell + sehr wendig. Überschall bei 100 % (~1300 km/h). Beschleunigt gemächlich.
   AlphaJet:   { vTO: 55, vMax: 361, accel: 28, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },
-  // X-Wing: Flugverhalten wie der Alpha Jet (aero, gleiche Raten), zusätzlich Senkrechtstart (vtol).
-  XWing:      { vTO: 55, vMax: 361, accel: 28, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 3000, vtol:true },
+  // X-Wing: Steuerung wie der Alpha Jet, aber deutlich schneller — vMax 686 m/s heißt
+  // Schallgeschwindigkeit (343 m/s) genau bei 50 % Schub und Mach 2 bei Vollgas; ab 80 %
+  // reicht die Fahrt später, um die Erde zu verlassen. Dazu Senkrechtstart (vtol).
+  XWing:      { vTO: 55, vMax: 686, accel: 60, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 3000, vtol:true },
 };
 
 // ---------- X-Wing: Senkrechtstart und -landung (VTOL) ----------
@@ -2044,8 +2046,8 @@ const PLANE_SPECS = {
 const VTOL_LAND  = 0.10;   // bis hier: sinken
 const VTOL_HOVER = 0.20;   // hier: senkrecht steigen
 const VTOL_FWD   = 0.30;   // ab hier: kein VTOL mehr
-const VTOL_SINK  = -4;     // m/s Sinkrate bei VTOL_LAND
-const VTOL_CLIMB = 6;      // m/s Steigrate bei VTOL_HOVER
+const VTOL_SINK  = -10;    // m/s Sinkrate bei VTOL_LAND (zügig, damit man nicht wartet)
+const VTOL_CLIMB = 10;     // m/s Steigrate bei VTOL_HOVER
 const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 18, pitch: 1.2, roll: 2.2, turn: 1.0 };
 let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
 
@@ -2595,11 +2597,24 @@ function stepPhysics(dt, inp){
   const aMax = boosting ? spec.accel*1.6 : spec.accel;         // Boost (X/Shift): extra Beschleunigung
   const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), aMax) * vtolRest;  // m/s², begrenzt
   const accel = new THREE.Vector3();
-  accel.addScaledVector(forward, push);                        // Vortrieb entlang Nase (sanft an Ziel)
+  if(dv < 0){
+    // ABBREMSEN auf die Zielfahrt wirkt wie Luftwiderstand: entgegen der FAHRT (nicht entgegen der
+    // Nase) und nur WAAGERECHT. Entgegen der Nase würde dieselbe Bremse bei nach unten zeigender
+    // Nase den Sturz auffangen — Motor aus oder Strömungsabriss ergäbe ein Schweben mit ~20 m/s
+    // statt eines echten Absturzes. Im Waagerechtflug ist das identisch zu vorher.
+    // Zusätzlich blendet die Bremse mit steigender Sinkrate aus (voll bis -4 m/s, ab -12 m/s gar
+    // nicht mehr): im Sturz soll er Fahrt GEWINNEN. Der Umkehrschub (A/C halten) bremst immer.
+    const bFade = (state.throttle < 0) ? 1 : Math.max(0, Math.min(1, (state.vel.y + 12) / 8));
+    const hx = state.vel.x, hz = state.vel.z, hl = Math.hypot(hx, hz);
+    if(hl > 0.001 && bFade > 0){ const b = Math.abs(push)*bFade; accel.x -= (hx/hl)*b; accel.z -= (hz/hl)*b; }
+  } else {
+    accel.addScaledVector(forward, push);                      // Vortrieb entlang Nase (sanft an Ziel)
+  }
   accel.y -= GRAV * vtolRest;                                  // Schwerkraft (immer -Y)
   // Auftrieb ⟂ Flügel, GEDECKELT auf 1 g: ab vTO hält er das Gewicht (waagerecht = Höhe halten),
   // darunter reicht er nicht -> Flieger sinkt (Gleitflug/Stall). Nie mehr als 1 g -> kein Hochschießen.
-  const liftF = Math.min(1, (speed*speed)/(spec.vTO*spec.vTO));
+  // Im Strömungsabriss gibt es keinen Auftrieb mehr — sonst trägt sich der Flieger im Sturz selbst.
+  const liftF = Math.min(1, (speed*speed)/(spec.vTO*spec.vTO)) * (state.stalling ? 0 : 1);
   accel.addScaledVector(upV, GRAV * liftF * vtolRest);
   state.vel.addScaledVector(accel, dt);
 
@@ -2626,8 +2641,9 @@ function stepPhysics(dt, inp){
   if(vlen > 0.001){
     const authority = Math.min(1, speed / spec.vTO);           // 0 (steht) .. 1 (ab vTO volle Kontrolle)
     // Im VTOL-Schweben abgeschaltet (vtolRest = 0) — sonst zieht die waagerechte Nase die
-    // senkrechte Fahrt nach vorne und der Senkrechtstart driftet weg.
-    const base = (spec.aero ? 0.14 : 0.09) * vtolRest;         // Kunstflug-Jets koppeln straffer
+    // senkrechte Fahrt nach vorne und der Senkrechtstart driftet weg. Im Strömungsabriss ebenfalls
+    // aus: dort gibt es keinen Ruderdruck, und die Umlenkung würde den Sturz flach ziehen.
+    const base = (spec.aero ? 0.14 : 0.09) * vtolRest * (state.stalling ? 0 : 1);  // Jets koppeln straffer
     const dir = state.vel.clone().normalize();
     dir.lerp(forward, base * authority);
     state.vel.copy(dir.multiplyScalar(vlen));
@@ -2661,8 +2677,11 @@ function stepPhysics(dt, inp){
   // --- STALL: zu wenig Fahrt -> Nase kippt nach unten (übersteuert Looping/Input), Flieger fällt.
   // WICHTIG: die normale Physik + Schub laufen WEITER -> mit Nase-runter/Vollgas gewinnt man Fahrt
   // und kommt wieder raus. Bodenkontakt im Stall = IMMER Crash. Ausstieg sobald Fahrt >= vStall.
-  const vStall = spec.vTO * 0.20;   // NUR geschwindigkeitsabhaengig (nicht vom Schub): Stall erst bei fast
-                                    // keiner Fahrt. Langsamflug/Landen mit wenig Schub bleibt moeglich.
+  // NUR geschwindigkeitsabhaengig (nicht vom Schub): Stall erst bei fast keiner Fahrt, damit
+  // Langsamflug/Landen mit wenig Schub moeglich bleibt. MIT HYSTERESE: einmal im Abriss braucht er
+  // 50 % der Abhebegeschwindigkeit, um wieder herauszukommen — sonst flackert der Zustand im Sturz
+  // (Sinkfahrt zaehlt als Fahrt) und der Sturz bleibt bei ~10 m/s haengen statt zu beschleunigen.
+  const vStall = spec.vTO * (state.stalling ? 0.5 : 0.20);
   if(!state.onGround && speed < vStall && vtolMix <= 0){
     state.stalling = true;
     // Nase konsequent nach unten zwingen (bis ~ -75° Pitch), Querlage rausnehmen -> kein Trudeln.
@@ -2670,8 +2689,9 @@ function stepPhysics(dt, inp){
     eS.z *= 0.85;
     eS.x += (-1.3 - eS.x) * Math.min(1, 3.5*dt);
     state.quat.setFromEuler(eS);
-    // etwas Extra-Sinken (Auftrieb weg), aber Geschwindigkeit NICHT abwürgen -> man gewinnt Fahrt.
-    state.vel.y -= 16 * dt;
+    // Kräftiges Sinken (Auftrieb ist weg): zusammen mit der Schwerkraft fällt er wie ein Stein.
+    // Geschwindigkeit wird NICHT abgewürgt -> mit Nase runter/Vollgas gewinnt man wieder Fahrt.
+    state.vel.y -= 25 * dt;
   } else {
     state.stalling = false;                          // genug Fahrt -> normal steuerbar
   }
@@ -2831,7 +2851,10 @@ function updateCamera(){
     .addScaledVector(upV,  cfg.height*cc.hgt);
   if(desired.y < 2) desired.y = 2; // Kamera nicht unter den Boden
   camera.up.copy(upV);
-  camera.position.lerp(desired, cfg.lerp);
+  // Bei hoher Fahrt straffer nachziehen: mit festem Lerp bliebe die Kamera bei Mach 2 rund
+  // 190 m hinter dem Flieger zurück (Gleichgewicht aus Vorschub pro Frame und Lerp-Anteil).
+  const camSpd = state.vel.length();
+  camera.position.lerp(desired, Math.min(0.5, cfg.lerp * (1 + camSpd/120)));
   camera.lookAt(state.pos);
 }
 

@@ -49,10 +49,11 @@ Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugze
 - **Transall C-160** — 📦 **Fracht abwerfen**: auf der Bahn 4 Kisten laden, über der Ziel-Insel **B** =
   am Fallschirm abwerfen.
 - **P-51 Mustang** — flotter Warbild (Kunstflug), **B = Schleudersitz**. Startet auf einem Flugzeugträger.
-- **X-Wing** 🚀 — **Senkrechtstarter**. Unter 30 % steuert der Schub nicht die Fahrt, sondern die
-  Senkrechte: **20 % = senkrecht steigen** (von Landebahn, Wiese, Trägerdeck oder Wasser),
-  **ab 30 % fliegt er vorwärts** (Flugverhalten wie der Alpha-Jet), **10 % = saubere
-  Senkrechtlandung**, **0 % = Antrieb aus** — dann fällt er. Er darf **überall landen**.
+- **X-Wing** 🚀 — **Senkrechtstarter** und mit Abstand der schnellste: **Schallmauer schon bei 50 %**
+  Schub, **Mach 2 bei Vollgas** (2470 km/h). Unter 30 % steuert der Schub nicht die Fahrt, sondern die
+  Senkrechte: **20 % = senkrecht steigen** mit 10 m/s (von Landebahn, Wiese, Trägerdeck oder Wasser),
+  **ab 30 % fliegt er vorwärts** (Steuerung wie der Alpha-Jet), **10 % = Senkrechtlandung** mit 10 m/s,
+  **0 % = Antrieb aus** — dann fällt er. Er darf **überall landen**.
 
 **Leitsystem**: eine weiche Pfeilkette führt zum Ziel — **rot** = leer/hinfliegen, **gelb** = beladen,
 **grün** = jetzt! Ein **Radar** zeigt die Richtung immer an. Aufgaben lassen sich per **RB / T**
@@ -60,6 +61,9 @@ komplett abschalten (dann nur freies Fliegen).
 
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
+Im Strömungsabriss kippt die Nase nach unten und der Flieger **fällt wirklich** (aus 300 m ist er in
+7–10 s unten): kein Auftrieb, keine Ruderwirksamkeit, und der Leerlauf bremst den Sturz nicht ab.
+Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
 
 ## ✈️ Flugverkehr in der Luft (Taste J / LB)
 Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
