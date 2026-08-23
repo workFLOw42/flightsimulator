@@ -2397,13 +2397,10 @@ function enterHangar(host){
   state.vel.set(0, 0, 0);
   state.quat.setFromEuler(new THREE.Euler(0, HANGAR_YAW, 0, 'YXZ'));
   state.throttle = VTOL_HOVER; state.onGround = false; state.stalling = false;
-  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
-  // Kamera hart hinter den Flieger setzen — sonst schwenkt sie erst von der alten Position heran
-  if(typeof camera !== 'undefined'){
-    const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
-    camera.position.set(state.pos.x + back.x*30, state.pos.y + 9, state.pos.z + back.z*30);
-    camera.lookAt(state.pos);
-  }
+  // Kamera hart hinter den Flieger setzen — sonst schwenkt sie erst von der alten Position heran.
+  // Früher stand hier eine eigene Rechnung mit anderen Abständen (30 m / +9 m); jetzt dieselbe wie
+  // bei allen Ortswechseln, damit die Kamera hinterher nicht noch auf ihre Sollposition kriecht.
+  snapCamera();
   showSpaceHint('🛰️');
   flashFade();
   console.log('[Hangar] Eintritt bei', state.pos.x.toFixed(0), state.pos.y.toFixed(0), state.pos.z.toFixed(0),
@@ -2416,6 +2413,10 @@ function leaveHangar(){
   // knapp über dem Gastgeber wieder herauskommen (Todesstern oder Star Destroyer)
   if(hangarHost) state.pos.copy(hangarHost.pos).add(new THREE.Vector3(0, hangarHost.up, 0));
   else { const b = bodyOf('death'); if(b) state.pos.copy(b.center).add(new THREE.Vector3(0, b.def.r*1.4, 0)); }
+  // Kamera mitnehmen: das ist ein Sprung über Kilometer (beim Todesstern 28 km). Ohne Snap kriecht
+  // sie hinterher, und wer gleich mit Vollgas wegfliegt, lässt sie nie aufholen — dann ist der
+  // Flieger nur noch ein Punkt im Bild.
+  snapCamera();
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
   if(earthBall){ earthBall.position.copy(earthHome); earthBall.visible = true; }
   warpBrakeLock = 6; dockLock = 6;
@@ -2552,15 +2553,15 @@ function enterSpace(){
 function enterEarth(atSphere){
   locale = 'earth';
   warpDrive = 0; warpVis = 0;
-  if(atSphere && earthBall){
+  if(atSphere && spacePlaced){
     // Ab hier GENAU derselbe Weg wie bei Mond und Mars: setupApproach() setzt eine frische
     // waagerechte Lage, ruhige Fahrt, die Nase auf das Ziel und die Kamera hart dahinter. Vorher
     // hatte die Erde eigenen Code, der die Fluglage aus dem Weltall übernahm — bei senkrechter Nase
     // oder kopfüber lieferte das einen unbrauchbaren Kurs, und man kam im Sturzflug an.
     // Ziel ist der Punkt, an dem man die Kugel berührt hat; er muss VOR earthWorldVisible(true)
     // feststehen, weil die Inselzellen um die neue Position herum aufgebaut werden.
-    const n = state.pos.clone().sub(earthBall.position).normalize();
-    const hit = earthBall.position.clone().addScaledVector(n, EARTH_R);
+    const n = state.pos.clone().sub(earthHome).normalize();
+    const hit = earthHome.clone().addScaledVector(n, EARTH_R);
     setupApproach('earth', hit.x, hit.z, 1600, 900);
     flashFade();
   }
@@ -2595,7 +2596,8 @@ function snapCamera(){
   camera.position.set(state.pos.x - f.x*cfg.dist*cc.dist,
                       state.pos.y + cfg.height*cc.hgt,
                       state.pos.z - f.z*cfg.dist*cc.dist);
-  if(camera.position.y < 2) camera.position.y = 2;    // wie in updateCamera: nicht unter den Boden
+  // wie in updateCamera: nur in der Inselwelt gibt es unten einen Boden
+  if(locale === 'earth' && camera.position.y < 2) camera.position.y = 2;
   camera.up.set(0,1,0);
   camera.lookAt(state.pos);
 }
@@ -2646,6 +2648,7 @@ function leaveGround(){
   const b = bodyOf(from);
   // knapp über der Kugel wieder ins Weltall setzen (Fahrt und Blickrichtung bleiben)
   if(b) state.pos.copy(b.center).add(new THREE.Vector3(0, b.def.r*1.4, 0));
+  snapCamera();                    // auch hier ein Sprung über Kilometer — Kamera mitnehmen
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
   // Die Erde war als Kulisse am Himmel des Himmelskörpers unterwegs — zurück auf ihren Platz, sonst
   // steht sie als Kugel mitten im Flugraum und man fliegt hindurch.
@@ -2681,7 +2684,7 @@ function aimedBody(){
   // Die Erde steht nicht in der Körperliste (sie ist eine eigene Kugel), zählt aber als Ziel —
   // sonst zeigte die Anzeige beim Heimflug irgendeinen Himmelskörper statt der Erde.
   const cands = bodies.slice();
-  if(earthBall) cands.push({ def:EARTH_TARGET, center:earthBall.position });
+  cands.push({ def:EARTH_TARGET, center:earthHome });
   let best = null, bestDot = -2, nearest = null, nd = Infinity;
   for(const b of cands){
     to.copy(b.center).sub(state.pos);
@@ -2702,6 +2705,9 @@ function placeBodies(){
     b.obj.visible = show;
     if(show) b.obj.position.copy(b.center);
   }
+  // Die Erdkugel ebenso jeden Frame nachziehen: lädt ihr Modell erst nach dem Weltraum-Eintritt
+  // fertig, stünde sie sonst bei (0,0,0) statt an ihrem Platz.
+  if(earthBall && show){ earthBall.position.copy(earthHome); earthBall.visible = true; }
   const here = bodyOf(locale);
   if(here && here.obj) here.obj.visible = false;                  // man steht darauf
   if(issObj){
@@ -2749,16 +2755,14 @@ function updateSpaceBodies(){
   // Kugel), und genau deshalb griff bei ihr weder die Hyperraum-Bremse noch ein Wiedereintritt an
   // der Oberfläche. Der Wechsel hing allein an der Höhe (y < EARTH_Y) — wer seitlich zurückkam,
   // flog mitten durch die Erdkugel hindurch, und die Inselwelt erschien erst beim Absinken.
-  if(earthBall){
-    const dE = pathDist(earthBall.position);
-    warpBrakeFor(earthBall.position, dE, EARTH_R);
+  // Gerechnet wird mit earthHome, nicht mit dem geladenen Modell: earth_glb.js kommt asynchron, und
+  // wer schneller im Weltall ist als die Kugel fertig, hätte sonst keinen Weg zurück.
+  {
+    const dE = pathDist(earthHome);
+    warpBrakeFor(earthHome, dE, EARTH_R);
     // Schale etwas über EARTH_Y, damit auch der senkrechte Rückflug hier landet (er kam früher über
     // den reinen Höhentest) — ein Kriterium für alle Richtungen.
     if(dE < EARTH_R + EARTH_Y){ enterEarth(true); _segOk = false; return true; }
-  } else if(state.pos.y < EARTH_Y){
-    // Rückfallebene: ohne geladenes Erdmodell gibt es keine Kugel, an der man wieder eintreten
-    // könnte — dann zählt wie früher allein die Höhe, sonst käme man nie mehr heim.
-    enterEarth(); _segOk = false; return true;
   }
   for(const b of bodies){
     if(!b.obj) continue;
@@ -4240,7 +4244,7 @@ function updateCamera(){
     const side = 24 * cc.dist * sideView;         // links (-) / rechts (+)
     const desired = state.pos.clone().addScaledVector(right, side);
     desired.y += 6;
-    if(desired.y < 2) desired.y = 2;
+    if(locale === 'earth' && desired.y < 2) desired.y = 2;
     camera.position.lerp(desired, 0.18);
     camera.lookAt(state.pos);
     return;
@@ -4256,12 +4260,18 @@ function updateCamera(){
   const desired = state.pos.clone()
     .addScaledVector(back, cfg.dist*cc.dist)
     .addScaledVector(upV,  cfg.height*cc.hgt);
-  if(desired.y < 2) desired.y = 2; // Kamera nicht unter den Boden
+  // Nur in der Inselwelt ist y = 0 der Meeresboden. Im Weltall liegt die Erdkugel UNTER dem Spieler
+  // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
+  // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
+  if(locale === 'earth' && desired.y < 2) desired.y = 2;
   camera.up.copy(upV);
   // Bei hoher Fahrt straffer nachziehen: mit festem Lerp bliebe die Kamera bei Mach 2 rund
   // 190 m hinter dem Flieger zurück (Gleichgewicht aus Vorschub pro Frame und Lerp-Anteil).
+  // Ab Warptempo reicht auch das nicht mehr — bei Warp 10 sind es 500 m Vorschub pro Frame, und der
+  // Flieger wäre nur noch ein Punkt im Bild. Darüber folgt die Kamera deshalb hart.
   const camSpd = state.vel.length();
-  camera.position.lerp(desired, Math.min(0.5, cfg.lerp * (1 + camSpd/120)));
+  if(camSpd > 900) camera.position.copy(desired);
+  else camera.position.lerp(desired, Math.min(0.5, cfg.lerp * (1 + camSpd/120)));
   camera.lookAt(state.pos);
 }
 

@@ -716,6 +716,40 @@ zählt die Meereshöhe.
 **Notausgang:** Weil der Wiedereintritt nur noch an der Erdkugel hängt, bleibt der alte Höhentest als
 Rückfallebene stehen — lädt `earth_glb.js` nicht, gäbe es sonst keinen Weg mehr zurück in die Inselwelt.
 
+**Dritter Nachschlag: „der X-Wing wird winzig".** Der eigentliche Grund lag gar nicht im
+Wiedereintritt, sondern in der Kamera — und er erklärt, warum der Mond ging und die Erde nie:
+
+```js
+if(desired.y < 2) desired.y = 2;   // Kamera nicht unter den Boden
+```
+
+Diese Klemme ist für die Inselwelt richtig, wo `y = 0` das Meer ist. Im Weltall ist sie fatal: alle
+Himmelskörper liegen mit **positivem** `up` (0,35 bis 0,80) **über** dem Spieler, nur die **Erde** liegt
+**unter** ihm — ihr Mittelpunkt ist `earthHome` bei `y = -EARTH_R` (nach dem Start im Hangar sogar
+−30 000). Beim Anflug sinkt man also ins Negative, und die Kamera blieb bei `y = 2` hängen, während der
+Flieger kilometerweit darunter weiterflog. Nachgerechnet: beim **senkrechten** Rückflug bleibt y
+positiv (4000 → 2200), deshalb ging es „wenn man einmal drin war"; beim **seitlichen** Anflug landet
+man bei y ≈ −9000, nach dem Hangar-Start noch tiefer. Und es war unabhängig vom Tempo — genau wie
+gemeldet (Warp 0,5 an der Erde kaputt, Warp 0,9 am Mond in Ordnung). Die Klemme gilt jetzt nur noch
+für `locale === 'earth'`, an allen drei Stellen (Verfolgerkamera, Seitenansicht, `snapCamera`).
+
+Dazu drei weitere Angleichungen, die im selben Zug auffielen:
+
+- `leaveHangar()` und `leaveGround()` setzen `state.pos` **hart um Kilometer** (beim Todesstern
+  `r * 1,4` = 28 km), riefen aber kein `snapCamera()`. Die Kamera kroch hinterher, und wer gleich mit
+  Vollgas wegflog, ließ sie nie aufholen. Nach App-Start und Modellwechsel startet man im Hangar —
+  genau die beiden gemeldeten Fälle.
+- `enterHangar()` hatte eine **eigene** Kamerarechnung mit anderen Abständen (30 m / +9 m) und damit
+  denselben Nachzieher. Jetzt überall `snapCamera()`.
+- Ab **900 m/s folgt die Kamera hart** statt zu lerpen: bei Warp 10 sind 500 m Vorschub pro Frame, da
+  bleibt sie sonst 500 m zurück.
+
+**Der Notausgang ist wieder weg** (auf Wunsch). Damit der Wiedereintritt trotzdem unabhängig vom
+Ladezustand funktioniert, rechnet er nicht mehr mit dem geladenen Erdmodell, sondern mit `earthHome` —
+`earth_glb.js` kommt asynchron. Aus demselben Grund wird die Erdkugel jetzt **jeden Frame** auf ihren
+Platz gesetzt: lädt sie erst nach dem Weltraum-Eintritt fertig, stand sie sonst bei (0,0,0) — derselbe
+Fehler, der vorher ISS, Mondbasis und Rover unsichtbar gemacht hatte.
+
 **Die ISS ist landbar** — dasselbe Hangar-Szenario wie Todesstern und Star Destroyer, Andockradius
 `ISS_DOCK = 170` (die Station ist 120 m gross, etwas mehr als ihre Länge, sonst trifft man sie im
 Flug kaum). Dazu neu: eine Andock-Sperre `dockLock` von 6 s nach dem Verlassen eines Hangars. ISS und
