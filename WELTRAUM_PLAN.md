@@ -624,6 +624,69 @@ Geometrie hängt.
 
 ---
 
+### Nachtrag 9 — eigene Flächen, Erdkugel als echtes Ziel, ISS landbar (23.08.2026)
+
+**Der X-Wing landete unter der Mondbasis.** Die Basis bringt eine eigene Fläche mit, die der
+Boden-Raycast nicht kannte: er prüft nur die Terrain-Kachel. Vermessen mit `C:\tmp\baseprobe.js`
+(Modell 100 × 9,5 × 100, im Spiel Faktor 4,8):
+
+| Radius um die Basismitte | Oberseite über dem Kraterboden |
+|---|---|
+| 0 m | 46,5 m (Kuppel) |
+| 80 m | 22,3 m |
+| 160 m | 16,1 m |
+| 240 m | 8,4 m |
+| 280 m | 4,8 m (nur noch 8 von 36 Punkten) |
+| 320 m | kein Treffer — freier Krater |
+
+Genau um diese 5 bis 46 m sass der Flieger zu tief. `stepGroundExact()` prüft jetzt zusätzlich
+`moonBaseObj` bzw. `roverObj` und nimmt den **höchsten** Treffer unter dem Flieger — wer über der
+Plattform schwebt, setzt darauf auf, wer über der Kuppel schwebt, auf der Kuppel. Der Landeverkehr
+holt seine Höhe dagegen aus dem Kraterraster, deshalb stehen seine Plätze jetzt bei **340–520 m**,
+also ausserhalb der vermessenen 290 m. Die Basis ist zugleich 60 % gewachsen (Faktor 3 → 4,8,
+also 300 → 480 m).
+
+**„Ich bin zweimal durch die Erde durchgeflogen."** Zwei Fehler, die sich überlagert haben:
+
+1. Auf Mond und Mars hängt die Erdkugel als Kulisse am Himmel und wird jeden Frame neben den
+   Spieler gesetzt (`pos.x + 90000, y = 45000`). Beim Aufstieg zurück ins Weltall wurde sie **nie
+   zurückgesetzt** — sie stand danach als 40 km grosse Kugel mitten im Flugraum. Sie hat jetzt einen
+   gemerkten Heimatplatz (`earthHome`, gesetzt in `layoutBodies()`), der beim Verlassen von
+   Himmelskörper und Hangar wiederhergestellt wird. Beim Aufstieg von der Erde liegt ihr Mittelpunkt
+   `EARTH_R` unter dem Austrittspunkt; startet man im Hangar des Todessterns, muss sie in die Ferne,
+   weil man 20 km unter dem Flieger sofort wieder in ihr drin wäre.
+2. Die Erde war überhaupt kein Ziel wie die anderen Himmelskörper, sondern ein reiner **Höhentest**
+   (`y < EARTH_Y`). In der versetzten Kulissenkugel konnte der nie ansprechen, und die
+   Hyperraum-Bremse kannte die Erde gar nicht — daher auch „kein Warp-Abbruch beim Anflug auf die
+   Erde". Jetzt gilt für sie dieselbe Logik wie für Mond, Mars und Sonne: Bremse beim Anflug
+   (`warpBrakeFor`) und Wiedereintritt an ihrer Oberfläche. Der Berührpunkt wird auf die flache Welt
+   abgebildet (x/z vom Punkt, Höhe `EARTH_Y - 100`), die Fahrt auf 260 m/s gedrosselt.
+
+Geprüft wird dabei nicht die aktuelle Position, sondern das im letzten Frame geflogene **Wegstück**
+(`pathDist`): bei Warp 10 sind das mehrere hundert Meter pro Frame, und ein Punkttest übersieht eine
+Kugel, durch die man mitten hindurchgesprungen ist. Sprünge über 6 km sind keine Flugstrecke, sondern
+Ortswechsel — dann gilt wieder der Punkt. `C:\tmp\reentrysim.js` simuliert **4320 Anflüge**
+(Warp 1–10, 60/30/20/12 Hz, 9 Breiten × 8 Längen × 3 Kurse): jeder Kurs, der die Erdkugel trifft,
+löst den Wiedereintritt aus.
+
+**Anflug auf Mond und Mars.** Der Flieger wird jetzt so eingesetzt, dass Basis bzw. Rover direkt vor
+ihm liegen (Mond 1400 m Abstand in 520 m Höhe, Mars 900/400) — vorher musste man erst um 180° drehen.
+Der „Kameraschwenk um den Flieger" war kein Effekt, sondern die Kamera, die von ihrer alten Position
+nachzog; `snapCamera()` setzt sie hart mit. Eine **Animation gibt es nicht**: der Wechsel ist ein
+harter Positionssprung, weil die Landschaft eine flache Kachelwelt ist und der Himmelskörper eine
+Kugel. Ein wirklich fliessender Übergang hiesse, das Terrain auf eine Kugel zu legen — ein grosser
+Umbau, der Kollision und Landung berührt. Stattdessen kaschiert ein 0,4 s langes Aufblenden aus
+Schwarz (`flashFade`) den Schnitt.
+
+**Die ISS ist landbar** — dasselbe Hangar-Szenario wie Todesstern und Star Destroyer, Andockradius
+`ISS_DOCK = 170` (die Station ist 120 m gross, etwas mehr als ihre Länge, sonst trifft man sie im
+Flug kaum). Dazu neu: eine Andock-Sperre `dockLock` von 6 s nach dem Verlassen eines Hangars. ISS und
+Star Destroyer ziehen mit dem Flieger mit — ohne die Sperre hätte der Gastgeber einen direkt nach dem
+Hinausfliegen wieder eingesaugt. `enterHangar()` lehnt in dieser Zeit ab, und beide Aufrufstellen
+werten den Rückgabewert aus.
+
+---
+
 ## Verifikation (alle Etappen)
 
 Das Spiel ist eine statische Seite ohne Testsuite. Nach jeder Etappe:

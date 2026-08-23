@@ -96,8 +96,8 @@
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10 · beim Anflug auf einen Himmelskörper bremst er selbst · nach jedem Übergang startet er mit 50 %</b></div>
     <div class="hrow"><span>🌙 Mond &amp; 🔴 Mars</span><b>anfliegen und mit 10 % landen · Mondbasis bzw. Mars-Rover stehen in der Nähe, ein dünner Lichtstrahl zeigt wo · dort starten und landen auch andere Schiffe</b></div>
     <div class="hrow"><span>☀️ Sonne</span><b>nur umkreisen — eine unsichtbare Grenze lässt einen seitlich vorbeiziehen</b></div>
-    <div class="hrow"><span>🛰️ Hangar</span><b>Todesstern und Star Destroyer anfliegen = Landung im Hangar · dort schwebt man mittig, mit 10 % aufsetzen · hinausfliegen = zurück ins All · hier startet der X-Wing</b></div>
-    <div class="hrow"><span>🛸 Weltall</span><b>ISS in Erdnähe · Shuttle, Razor Crest, Serenity, Voyager und Enterprise ziehen ihre Bahnen · manche fliegen die Star Destroyer an · rammen geht nicht</b></div>
+    <div class="hrow"><span>🛰️ Hangar</span><b>Todesstern, Star Destroyer und ISS anfliegen = Landung im Hangar · dort schwebt man mittig, mit 10 % aufsetzen · hinausfliegen = zurück ins All · hier startet der X-Wing</b></div>
+    <div class="hrow"><span>🛸 Weltall</span><b>ISS in Erdnähe (anfliegbar) · Shuttle, Razor Crest, Serenity, Voyager und Enterprise ziehen ihre Bahnen · manche fliegen die Star Destroyer an · rammen geht nicht</b></div>
     <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · nur unter Warp 1 · fremde X-Wings schießen mit</b></div>
     <div class="hrow"><span>🌙 suchen</span><b>oben links steht das angeflogene Ziel mit Entfernung · über dem Flieger blitzt es kurz auf, wenn sich etwas ändert · das Radar zeigt die Richtung</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
@@ -2113,7 +2113,7 @@ function preloadSpace(){
   preloadGround('moon');
   preloadGround('mars');
   preloadStationGLB(window.MOONBASE_GLB, (g)=>{
-    g.scale.setScalar(3);          // im Original 100 m — als Station auf dem Mond zu zierlich
+    g.scale.setScalar(4.8);        // im Original 100 m — als Station auf dem Mond zu zierlich
     moonBaseObj = g;
   });
   preloadStationGLB(window.ISS_GLB, (g)=>{ issObj = g; });
@@ -2250,14 +2250,25 @@ function stepGroundExact(){
   const approx = groundHeightAt(locale, state.pos.x, state.pos.z);
   if(state.pos.y - approx > 300) return;            // weit oben genügt das Raster
   const T = G.tile;
+  // Mondbasis bzw. Rover mitprüfen: sie stehen auf eigenen Flächen, die höher liegen als der
+  // Kraterboden — ohne sie landet man unter der Plattform.
+  const extra = (locale === 'moon') ? moonBaseObj : (locale === 'mars' ? roverObj : null);
   let best = null;
   for(const [dx, dz] of GROUND_PROBES){
     const px = state.pos.x + dx, pz = state.pos.z + dz;
+    _gFrom.set(px, approx + 400, pz);
     const tile = G.tiles.get(Math.round(px/T) + ',' + Math.round(pz/T));
-    if(!tile) continue;
-    _gRay.set(_gFrom.set(px, approx + 400, pz), _gDown);
-    const hit = _gRay.intersectObject(tile, true);
-    if(hit.length && (best === null || hit[0].point.y > best)) best = hit[0].point.y;
+    if(tile){
+      _gRay.set(_gFrom, _gDown);
+      const hit = _gRay.intersectObject(tile, true);
+      if(hit.length && (best === null || hit[0].point.y > best)) best = hit[0].point.y;
+    }
+    if(extra && extra.visible){
+      _gRay.set(_gFrom, _gDown);
+      const hit2 = _gRay.intersectObject(extra, true);
+      // höchster Treffer = Oberseite dessen, was direkt darunter liegt (Plattform oder Dach)
+      for(const h of hit2) if(best === null || h.point.y > best) best = h.point.y;
+    }
   }
   if(best !== null){ groundHitY = best; groundHitX = state.pos.x; groundHitZ = state.pos.z; }
 }
@@ -2294,6 +2305,9 @@ function clearGroundTiles(){
 // Die Mondbasis steht neben dem Landepunkt auf dem Mond, die ISS hängt im Weltall in Erdnähe.
 let moonBaseObj = null, issObj = null, roverObj = null;
 const issCenter = new THREE.Vector3();     // aktueller Platz der ISS
+// Die ISS ist 120 m groß (unnormiert übernommen). So nah heran heißt: Landung im Hangar, dieselbe
+// Logik wie beim Todesstern. Etwas mehr als ihre Länge, sonst trifft man sie im Flug kaum.
+const ISS_DOCK = 170;
 const issDrift = new THREE.Vector3();      // ihr eigener, langsamer Kurs
 function preloadStationGLB(dataUrl, cb){
   if(!dataUrl || !THREE.GLTFLoader) return;
@@ -2323,8 +2337,11 @@ const HANGAR_YAW = -Math.PI/2;     // Nase (liegt auf -Z) zeigt damit auf +X, al
 const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All (Öffnung liegt bei 141)
 const HANGAR_OUT_H = 85;           // so hoch über dem Boden -> zurück ins All (Decke liegt bei ~70 m)
 let hangarObj = null, hangarFloorY = 0;
-// Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern oder ein Star Destroyer.
+// Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern, Star Destroyer oder die ISS.
 let hangarHost = null;      // { pos: Vector3, up: number }
+// Sekunden, in denen kein neues Andocken möglich ist. ISS und Star Destroyer ziehen mit dem Flieger
+// mit — ohne diese Sperre hätte der Gastgeber einen direkt nach dem Hinausfliegen wieder eingesaugt.
+let dockLock = 0;
 function preloadHangar(){
   if(!window.HANGAR_GLB || !THREE.GLTFLoader) return;
   const gl = new THREE.GLTFLoader();
@@ -2363,7 +2380,7 @@ function preloadHangar(){
   }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
 }
 function enterHangar(host){
-  if(!hangarObj) return false;
+  if(!hangarObj || dockLock > 0) return false;
   if(!spacePlaced) layoutBodies();          // sonst liegen alle Körper auf (0,0,0) — siehe layoutBodies
   const dsb = bodyOf('death');
   hangarHost = host || (dsb ? { pos: dsb.center.clone(), up: dsb.def.r*1.4 } : null);
@@ -2388,6 +2405,7 @@ function enterHangar(host){
     camera.lookAt(state.pos);
   }
   showSpaceHint('🛰️');
+  flashFade();
   console.log('[Hangar] Eintritt bei', state.pos.x.toFixed(0), state.pos.y.toFixed(0), state.pos.z.toFixed(0),
               '| Boden', hangarFloorY.toFixed(1), '| yaw', HANGAR_YAW.toFixed(2));
   return true;
@@ -2399,8 +2417,8 @@ function leaveHangar(){
   if(hangarHost) state.pos.copy(hangarHost.pos).add(new THREE.Vector3(0, hangarHost.up, 0));
   else { const b = bodyOf('death'); if(b) state.pos.copy(b.center).add(new THREE.Vector3(0, b.def.r*1.4, 0)); }
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
-  if(earthBall) earthBall.visible = true;
-  warpBrakeLock = 6;
+  if(earthBall){ earthBall.position.copy(earthHome); earthBall.visible = true; }
+  warpBrakeLock = 6; dockLock = 6;
   if(state.throttle > 0.5) state.throttle = 0.5;
   showSpaceHint('🚀');
   console.log('[Hangar] verlassen -> Weltall bei', state.pos.x.toFixed(0), state.pos.y.toFixed(0), state.pos.z.toFixed(0));
@@ -2437,7 +2455,9 @@ function placeGroundBase(){
   if(beaconObj && !GROUNDS[locale]) beaconObj.visible = false;
   if(locale === 'moon'){
     const T = GROUNDS.moon.tile;
-    const p = baseSpotForTile(Math.round(state.pos.x/T), Math.round(state.pos.z/T));
+    const p = _basePosMoon && Math.hypot(_basePosMoon.x - state.pos.x, _basePosMoon.z - state.pos.z) < T*0.7
+      ? _basePosMoon
+      : baseSpotForTile(Math.round(state.pos.x/T), Math.round(state.pos.z/T));
     const y = groundHeightAt('moon', p.x, p.z);
     if(moonBaseObj){ moonBaseObj.position.set(p.x, y, p.z); moonBaseObj.visible = true; }
     showBeacon(p.x, y, p.z, 0x9fd8ff);
@@ -2488,7 +2508,11 @@ function earthWorldVisible(on){
 // Himmelskörper um die aktuelle Position herum setzen: waagerechte Flugrichtung als Bezug, dann pro
 // Körper drehen (yaw) und anheben (up). Muss laufen, BEVOR irgendeine Körper-Distanz geprüft wird —
 // sonst liegen alle Zentren bei (0,0,0) und der nächstgrößte Körper "schluckt" den Spieler.
-function layoutBodies(){
+// Wo die Erdkugel im Weltall steht. Sie wird als Kulisse missbraucht, solange man auf Mond oder Mars
+// ist (dort hängt sie am Himmel und wandert mit) — ohne gemerkten Heimatplatz blieb sie danach an
+// dieser Kulissenstelle stehen: eine 40 km große Kugel mitten im Flugraum, durch die man hindurchflog.
+const earthHome = new THREE.Vector3();
+function layoutBodies(fromEarth){
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
   const base = new THREE.Vector3(fwd.x, 0, fwd.z);
   if(base.lengthSq() < 1e-6) base.set(0,0,-1);
@@ -2499,6 +2523,12 @@ function layoutBodies(){
     d.y = b.def.up; d.normalize();
     b.center.copy(state.pos).addScaledVector(d, b.def.dist);
   }
+  // Beim Aufstieg von der Erde liegt ihr Mittelpunkt genau EARTH_R unter dem Austrittspunkt, damit
+  // ihre Oberfläche dort ist, wo eben noch die flache Welt war. Startet man dagegen im Hangar des
+  // Todessterns, muss sie in die Ferne — 20 km unter dem Flieger wäre man sofort wieder in ihr drin.
+  if(fromEarth) earthHome.set(state.pos.x, -EARTH_R, state.pos.z);
+  else earthHome.copy(state.pos).addScaledVector(base, -EARTH_R*4.5).setY(-EARTH_R*1.5);
+  if(earthBall) earthBall.position.copy(earthHome);
   spacePlaced = true;
 }
 function enterSpace(){
@@ -2507,9 +2537,9 @@ function enterSpace(){
   // Hyperraum und ist weg, bevor man Erde, ISS und Mond gesehen hat.
   warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
   if(state.throttle > 0.5) state.throttle = 0.5;
-  // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
-  if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
-  layoutBodies();
+  // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war (macht layoutBodies)
+  if(earthBall) earthBall.visible = true;
+  layoutBodies(true);
   // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
@@ -2519,9 +2549,23 @@ function enterSpace(){
   showSpaceHint('🚀');
   console.log('[Ort] Weltall, Austritt bei y =', state.pos.y.toFixed(0));
 }
-function enterEarth(){
+function enterEarth(atSphere){
   locale = 'earth';
   warpDrive = 0; warpVis = 0;
+  if(atSphere && earthBall){
+    // Wo der Flieger die Kugel berührt, taucht er in der flachen Welt wieder auf: x/z vom
+    // Berührpunkt, Höhe knapp unter der Weltraumgrenze. Muss VOR earthWorldVisible(true) stehen,
+    // weil die Inselzellen um die neue Position herum aufgebaut werden.
+    const n = state.pos.clone().sub(earthBall.position).normalize();
+    const hit = earthBall.position.clone().addScaledVector(n, EARTH_R);
+    state.pos.set(hit.x, EARTH_Y - 100, hit.z);
+    // Nase waagerecht und Fahrt herunter — mit Warptempo in die Inselwelt zu fallen war nicht zu
+    // beherrschen, und der Nutzer wollte den Wiedereintritt ausdrücklich langsamer.
+    if(state.vel.length() > 260) state.vel.setLength(260);
+    if(state.throttle > 0.5) state.throttle = 0.5;
+    snapCamera();
+    flashFade();
+  }
   if(earthBall) earthBall.visible = false;
   for(const b of bodies) if(b.obj) b.obj.visible = false;
   if(issObj) issObj.visible = false;
@@ -2531,6 +2575,31 @@ function enterEarth(){
   showSpaceHint('🌍');
   console.log('[Ort] Erde');
 }
+// Flieger im Abstand dist vor dem Zielpunkt (tx,tz) einsetzen, in Höhe alt darüber, Nase auf das
+// Ziel. Setzt auch die Kamera hart dahinter: sonst steht sie noch an der alten Stelle und schwenkt
+// nach dem Wechsel sichtbar um den Flieger herum.
+let _basePosMoon = null;
+// Kamera hart hinter den Flieger setzen: nach einem Ortswechsel steht sie noch an der alten Stelle
+// und schwenkt sichtbar um ihn herum, während sie nachzieht.
+function snapCamera(){
+  if(typeof camera === 'undefined') return;
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+  camera.position.set(state.pos.x + back.x*40, state.pos.y + 14, state.pos.z + back.z*40);
+  camera.lookAt(state.pos);
+}
+function setupApproach(key, tx, tz, dist, alt){
+  const a = Math.random()*Math.PI*2;
+  const px = tx + Math.cos(a)*dist, pz = tz + Math.sin(a)*dist;
+  const gy = groundHeightAt(key, px, pz);
+  state.pos.set(px, gy + alt, pz);
+  const dir = new THREE.Vector3(tx - px, 0, tz - pz).normalize();
+  state.quat.setFromEuler(new THREE.Euler(0, Math.atan2(-dir.x, -dir.z), 0, 'YXZ'));
+  state.vel.copy(dir).multiplyScalar(110);
+  state.throttle = 0.4; state.onGround = false; state.stalling = false;
+  snapCamera();
+}
+
 // Auf eine Oberfläche wechseln (Mond oder Mars).
 function enterGround(key){
   locale = key;
@@ -2538,14 +2607,21 @@ function enterGround(key){
   const b = bodyOf(key);
   if(b && b.obj) b.obj.visible = false;              // man ist jetzt darauf
   earthWorldVisible(false);
-  // Landeanflug: über der Basiskachel einsetzen, Fahrt auf ein handliches Maß bringen
-  state.pos.set(0, groundHeightAt(key,0,0) + 900, 0);
-  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-  state.vel.copy(fwd).multiplyScalar(Math.min(state.vel.length(), 120));
-  state.throttle = 0.4; state.onGround = false; state.stalling = false;
+  // Landeanflug: so einsetzen, dass Basis bzw. Rover schon VOR dem Flieger liegen — vorher musste
+  // man nach dem Wechsel erst um 180° drehen, um sie überhaupt zu sehen.
+  if(key === 'moon'){
+    const T = GROUNDS.moon.tile;
+    const bp = baseSpotForTile(0, 0);
+    _basePosMoon = bp;                                   // Basis dort aufstellen (siehe placeGroundBase)
+    setupApproach(key, bp.x, bp.z, 1400, 520);
+  } else {
+    roverAnchor = { x:0, z:0 };
+    setupApproach(key, 0, 0, 900, 400);
+  }
   updateGroundTiles();
   placeGroundBase();
   showSpaceHint(b ? b.def.sym : '🌙');
+  flashFade();
   console.log('[Ort] Oberfläche', key);
 }
 function leaveGround(){
@@ -2559,15 +2635,19 @@ function leaveGround(){
   // knapp über der Kugel wieder ins Weltall setzen (Fahrt und Blickrichtung bleiben)
   if(b) state.pos.copy(b.center).add(new THREE.Vector3(0, b.def.r*1.4, 0));
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
-  if(earthBall) earthBall.visible = true;
+  // Die Erde war als Kulisse am Himmel des Himmelskörpers unterwegs — zurück auf ihren Platz, sonst
+  // steht sie als Kugel mitten im Flugraum und man fliegt hindurch.
+  if(earthBall){ earthBall.position.copy(earthHome); earthBall.visible = true; }
   showSpaceHint('🚀');
+  flashFade();
 }
 function updateLocale(){
   if(state.crashed || state.ejected || state.falling) return;
   if(locale === 'earth'){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
-    if(!updateSpaceBodies() && state.pos.y < EARTH_Y) enterEarth();
+    // erledigt Anflug, Hyperraum-Bremse, Orbit-Grenze UND den Wiedereintritt an der Erdkugel
+    updateSpaceBodies();
   } else if(locale === 'death'){
     // hinaus durch die Hangaröffnung oder nach oben -> wieder im Weltall
     if(Math.hypot(state.pos.x, state.pos.z) > HANGAR_OUT_R ||
@@ -2621,30 +2701,59 @@ function placeBodies(){
 // Himmelskörper im Weltall: Anflug, Hyperraum-Bremse und Orbit-Grenze.
 // Gibt true zurück, wenn der Ort gewechselt wurde.
 const _bodyDir = new THREE.Vector3();
+// Kleinster Abstand des im letzten Frame geflogenen WEGSTÜCKS zu einem Punkt. Bei Warptempo legt der
+// Flieger pro Frame hunderte Meter zurück — eine Prüfung der aktuellen Position allein übersieht
+// eine Kugel, durch die er mitten hindurchgesprungen ist. Sprünge über 6 km sind keine Flugstrecke,
+// sondern Ortswechsel; dann gilt wieder nur der Punkt.
+const _segFrom = new THREE.Vector3(), _segAB = new THREE.Vector3(), _segAC = new THREE.Vector3();
+let _segOk = false;
+function pathDist(c){
+  const dNow = state.pos.distanceTo(c);
+  if(!_segOk) return dNow;
+  _segAB.copy(state.pos).sub(_segFrom);
+  const len2 = _segAB.lengthSq();
+  if(len2 < 1 || len2 > 6000*6000) return dNow;
+  _segAC.copy(c).sub(_segFrom);
+  const k = Math.max(0, Math.min(1, _segAC.dot(_segAB)/len2));
+  return Math.min(dNow, _segAC.sub(_segAB.multiplyScalar(k)).length());
+}
+// Hyperraum-Bremse für einen Körper: kurz davor herausfallen, damit man ihn in Ruhe ansehen kann —
+// aber NUR beim Anflug. Die Fahrt muss zu mindestens 30 % auf ihn zeigen: mit einer reinen
+// "größer null"-Prüfung reichte schon ein leichtes Schwenken beim Wegfliegen. Dazu ruht die Bremse
+// kurz nach jedem Ortswechsel, weil man da noch dicht am Körper startet.
+function warpBrakeFor(center, d, r){
+  if(d >= r*3 || warpDrive <= 0.02 || warpBrakeLock > 0) return;
+  const v = state.vel.length();
+  const toward = v > 1 ? state.vel.dot(_bodyDir.copy(center).sub(state.pos).normalize())/v : 0;
+  if(toward > 0.3){
+    warpDrive = 0;
+    if(state.throttle > 0.5) state.throttle = 0.5;
+    showSpaceHint('🛑', 2);
+  }
+}
 function updateSpaceBodies(){
   if(!spacePlaced) return false;            // ohne gesetzte Zentren nichts prüfen
+  // Die Erde ZUERST und wie jeden anderen Körper: sie steht nicht in bodies (sie ist eine eigene
+  // Kugel), und genau deshalb griff bei ihr weder die Hyperraum-Bremse noch ein Wiedereintritt an
+  // der Oberfläche. Der Wechsel hing allein an der Höhe (y < EARTH_Y) — wer seitlich zurückkam,
+  // flog mitten durch die Erdkugel hindurch, und die Inselwelt erschien erst beim Absinken.
+  if(earthBall){
+    const dE = pathDist(earthBall.position);
+    warpBrakeFor(earthBall.position, dE, EARTH_R);
+    // Schale etwas über EARTH_Y, damit auch der senkrechte Rückflug hier landet (er kam früher über
+    // den reinen Höhentest) — ein Kriterium für alle Richtungen.
+    if(dE < EARTH_R + EARTH_Y){ enterEarth(true); _segOk = false; return true; }
+  }
   for(const b of bodies){
     if(!b.obj) continue;
-    const d = state.pos.distanceTo(b.center);
-    // Kurz vor dem Himmelskörper aus dem Hyperraum fallen, damit man ihn in Ruhe ansehen kann —
-    // aber NUR beim Anflug. Die Fahrt muss dafür zu mindestens 30 % auf den Körper zeigen: mit einer
-    // reinen "größer null"-Prüfung reichte schon ein leichtes Schwenken beim Wegfliegen aus. Dazu
-    // ruht die Bremse kurz nach jedem Ortswechsel, weil man da noch dicht am Körper startet.
-    if(d < b.def.r*3 && warpDrive > 0.02 && warpBrakeLock <= 0){
-      const v = state.vel.length();
-      const toward = v > 1 ? state.vel.dot(_bodyDir.copy(b.center).sub(state.pos).normalize())/v : 0;
-      if(toward > 0.3){
-        warpDrive = 0;
-        if(state.throttle > 0.5) state.throttle = 0.5;
-        showSpaceHint('🛑', 2);
-      }
-    }
+    const d = pathDist(b.center);
+    warpBrakeFor(b.center, d, b.def.r);
     if(b.def.land){
       if(d < b.def.r + 1500){
         if(b.def.key === 'death'){
-          if(enterHangar({ pos:b.center.clone(), up:b.def.r*1.4 })) return true;
+          if(enterHangar({ pos:b.center.clone(), up:b.def.r*1.4 })){ _segOk = false; return true; }
         }
-        else { enterGround(b.def.key); return true; }
+        else { enterGround(b.def.key); _segOk = false; return true; }
       }
     } else if(d < b.def.r + 300){
       // Orbit-Grenze: nur die Bewegung ZUM Körper hin wird gestoppt, seitlich fliegt er weiter.
@@ -2655,12 +2764,15 @@ function updateSpaceBodies(){
       state.pos.copy(b.center).addScaledVector(n, b.def.r + 300);
     }
   }
+  // Erst wenn alle Prüfungen durch sind, wird die Position zum Startpunkt des nächsten Wegstücks.
+  _segFrom.copy(state.pos); _segOk = true;
   return false;
 }
 // Hyperraum: kein Tor und kein Schalter — wer im Weltall 100 % hält, wird immer schneller
 // (Antriebsaufbau bis Warp 10), und der Hyperraum blendet sich GLEITEND MIT DER GESCHWINDIGKEIT ein.
 function updateWarp(dt){
   if(warpBrakeLock > 0) warpBrakeLock -= dt;
+  if(dockLock > 0) dockLock -= dt;
   const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
   warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
   // Sicht-Anteil rein aus dem Tempo: der Ring erscheint erst AB Lichtgeschwindigkeit (Warp 1) und
@@ -2720,6 +2832,23 @@ function updateSpaceBlend(dt){
 // Gleiche Machart und Größe wie die Wassertropfen/Kisten: ein 60-px-Symbol, das an die projizierte
 // Position über dem Flugzeug gesetzt wird. Zeigt Ort, das angeflogene Ziel mit Entfernung und die
 // Trefferzahl — auf der Erde bleibt es leer (dort erscheinen dort Tropfen und Kisten).
+// Kurzes Abdunkeln: der Wechsel zwischen Weltall und Oberfläche ist ein harter Schnitt (die
+// Landschaft ist eine flache Kachelwelt, der Himmelskörper eine Kugel). Ein 0,4 s langes Aufblenden
+// aus Schwarz kaschiert ihn, ohne dass eine echte Kamerafahrt nötig wäre.
+let fadeEl = null, fadeT = 0;
+function flashFade(){
+  if(!fadeEl){
+    fadeEl = document.createElement('div');
+    fadeEl.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;';
+    document.body.appendChild(fadeEl);
+  }
+  fadeT = 0.4;
+}
+function updateFade(dt){
+  if(!fadeEl || fadeT <= 0) return;
+  fadeT -= dt;
+  fadeEl.style.opacity = String(Math.max(0, Math.min(1, fadeT/0.4)));
+}
 let spaceEl = null, spaceHintT = 0, spaceHintTxt = '', lastAimKey = '';
 let aimCand = '', aimCandT = 0;     // Kandidat für einen echten Zielwechsel + wie lange schon
 const _spaceV = new THREE.Vector3();
@@ -2792,7 +2921,11 @@ function ensurePads(){
 }
 function padSpot(p){
   const c = _lastBase;                          // neben der Basis bzw. dem Rover aufsetzen
-  const a = Math.random()*Math.PI*2, d = 70 + Math.random()*90;
+  // Abstand so, dass sie NEBEN der Anlage stehen: die Mondbasis ist 480 m groß, und ihre eigene
+  // Fläche liegt bis ~290 m Radius um 4,8–46,5 m über dem Kraterboden (C:\tmp\baseprobe.js 4.8)
+  // — innerhalb davon versanken die Schiffe im Belag, weil ihr Landepunkt aus dem Kraterraster kommt.
+  const a = Math.random()*Math.PI*2;
+  const d = (locale === 'moon') ? 340 + Math.random()*180 : 120 + Math.random()*90;
   p.x = (c ? c.x : state.pos.x) + Math.cos(a)*d;
   p.z = (c ? c.z : state.pos.z) + Math.sin(a)*d;
 }
@@ -2877,10 +3010,7 @@ function updateDestroyers(dt){
     // sie treiben nur langsam mit, damit sie nicht sofort außer Sicht sind
     d.obj.position.addScaledVector(state.vel, 0.9*dt);
     const dist = d.obj.position.distanceTo(state.pos);
-    if(dist < DESTROYER_DOCK){
-      enterHangar({ pos: d.obj.position.clone(), up: DESTROYER_LEN*0.8 });
-      return;
-    }
+    if(dist < DESTROYER_DOCK && enterHangar({ pos: d.obj.position.clone(), up: DESTROYER_LEN*0.8 })) return;
     if(dist > 30000) placeDestroyer(d);
   }
 }
@@ -2969,6 +3099,11 @@ function updateShips(dt){
   // 92 % seines Tempos plus ihrem eigenen langsamen Kurs; ist sie doch zu weit weg, kommt die
   // nächste Station in Sichtweite vorbei.
   issCenter.addScaledVector(state.vel, 0.92*dt).addScaledVector(issDrift, dt);
+  // Anflug auf die Station: sie ist wie Todesstern und Star Destroyer anfliegbar — nur wenn ihr
+  // Modell auch wirklich zu sehen ist, sonst dockte man an einer unsichtbaren Station an.
+  if(issObj && issObj.visible && issCenter.distanceTo(state.pos) < ISS_DOCK){
+    if(enterHangar({ pos: issCenter.clone(), up: 400 })) return;
+  }
   if(issCenter.distanceTo(state.pos) > 12000){
     const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.4+0.1, Math.random()-0.5).normalize();
     issCenter.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*3000);
@@ -5045,6 +5180,7 @@ function loop(now){
   updateShips(dt);           // fremde Raumschiffe ziehen ihre Bahn durchs Weltall
   updatePads(dt);            // Start- und Landeverkehr an Mondbasis bzw. Mars-Rover
   updateSpaceHint(dt);       // Ort/Ziel/Treffer kurz über dem Flieger (wie Tropfen und Kisten)
+  updateFade(dt);            // kurzes Aufblenden nach einem Ortswechsel
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(GROUNDS[locale]) updateGroundTiles();

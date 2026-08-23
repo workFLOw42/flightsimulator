@@ -102,10 +102,14 @@ Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250
 
 **Landen** kann man auf **Mond** und **Mars**: unter dem X-Wing liegt dann eine echte Landschaft, die
 sich endlos fortsetzt — auf dem Mond der **Giordano-Bruno-Krater** mit einem Sechstel der Erdanziehung
-und einer **Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel Anziehung und dem
-**Perseverance-Rover**. Auf dem Mond steht auf **jeder Kachel** eine Basis an einer festen Stelle, und
-der Rover setzt sich beim Landeanflug (10 % Schub) direkt **neben den Aufsetzpunkt**. Über beiden steht
-eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei die Erde.
+und einer **480 m großen Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel
+Anziehung und dem **Perseverance-Rover**. Auf dem Mond steht auf **jeder Kachel** eine Basis an einer
+festen Stelle, und der Rover setzt sich beim Landeanflug (10 % Schub) direkt **neben den Aufsetzpunkt**.
+Über beiden steht eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei die Erde.
+
+Man landet **auch auf der Basis selbst**: ihre Rampen und ihr Dach zählen als Boden, man setzt also
+dort auf, wo man darüber schwebt. Beim Anflug auf Mond oder Mars wird der Flieger so eingesetzt, dass
+Basis bzw. Rover **direkt vor ihm** liegen — man muss sie nicht erst suchen.
 
 Beim Übergang ins Weltall geht der Schub automatisch auf **50 %**, damit man sich erst umsehen kann
 und nicht sofort in den Hyperraum rutscht.
@@ -113,10 +117,11 @@ und nicht sofort in den Hyperraum rutscht.
 Auf dem **Todesstern** kann man **im Hangar landen**: einfach anfliegen wie einen Planeten. Drinnen
 schwebt man mittig über dem Hangarboden (20 % Schub) und setzt mit 10 % auf; wer hinausfliegt oder
 hochsteigt, ist wieder im All. **Dort startet der X-Wing auch** — beim Spielstart und nach jedem
-Reset. Genauso funktionieren die **Star Destroyer**: drei davon stehen im Raum verteilt und sind die
-Flugzeugträger des Weltalls — anfliegen, im selben Hangar landen, wieder hinausfliegen. Rundherum
-sieht man **andere Schiffe einfliegen**. Die **Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
-zu ihr hin, seitlich fliegt man weiter.
+Reset. Genauso funktionieren die **Star Destroyer** (fünf davon, die Flugzeugträger des Weltalls) und
+die **ISS** — anfliegen, im selben Hangar landen, wieder hinausfliegen. Rundherum sieht man **andere
+Schiffe einfliegen**. Nach dem Hinausfliegen bleibt das Andocken ein paar Sekunden gesperrt, sonst
+würde der Gastgeber einen sofort wieder einsaugen — er zieht ja mit. Die **Sonne** kann man nur
+**umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihr hin, seitlich fliegt man weiter.
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (9×),
 **Razor Crest** (6×), **Serenity** (2×), **USS Voyager** (2×) und **USS Enterprise-D** (2×) fliegen
