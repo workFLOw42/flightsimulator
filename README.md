@@ -38,7 +38,8 @@ Oben rechts: **Radar** (zeigt die Richtung zum Ziel) und darunter ein **Gyroskop
 Horizont** — sein Ring wird **grün**, wenn die Fluglage für eine sanfte Landung passt.
 
 ## ✈️ Flugzeuge & Aufgaben
-Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugzeugträger):
+Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugzeugträger).
+**Das Spiel startet mit dem X-Wing**; mit **Y** bzw. **M** schaltet man durch die Modelle:
 
 - **Canadair CL-215** (Löschflugboot) — 🔥 **Waldbrand löschen**: tief übers Wasser fliegen füllt den
   Tank, über dem Feuer **B** = Wasser ablassen.
@@ -85,10 +86,13 @@ Geschwindigkeit ein, genau wie der Übergang vom Himmel ins Weltall — der leuc
 **ab Lichtgeschwindigkeit** (Warp 1). **Kurz vor jedem Himmelskörper bremst er von selbst aus dem
 Hyperraum**, damit man ihn in Ruhe ansehen kann.
 
-**Suchhilfe**: Oben links steht immer der **nächste Himmelskörper mit Entfernung** (🌙 Mond, 🔴 Mars,
-☀️ Sonne), und das Radar zeigt die Richtung. Der Mond liegt immer genau in der Richtung, in die man
-die Atmosphäre verlassen hat. Zurück auf die Erde geht es erst, wenn man wieder **unter 2,5 km**
-sinkt — beim Suchen fällt man also nicht versehentlich heim.
+Der Schub ist im Weltall **linear**: 10 % sind Warp 0,1, 50 % sind Warp 0,5, 100 % ist Warp 1.
+
+**Suchhilfe**: Über dem Flieger steht — genauso groß wie die Wassertropfen und Kisten — der Ort, das
+**angeflogene Ziel mit Entfernung** (🌙 Mond, 🔴 Mars, ☀️ Sonne) und die Trefferzahl. Angezeigt wird
+der Körper, auf den man **zufliegt**, nicht der nächstgelegene; das Radar zeigt die Richtung. Der Mond
+liegt immer genau in der Richtung, in die man die Atmosphäre verlassen hat. Zurück auf die Erde geht es
+erst **unter 2,5 km** — beim Suchen fällt man also nicht versehentlich heim.
 
 Drei Ziele hängen dort draußen: der **Mond** (150 km), der **Mars** (400 km) und die **Sonne** (900 km).
 Mars und Sonne kann man **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihnen hin,
@@ -96,11 +100,13 @@ seitlich fliegt man weiter. Beim **Mond** geht es hinunter: unter dem X-Wing lie
 Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt, mit **einem Sechstel der
 Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
 
-**Asteroiden abschießen**: Im Weltall treiben 14 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
+**Asteroiden abschießen**: Im Weltall treiben 20 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
+Sie **passen ihr Tempo dem Flieger an** und bleiben nur 2–8 % zurück — man zieht also langsam an ihnen
+vorbei und hat Zeit zu zielen.
 **B** feuert zwei **orangene Laserblitze** — ein Schuss pro Druck. Ein Treffer lässt den Asteroiden
 zerplatzen, und das HUD zählt die Treffer mit (💥). Wer hineinfliegt, zerlegt ihn ebenfalls, ohne selbst
-Schaden zu nehmen. Dazu sind **fremde X-Wings** unterwegs, die eigene Brocken ins Visier nehmen und
-abschießen. Alles das gibt es nur **unterhalb von Warp 1**: im Hyperraum ist der Raum leer.
+Schaden zu nehmen. Dazu sind **sechs fremde X-Wings** unterwegs, die eigene Brocken ins Visier nehmen und abschießen;
+sie halten mit deinem Tempo mit. Alles das gibt es nur **unterhalb von Warp 1**: im Hyperraum ist der Raum leer.
 
 **Zurück** geht es jederzeit: Auf dem Mond hochsteigen (über 4 km) → Weltall. Im Weltall absinken →
 wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), auf dem Mond die Höhe

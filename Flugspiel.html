@@ -44,7 +44,7 @@
 </head>
 <body>
 <div id="hud">
-  <div>Modell: <span id="mdl">SuperCup</span></div>
+  <div>Modell: <span id="mdl">XWing</span></div>
   <div id="altrow">Höhe: <span id="alt">0</span> m</div>
   <div>Speed: <span id="spd">0</span><span id="spdu"> km/h</span></div>
   <div>Schub: <span id="thr">0</span> %</div>
@@ -96,7 +96,7 @@
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10, vor jedem Himmelskörper bremst er selbst</b></div>
     <div class="hrow"><span>🌙 Mond</span><b>anfliegen und mit 10 % landen · Mars &amp; Sonne kann man umkreisen</b></div>
     <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · nur unter Warp 1 · fremde X-Wings schießen mit</b></div>
-    <div class="hrow"><span>🌙 suchen</span><b>oben links steht der nächste Himmelskörper mit Entfernung, das Radar zeigt die Richtung</b></div>
+    <div class="hrow"><span>🌙 suchen</span><b>über dem Flieger steht das angeflogene Ziel mit Entfernung, das Radar zeigt die Richtung</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -1759,7 +1759,8 @@ for (let i=0;i<45;i++){ const c=makeCloud();
 // "Canadair" ist ein eigengebautes Löschflugzeug (kein FMS-Mesh) und kommt ans Ende.
 // Feste Reihenfolge (Wunsch): Löschflugzeug, Jet, Airbus, Eindecker, Doppeldecker.
 // 'Canadair','AlphaJet' sind eigengebaut; SuperCup=Eindecker, Pitts=Doppeldecker.
-const MODEL_NAMES = ['Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang', 'XWing'];
+// Reihenfolge = Durchschalt-Reihenfolge (Y / M). Der X-Wing steht vorn: mit ihm startet das Spiel.
+const MODEL_NAMES = ['XWing', 'Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang'];
 const loader = new THREE.TextureLoader();
 const planeGroup = new THREE.Group();  // Container, den wir bewegen
 scene.add(planeGroup);
@@ -2277,6 +2278,23 @@ function updateLocale(){
     if(state.pos.y - moonHeightAt(state.pos.x, state.pos.z) > MOON_LEAVE_ALT) leaveMoon();
   }
 }
+// Auf welchen Himmelskörper fliegt man zu? Es zählt die Richtung, nicht die Entfernung — sonst
+// springt die Anzeige beim Vorbeiflug auf einen Körper um, den man gar nicht ansteuert.
+// Rückgabe: { def, dist } oder null.
+function aimedBody(){
+  if(!spacePlaced) return null;
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const to = new THREE.Vector3();
+  let best = null, bestDot = -2, nearest = null, nd = Infinity;
+  for(const b of bodies){
+    to.copy(b.center).sub(state.pos);
+    const d = Math.max(0, to.length() - b.def.r);
+    if(d < nd){ nd = d; nearest = { def:b.def, dist:d }; }
+    const dot = to.normalize().dot(fwd);
+    if(dot > bestDot){ bestDot = dot; best = { def:b.def, dist:d }; }
+  }
+  return (bestDot > 0.2) ? best : nearest;      // fliegt er auf keinen zu, zeigt er den nächsten
+}
 // Himmelskörper an ihren Platz setzen und ein-/ausblenden. Läuft JEDEN Frame, weil die GLB-Modelle
 // asynchron nachladen: wer schneller im Weltall ist als der Mond geladen war, hätte ihn sonst nie
 // zu sehen bekommen (er wurde nur beim Eintritt einmal sichtbar geschaltet).
@@ -2369,13 +2387,41 @@ function updateSpaceBlend(dt){
   }
 }
 
+// ---------- Weltraum-Anzeige über dem Flieger ----------
+// Gleiche Machart und Größe wie die Wassertropfen/Kisten: ein 60-px-Symbol, das an die projizierte
+// Position über dem Flugzeug gesetzt wird. Zeigt Ort, das angeflogene Ziel mit Entfernung und die
+// Trefferzahl — auf der Erde bleibt es leer (dort erscheinen dort Tropfen und Kisten).
+let spaceEl = null;
+const _spaceV = new THREE.Vector3();
+function updateSpaceHint(){
+  if(!spaceEl){
+    spaceEl = document.createElement('div');
+    spaceEl.style.cssText = 'position:absolute;font-size:60px;opacity:0;transition:opacity .2s;'
+      + 'pointer-events:none;transform:translate(-50%,-50%);white-space:nowrap;'
+      + 'text-shadow:2px 2px 6px rgba(0,0,0,0.8);';
+    document.body.appendChild(spaceEl);
+  }
+  if(locale === 'earth'){ spaceEl.style.opacity = '0'; return; }
+  let sym = (locale === 'space') ? '🚀' : '🌙';
+  if(locale === 'space'){
+    const aim = aimedBody();
+    if(aim) sym += ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km';
+    if(astHits > 0) sym += ' 💥' + astHits;
+  }
+  spaceEl.textContent = sym;
+  _spaceV.set(state.pos.x, state.pos.y + 16, state.pos.z).project(camera);
+  spaceEl.style.left = ((_spaceV.x*0.5+0.5)*innerWidth) + 'px';
+  spaceEl.style.top  = ((-_spaceV.y*0.5+0.5)*innerHeight) + 'px';
+  spaceEl.style.opacity = (_spaceV.z < 1) ? '1' : '0';       // nur wenn vor der Kamera
+}
+
 // ---------- Asteroiden + Laser (nur im Weltall) ----------
 // Im Weltall treiben Asteroiden um den Flieger. Mit B feuert der X-Wing zwei orangene Laserblitze
 // (Einzelschuss pro Druck) und zerstört sie. Sie erscheinen nur bei Unterlicht-Fahrt: im Hyperraum
 // würde man sie bei Warp gar nicht sehen, geschweige denn treffen.
-const AST_COUNT = 14;              // wie viele gleichzeitig unterwegs sind
+const AST_COUNT = 20;              // wie viele gleichzeitig unterwegs sind
 const AST_NEAR = 2000, AST_FAR = 9000, AST_DROP = 16000;   // Spawn-Nähe/-Weite, Aufräum-Distanz
-const AI_XW_COUNT = 3;             // fremde X-Wings, die selbst auf Asteroiden schießen
+const AI_XW_COUNT = 6;             // fremde X-Wings, die selbst auf Asteroiden schießen
 const LASER_SPEED = 2500, LASER_LIFE = 2.5;                // m/s über Eigenfahrt, Sekunden
 let asteroidTemplate = null, astHits = 0;
 const asteroids = [], bolts = [], flashes = [];
@@ -2415,9 +2461,12 @@ function spawnAsteroid(){
   g.position.copy(state.pos).addScaledVector(dir, AST_NEAR + Math.random()*(AST_FAR-AST_NEAR));
   g.rotation.set(Math.random()*6.28, Math.random()*6.28, Math.random()*6.28);
   scene.add(g);
+  // Eigenbewegung: eine kleine Zufallsdrift, dazu (in updateAsteroids) das Tempo des Fliegers minus
+  // einem kleinen Rückstand — so zieht man nur langsam an ihnen vorbei und kann zielen.
   const drift = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5)
-    .normalize().multiplyScalar(20 + Math.random()*100);   // 20–120 m/s in beliebige Richtung
-  asteroids.push({ grp:g, r, vel:drift,
+    .normalize().multiplyScalar(15 + Math.random()*35);    // 15–50 m/s eigener Kurs
+  asteroids.push({ grp:g, r, drift, lag: 0.02 + Math.random()*0.06,   // 2–8 % langsamer als der Flieger
+    vel: drift.clone(),
     spin:new THREE.Vector3((Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4) });
 }
 function clearAsteroids(){
@@ -2463,7 +2512,9 @@ function updateAiXwings(dt){
       const to = w.target.grp.position.clone().sub(w.grp.position).normalize();
       w.vel.lerp(to, Math.min(1, 1.2*dt)).normalize();
     }
-    w.grp.position.addScaledVector(w.vel, w.speed*dt);
+    // Tempo mithalten: sonst sind sie bei Warp 0,5 sofort außer Sicht
+    const keep = Math.max(w.speed, state.vel.length()*0.92);
+    w.grp.position.addScaledVector(w.vel, keep*dt);
     w.grp.lookAt(w.grp.position.clone().add(w.vel));      // Nase in Flugrichtung
     // Feuern, wenn das Ziel vor ihm und in Reichweite ist
     w.cool -= dt;
@@ -2517,6 +2568,10 @@ function updateAsteroids(dt){
 
   for(let i=asteroids.length-1;i>=0;i--){
     const a = asteroids[i];
+    // Tempo sanft an den Flieger angleichen (minus Rückstand) + eigene Drift -> sie werden nur
+    // langsam überholt, egal ob man mit Warp 0,1 oder knapp unter Warp 1 unterwegs ist.
+    const want = state.vel.clone().multiplyScalar(1 - a.lag).add(a.drift);
+    a.vel.lerp(want, Math.min(1, 1.5*dt));
     a.grp.position.addScaledVector(a.vel, dt);
     a.grp.rotation.x += a.spin.x*dt; a.grp.rotation.y += a.spin.y*dt; a.grp.rotation.z += a.spin.z*dt;
     const d = a.grp.position.distanceTo(state.pos);
@@ -3170,7 +3225,9 @@ function stepPhysics(dt, inp){
   // Schwerkraft und Auftrieb aus (1 = ganz aus bei <= 20 %, 0 = normaler Flug ab 30 %), damit
   // „senkrecht" wirklich senkrecht ist und die Steig-/Sinkrate exakt am Schub hängt.
   // Bei 0 % Schub bewusst 0 -> Antrieb aus, normale Physik/Stall -> er fällt.
-  const vtolMix = (spec.vtol && state.throttle > 0.001 && state.throttle < VTOL_FWD)
+  // Im Weltall gibt es keinen Boden und nichts zu schweben: dort ist der Schub linear, damit
+  // 10 % = Warp 0,1 ... 100 % = Warp 1 gilt. Schweben/Landen nur über Erde und Mond.
+  const vtolMix = (spec.vtol && locale !== 'space' && state.throttle > 0.001 && state.throttle < VTOL_FWD)
     ? Math.min(1, (VTOL_FWD - state.throttle) / (VTOL_FWD - VTOL_HOVER)) : 0;
   const vtolRest = 1 - vtolMix;
   const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
@@ -3521,19 +3578,8 @@ function updateHUD(){
   }
   // Ort voranstellen: 🚀 Weltall · 🌙 Mond (auf der Erde kein Extra-Symbol).
   // Im Weltall zählt 💥 die zerstörten Asteroiden mit.
-  const place = (locale === 'space') ? '🚀 ' : (locale === 'moon' ? '🌙 ' : '');
-  const score = (locale === 'space' && astHits > 0) ? ' 💥' + astHits : '';
-  // Im Weltall den nächsten Himmelskörper mit Entfernung zeigen — sonst sucht man ihn zu lange.
-  let near = '';
-  if(locale === 'space' && spacePlaced){
-    let best = null, bd = Infinity;
-    for(const b of bodies){
-      const d = state.pos.distanceTo(b.center) - b.def.r;
-      if(d < bd){ bd = d; best = b; }
-    }
-    if(best) near = ' ' + best.def.sym + Math.max(0, Math.round(bd/1000)) + 'km';
-  }
-  elStat.textContent = place + s + near + score;
+  // Ort, Ziel und Trefferzahl stehen über dem Flieger (updateSpaceHint) — hier bleibt nur der Rest.
+  elStat.textContent = s;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
@@ -4382,6 +4428,7 @@ function loop(now){
   updateLocale();            // Erde <-> Weltall <-> Mond
   updateWarp(dt);            // Hyperraum aufbauen/abbauen + Ring-Effekt
   updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
+  updateSpaceHint();         // Ort/Ziel/Treffer über dem Flieger (wie Tropfen und Kisten)
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(locale === 'moon') updateMoonTiles();
@@ -4398,7 +4445,7 @@ preloadParachute();    // Fallschirm-GLB laden (Transall-Kisten & AlphaJet/Musta
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
 preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft
-placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (Canadair) im Hafen aufstellen
+placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (X-Wing) auf der Landebahn aufstellen
 camera.position.set(state.pos.x, state.pos.y+10, state.pos.z+25);
 camera.lookAt(state.pos);
 requestAnimationFrame(loop);

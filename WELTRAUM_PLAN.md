@@ -382,6 +382,17 @@ zentriert; die Skalierung einer Kopie **ist** damit ihr Radius, was die Trefferp
 | Keine Asteroiden im Hyperraum | Grenze exakt bei Warp 1 (vorher 1,05) — im Hyperraum wird alles abgeräumt |
 | Fremde X-Wings, die mitschießen | 3 KI-X-Wings fliegen den nächsten Brocken an, feuern ab 3 km (wenn er vor ihnen liegt) mit 0,8–1,6 s Pause. Ihre Treffer zählen **nicht** auf den eigenen Zähler; Laser und Trefferlogik teilen sie mit dem Spieler (`fireBolt(..., mine)`) |
 
+### Feinschliff Weltall (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| „im weltall 10 % = 0,1 warp" | **Fehler gefunden**: im Weltall griff noch die VTOL-Schwebelogik (unter 30 % Schub), die die Fahrt wegdämpfte und auf Sinkrate regelte. VTOL gilt jetzt nur über Erde und Mond — im Weltall ist der Schub linear, also 10 % = Warp 0,1 … 100 % = Warp 1 |
+| Asteroiden sollen mithalten | Ihr Kurs wird jeden Frame an die Fliegergeschwindigkeit angeglichen, minus 2–8 % Rückstand, plus eigene Drift (15–50 m/s). Man überholt sie also nur langsam — bei Warp 0,1 genauso wie knapp unter Warp 1 |
+| mehr Brocken und Jäger | 20 Asteroiden (war 14), 6 fremde X-Wings (war 3). Die Jäger halten mit 92 % der Spielergeschwindigkeit mit, sonst sind sie sofort außer Sicht |
+| Entfernung zum **angeflogenen** Körper | `aimedBody()` wählt nach Richtung (bester Winkel zur Flugrichtung), nicht nach Entfernung; fliegt man auf keinen zu, erscheint der nächste |
+| Symbol wie Tropfen/Kisten über dem Flieger | Neue Anzeige `updateSpaceHint()` in derselben Machart wie `updateScoopHint`: 60-px-Symbol, an die projizierte Position über dem Flugzeug gesetzt. Zeigt Ort, Ziel mit Entfernung und Treffer; die HUD-Statuszeile ist dafür entlastet |
+| X-Wing als erstes Modell | `MODEL_NAMES` beginnt mit `'XWing'` — das Spiel startet damit auf der Landebahn. Das alte „SuperCup" in der Modellanzeige (Überbleibsel im HTML) ist ersetzt |
+
 ---
 
 ## Verifikation (alle Etappen)
