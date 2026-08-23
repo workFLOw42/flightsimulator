@@ -2314,8 +2314,7 @@ const HANGAR_SPAN = 300;           // Kantenlänge, auf die das Modell normiert 
 // 77 m (also 70 m Hallenhöhe), und die Öffnung liegt bei x-MAX (2179 freie Sichtlinien gegen 3 an
 // x-min). Gemessen wird der Boden deshalb in der Hallenmitte — die erste Messung hatte eine
 // Plattform im Aufbaubereich (43 m) für den Boden gehalten.
-const HANGAR_MID_X = 14, HANGAR_MID_Z = 0;   // Hallenmitte (dort wird der Boden gemessen)
-const HANGAR_X = 110;              // Startplatz: in der Öffnung, mit Blick nach draußen
+const HANGAR_X = -20;              // Startplatz: tief in der Halle, die Öffnung 160 m voraus
 const HANGAR_Z = 0;
 const HANGAR_HOVER = 25;           // Schwebehöhe über dem Hangarboden
 const HANGAR_YAW = -Math.PI/2;     // Nase (liegt auf -Z) zeigt damit auf +X, also zum Ausgang
@@ -2341,15 +2340,15 @@ function preloadHangar(){
     const wrap = new THREE.Group(); wrap.add(obj);
     wrap.visible = false; scene.add(wrap);
     hangarObj = wrap;
-    // Bodenhöhe in der HALLENMITTE messen (nicht irgendwo): der Strahl von oben trifft zuerst das
-    // Dach, also je Strahl den tiefsten Treffer nehmen. Über mehrere Messpunkte dann den Median —
-    // das ist robust gegen einzelne Strahlen, die durch eine Öffnung fallen oder auf einem Aufbau
-    // landen.
+    // Bodenhöhe GENAU AM STARTPLATZ messen: der Strahl von oben trifft zuerst das Dach (Innenraum),
+    // also je Strahl den tiefsten Treffer nehmen. Über mehrere Messpunkte den Median — robust gegen
+    // einzelne Strahlen, die durch eine Öffnung fallen oder auf einem Aufbau landen. Die Sondierung
+    // der Geometrie ergab hier 5,9 m Boden und darüber rund 67 m freien Raum.
     wrap.updateMatrixWorld(true);
     const ray = new THREE.Raycaster();
     const hits = [];
     for(const [dx,dz] of [[0,0],[25,0],[-25,0],[0,25],[0,-25],[25,25],[-25,-25],[25,-25],[-25,25]]){
-      ray.set(new THREE.Vector3(HANGAR_MID_X+dx, HANGAR_SPAN*2, HANGAR_MID_Z+dz), new THREE.Vector3(0,-1,0));
+      ray.set(new THREE.Vector3(HANGAR_X+dx, HANGAR_SPAN*2, HANGAR_Z+dz), new THREE.Vector3(0,-1,0));
       let low = null;
       for(const h of ray.intersectObject(wrap, true))
         if(low === null || h.point.y < low) low = h.point.y;
@@ -2357,6 +2356,8 @@ function preloadHangar(){
     }
     hits.sort((a,b)=>a-b);
     hangarFloorY = hits.length ? hits[Math.floor(hits.length/2)] : 0;
+    console.log('Hangar geladen: Boden bei y =', hangarFloorY.toFixed(1),
+                '| Startplatz', HANGAR_X, HANGAR_Z, '| Blickrichtung yaw', HANGAR_YAW.toFixed(3));
   }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
 }
 function enterHangar(host){
@@ -2377,7 +2378,16 @@ function enterHangar(host){
   state.vel.set(0, 0, 0);
   state.quat.setFromEuler(new THREE.Euler(0, HANGAR_YAW, 0, 'YXZ'));
   state.throttle = VTOL_HOVER; state.onGround = false; state.stalling = false;
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  // Kamera hart hinter den Flieger setzen — sonst schwenkt sie erst von der alten Position heran
+  if(typeof camera !== 'undefined'){
+    const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+    camera.position.set(state.pos.x + back.x*30, state.pos.y + 9, state.pos.z + back.z*30);
+    camera.lookAt(state.pos);
+  }
   showSpaceHint('🛰️');
+  console.log('[Hangar] Eintritt bei', state.pos.x.toFixed(0), state.pos.y.toFixed(0), state.pos.z.toFixed(0),
+              '| Boden', hangarFloorY.toFixed(1), '| yaw', HANGAR_YAW.toFixed(2));
   return true;
 }
 function leaveHangar(){
@@ -2391,6 +2401,7 @@ function leaveHangar(){
   warpBrakeLock = 6;
   if(state.throttle > 0.5) state.throttle = 0.5;
   showSpaceHint('🚀');
+  console.log('[Hangar] verlassen -> Weltall bei', state.pos.x.toFixed(0), state.pos.y.toFixed(0), state.pos.z.toFixed(0));
 }
 
 // ---------- Mondbasis und Mars-Rover ----------
@@ -2504,6 +2515,7 @@ function enterSpace(){
   issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   earthWorldVisible(false);
   showSpaceHint('🚀');
+  console.log('[Ort] Weltall, Austritt bei y =', state.pos.y.toFixed(0));
 }
 function enterEarth(){
   locale = 'earth';
@@ -2515,6 +2527,7 @@ function enterEarth(){
   clearGroundTiles();
   earthWorldVisible(true);
   showSpaceHint('🌍');
+  console.log('[Ort] Erde');
 }
 // Auf eine Oberfläche wechseln (Mond oder Mars).
 function enterGround(key){
@@ -2531,6 +2544,7 @@ function enterGround(key){
   updateGroundTiles();
   placeGroundBase();
   showSpaceHint(b ? b.def.sym : '🌙');
+  console.log('[Ort] Oberfläche', key);
 }
 function leaveGround(){
   roverAnchor = null;
@@ -3070,6 +3084,7 @@ function updateAiXwings(dt){
     }
     // Tempo mithalten: sonst sind sie bei Warp 0,5 sofort außer Sicht
     const keep = Math.max(w.speed, state.vel.length()*0.92);
+    w.cruise = keep;                                   // für die Laserbolzen (siehe unten)
     w.grp.position.addScaledVector(w.vel, keep*dt);
     w.grp.lookAt(w.grp.position.clone().add(w.vel));      // Nase in Flugrichtung
     // Feuern, wenn das Ziel vor ihm und in Reichweite ist
@@ -3078,7 +3093,8 @@ function updateAiXwings(dt){
       const to = w.target.grp.position.clone().sub(w.grp.position);
       const d = to.length();
       if(d < 3000 && to.normalize().dot(w.vel) > 0.9){
-        fireBolt(w.grp.position, w.vel, false);
+        // Eigengeschwindigkeit mitgeben, sonst bleibt der Schuss hinter dem Schützen zurück
+        fireBolt(w.grp.position, w.vel, false, w.vel.clone().multiplyScalar(w.cruise || w.speed), 45);
         w.cool = 0.8 + Math.random()*0.8;
       }
     }
@@ -3093,14 +3109,17 @@ function boom(pos, r){
   flashes.push({ mesh:m, t:0, r });
 }
 // Zwei Blitze links und rechts der Nase. mine = vom Spieler (zählt auf den Trefferzähler).
-function fireBolt(pos, fwd, mine, baseVel){
+// ahead = wie weit vor dem Schützen der Bolzen entsteht (bei großen Modellen mehr, sonst steckt er
+// im eigenen Rumpf).
+function fireBolt(pos, fwd, mine, baseVel, ahead){
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,-1), fwd.clone().normalize());
   const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
-  const v = fwd.clone().normalize().multiplyScalar(LASER_SPEED);
+  const dir = fwd.clone().normalize();
+  const v = dir.clone().multiplyScalar(LASER_SPEED);
   if(baseVel) v.add(baseVel);
   for(const side of [-1, 1]){
     const m = new THREE.Mesh(boltGeo, laserMat);
-    m.position.copy(pos).addScaledVector(right, side*5).addScaledVector(fwd, 10);
+    m.position.copy(pos).addScaledVector(right, side*5).addScaledVector(dir, ahead || 10);
     m.quaternion.copy(q);
     m.renderOrder = 997;
     scene.add(m);
