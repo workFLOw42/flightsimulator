@@ -102,7 +102,7 @@ Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250
 
 **Landen** kann man auf **Mond** und **Mars**: unter dem X-Wing liegt dann eine echte Landschaft, die
 sich endlos fortsetzt — auf dem Mond der **Giordano-Bruno-Krater** mit einem Sechstel der Erdanziehung
-und einer **480 m großen Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel
+und einer **552 m großen Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel
 Anziehung und dem **Perseverance-Rover**. Auf dem Mond steht auf **jeder Kachel** eine Basis an einer
 festen Stelle, und der Rover setzt sich beim Landeanflug (10 % Schub) direkt **neben den Aufsetzpunkt**.
 Über beiden steht eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei die Erde.
@@ -132,7 +132,8 @@ Bild. **Rammen kann man sie nicht**, und Waffen haben sie keine; **nur X-Wings s
 Asteroiden. Der Todesstern bleibt stumm: für ihn zeigt das HUD bewusst kein Symbol.
 
 An **Mondbasis und Rover** ist ebenfalls Betrieb: zwei Schiffe **starten und landen** dort
-fortwährend.
+fortwährend — auf dem Mond **auf der hellen Fläche neben dem Gebäude**, wo man sie gut sieht. Ihre
+Aufsetzhöhe wird an der Basis selbst gemessen, denn die Fläche fällt nach außen von 25 m auf 11 m ab.
 
 **Asteroiden abschießen**: Im Weltall treiben 20 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
 Sie **passen ihr Tempo dem Flieger an** und bleiben nur 2–8 % zurück — man zieht also langsam an ihnen

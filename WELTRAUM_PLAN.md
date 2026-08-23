@@ -750,6 +750,30 @@ Ladezustand funktioniert, rechnet er nicht mehr mit dem geladenen Erdmodell, son
 Platz gesetzt: lädt sie erst nach dem Weltraum-Eintritt fertig, stand sie sonst bei (0,0,0) — derselbe
 Fehler, der vorher ISS, Mondbasis und Rover unsichtbar gemacht hatte.
 
+**Vierter Nachschlag (23.08.2026).** Fünf Feinheiten aus dem Testflug:
+
+- **Kamera bei Warp** auf höchstens rund 150 m Abstand gedeckelt (vorher 250 m).
+- **Mondbasis 15 % größer**: Faktor 5,52 statt 4,8, also 552 m Grundfläche, Höhe bis 53 m.
+- **Die Raumschiffe landen jetzt AUF der hellen Fläche neben dem Gebäude** — dort sieht man sie
+  besser. Feiner vermessen mit `C:\tmp\baseprobe2.js` (Faktor 5,52, 72 Punkte je Ring):
+
+  | Radius | Oberseite (median) | Streuung | Befund |
+  |---|---|---|---|
+  | 20 m | 40,6 m | 0,7 m | Dach der Kuppel |
+  | 40–80 m | 26–27 m | 9–13 m | **Aufbauten** |
+  | 100–260 m | 25,3 → 11,1 m | unter 1 m | **flach und rundum frei** |
+  | ab 280 m | 9,2 m abfallend | — | Rand der Fläche |
+
+  Die Landeplätze liegen deshalb bei 110–255 m. Weil die Fläche dabei von 25 m auf 11 m abfällt,
+  wird die Aufsetzhöhe pro Platz mit einem Strahl von oben gegen die Basis gemessen
+  (`padSurfaceY`) — exakt, also ohne den Aufschlag `PAD_LIFT`, den der Rasterwert braucht.
+- **Die Weltraum-Anzeige ist weiß**: Ort, Ziel und Asteroidenzähler standen schwarz auf schwarzem
+  Weltall.
+- **Kein Doppelstart mehr.** Das Spiel beginnt immer im Hangar des Todessterns, man sah aber vorher
+  zwei Sekunden den X-Wing auf der Insel. Ein schwarzer Startvorhang (`startCurtain`) deckt die
+  Wartezeit ab. Die Wartezeit selbst bleibt nötig — danach laufen noch GLB-Callbacks, die die
+  Position verschieben —, und nach 20 s hebt sich der Vorhang notfalls auch ohne Hangar.
+
 **Die ISS ist landbar** — dasselbe Hangar-Szenario wie Todesstern und Star Destroyer, Andockradius
 `ISS_DOCK = 170` (die Station ist 120 m gross, etwas mehr als ihre Länge, sonst trifft man sie im
 Flug kaum). Dazu neu: eine Andock-Sperre `dockLock` von 6 s nach dem Verlassen eines Hangars. ISS und
