@@ -95,7 +95,8 @@
     <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 6 km Weltall</b></div>
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10, vor jedem Himmelskörper bremst er selbst</b></div>
     <div class="hrow"><span>🌙 Mond</span><b>anfliegen und mit 10 % landen · Mars &amp; Sonne kann man umkreisen</b></div>
-    <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · unter Warp 1 sichtbar</b></div>
+    <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · nur unter Warp 1 · fremde X-Wings schießen mit</b></div>
+    <div class="hrow"><span>🌙 suchen</span><b>oben links steht der nächste Himmelskörper mit Entfernung, das Radar zeigt die Richtung</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -2015,6 +2016,9 @@ let locale = 'earth';
 // ist der Deckel offen: ab 3000 m dunkelt der Himmel ein, bei 6000 m ist man im Weltall.
 const ATMO_TOP  = 3000;     // ab hier wird der Himmel dunkler
 const SPACE_Y   = 6000;     // ab hier ist man im Weltall
+// Rückweg zur Erde erst deutlich tiefer (Hysterese): sonst rutscht man beim Suchen nach Mond/Mars/
+// Sonne schon bei einem kleinen Sinkflug wieder in die Atmosphäre.
+const EARTH_Y   = 2500;     // so tief muss man sinken, um wieder in der Inselwelt zu landen
 const SPACE_THR = 0.8;      // erst ab 80 % Schub traegt die Fahrt aus der Atmosphäre heraus
 const EARTH_R   = 20000;    // Radius der Erdkugel
 const MOON_LEAVE_ALT = 4000;        // so hoch über dem Mondboden -> zurück ins Weltall
@@ -2026,17 +2030,20 @@ const STAR_R    = 1200000;  // Radius der Sternenkuppel (muss hinter allen Himme
 const SPACE_C   = 3000;     // m/s = Warp 1
 const WARP_MAX  = 10;       // Warp 10 als Obergrenze
 const WARP_RAMP = 12;       // Sekunden von Warp 1 auf Warp 10
-// Himmelskörper: Radius, Entfernung vom Austrittspunkt, Richtung (wird normiert), landbar?
+// Himmelskörper: Radius, Entfernung, Richtung relativ zur Ausflugrichtung (yaw = Drehung um die
+// Hochachse, up = Anteil nach oben), Symbol fürs HUD, landbar?
+// Der Mond liegt bewusst genau in Ausflugrichtung — so sieht man ihn gleich beim Austritt.
 const BODY_DEFS = [
-  { key:'moon', r:12000,  dist:150000, dir:[ 0.80, 0.50,-0.33], land:true  },
-  { key:'mars', r:30000,  dist:400000, dir:[-0.60, 0.70, 0.40], land:false },
-  { key:'sun',  r:120000, dist:900000, dir:[ 0.20, 0.90, 0.40], land:false },
+  { key:'moon', r:12000,  dist:150000, yaw: 0,    up:0.35, sym:'🌙', land:true  },
+  { key:'mars', r:30000,  dist:400000, yaw: 2.1,  up:0.50, sym:'🔴', land:false },
+  { key:'sun',  r:120000, dist:900000, yaw:-2.1,  up:0.80, sym:'☀️', land:false },
 ];
 const BODY_GLB = { moon:()=>window.MOON_GLB, mars:()=>window.MARS_GLB, sun:()=>window.SUN_GLB };
 const bodies = BODY_DEFS.map(def => ({ def, obj:null, center:new THREE.Vector3() }));
 const bodyOf = (key)=> bodies.find(b => b.def.key === key);
 
 let starDome = null, starMat = null, earthBall = null, craterTemplate = null;
+let spacePlaced = false;      // wurden die Himmelskörper schon positioniert?
 // warpDrive = Aufbau des Antriebs (bestimmt, wie schnell er werden KANN; wächst bei 100 % Schub).
 // warpVis   = wie tief er tatsächlich im Hyperraum steckt — haengt allein an der GESCHWINDIGKEIT und
 //             blendet den Effekt gleitend ein, genau wie der Uebergang Himmel -> Weltall.
@@ -2212,12 +2219,18 @@ function enterSpace(){
   locale = 'space';
   // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
   if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
-  // Himmelskörper vom Austrittspunkt aus in ihre Richtungen setzen
+  // Himmelskörper setzen: waagerechte Ausflugrichtung als Bezug, dann pro Körper drehen und anheben
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const base = new THREE.Vector3(fwd.x, 0, fwd.z);
+  if(base.lengthSq() < 1e-6) base.set(0,0,-1);
+  base.normalize();
+  const upAxis = new THREE.Vector3(0,1,0);
   for(const b of bodies){
-    const d = new THREE.Vector3(b.def.dir[0], b.def.dir[1], b.def.dir[2]).normalize();
+    const d = base.clone().applyAxisAngle(upAxis, b.def.yaw);
+    d.y = b.def.up; d.normalize();
     b.center.copy(state.pos).addScaledVector(d, b.def.dist);
-    if(b.obj){ b.obj.position.copy(b.center); b.obj.visible = true; }
   }
+  spacePlaced = true;
   earthWorldVisible(false);
   showBig('🚀');
 }
@@ -2259,10 +2272,23 @@ function updateLocale(){
   if(locale === 'earth'){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
-    if(!updateSpaceBodies() && state.pos.y < SPACE_Y) enterEarth();
+    if(!updateSpaceBodies() && state.pos.y < EARTH_Y) enterEarth();
   } else {
     if(state.pos.y - moonHeightAt(state.pos.x, state.pos.z) > MOON_LEAVE_ALT) leaveMoon();
   }
+}
+// Himmelskörper an ihren Platz setzen und ein-/ausblenden. Läuft JEDEN Frame, weil die GLB-Modelle
+// asynchron nachladen: wer schneller im Weltall ist als der Mond geladen war, hätte ihn sonst nie
+// zu sehen bekommen (er wurde nur beim Eintritt einmal sichtbar geschaltet).
+function placeBodies(){
+  const show = (locale === 'space') && spacePlaced;
+  for(const b of bodies){
+    if(!b.obj) continue;
+    b.obj.visible = show;
+    if(show) b.obj.position.copy(b.center);
+  }
+  const mb = bodyOf('moon');
+  if(mb && mb.obj && locale === 'moon') mb.obj.visible = false;   // man steht darauf
 }
 // Himmelskörper im Weltall: Anflug, Hyperraum-Bremse und Orbit-Grenze.
 // Gibt true zurück, wenn der Ort gewechselt wurde.
@@ -2294,9 +2320,10 @@ function updateSpaceBodies(){
 function updateWarp(dt){
   const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
   warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
-  // Sicht-Anteil rein aus dem Tempo: ab Warp 0,8 beginnt es, bei Warp 10 ist es voll da.
+  // Sicht-Anteil rein aus dem Tempo: der Ring erscheint erst AB Lichtgeschwindigkeit (Warp 1) und
+  // ist bei Warp 10 voll da.
   const warp = (locale === 'space') ? state.vel.length()/SPACE_C : 0;
-  const wv = Math.max(0, Math.min(1, (warp - 0.8) / (WARP_MAX - 0.8)));
+  const wv = Math.max(0, Math.min(1, (warp - 1.0) / (WARP_MAX - 1.0)));
   const before = warpVis;
   warpVis += (wv - warpVis) * Math.min(1, 4*dt);        // sanft nachziehen, kein Aufblitzen
   if(before <= 0.02 && warpVis > 0.02){ playSonicBoom(); rumble(350, 0.8, 0.6); }   // Warp-Schwelle
@@ -2320,6 +2347,7 @@ function updateWarp(dt){
 function updateSpaceBlend(dt){
   const target = (locale === 'earth')
     ? Math.max(0, Math.min(1, (state.pos.y - ATMO_TOP)/(SPACE_Y - ATMO_TOP))) : 1;
+  placeBodies();
   spaceBlend += (target - spaceBlend) * Math.min(1, 3*dt);
   const f = spaceBlend;
   _skyC.copy(SKY_DAY).lerp(SKY_SPACE, f);
@@ -2345,8 +2373,9 @@ function updateSpaceBlend(dt){
 // Im Weltall treiben Asteroiden um den Flieger. Mit B feuert der X-Wing zwei orangene Laserblitze
 // (Einzelschuss pro Druck) und zerstört sie. Sie erscheinen nur bei Unterlicht-Fahrt: im Hyperraum
 // würde man sie bei Warp gar nicht sehen, geschweige denn treffen.
-const AST_COUNT = 10;              // wie viele gleichzeitig unterwegs sind
-const AST_NEAR = 1500, AST_FAR = 6000, AST_DROP = 14000;   // Spawn-Nähe/-Weite, Aufräum-Distanz
+const AST_COUNT = 14;              // wie viele gleichzeitig unterwegs sind
+const AST_NEAR = 2000, AST_FAR = 9000, AST_DROP = 16000;   // Spawn-Nähe/-Weite, Aufräum-Distanz
+const AI_XW_COUNT = 3;             // fremde X-Wings, die selbst auf Asteroiden schießen
 const LASER_SPEED = 2500, LASER_LIFE = 2.5;                // m/s über Eigenfahrt, Sekunden
 let asteroidTemplate = null, astHits = 0;
 const asteroids = [], bolts = [], flashes = [];
@@ -2381,48 +2410,110 @@ function spawnAsteroid(){
   const g = asteroidTemplate.clone(true);
   const r = 60 + Math.random()*140;                     // 60–200 m Radius
   g.scale.setScalar(r);
-  // rund um den Flieger, mit Übergewicht nach vorne (damit man sie kommen sieht)
-  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  // völlig zufällig rundum verteilt (kein Vorzugsbereich) und mit zufälligem Kurs unterwegs
   const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-  dir.lerp(fwd, 0.55).normalize();
   g.position.copy(state.pos).addScaledVector(dir, AST_NEAR + Math.random()*(AST_FAR-AST_NEAR));
   g.rotation.set(Math.random()*6.28, Math.random()*6.28, Math.random()*6.28);
   scene.add(g);
-  asteroids.push({ grp:g, r,
-    vel:new THREE.Vector3((Math.random()-0.5)*80, (Math.random()-0.5)*80, (Math.random()-0.5)*80),
+  const drift = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5)
+    .normalize().multiplyScalar(20 + Math.random()*100);   // 20–120 m/s in beliebige Richtung
+  asteroids.push({ grp:g, r, vel:drift,
     spin:new THREE.Vector3((Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4) });
 }
 function clearAsteroids(){
   for(const a of asteroids) scene.remove(a.grp); asteroids.length = 0;
   for(const b of bolts) scene.remove(b.mesh);    bolts.length = 0;
   for(const f of flashes) scene.remove(f.mesh);  flashes.length = 0;
+  for(const w of aiXwings) scene.remove(w.grp);  aiXwings.length = 0;
+}
+
+// ---------- Fremde X-Wings, die im Weltall selbst auf Asteroiden schießen ----------
+// Bewusst einfach gehalten: nächsten Brocken anfliegen, aus der Distanz feuern, danach das nächste
+// Ziel. Ihre Treffer zählen NICHT auf den eigenen Zähler.
+const aiXwings = [];
+function spawnAiXwing(){
+  if(!glbTemplates['XWing']) return;
+  const holder = new THREE.Group();
+  const m = glbTemplates['XWing'].clone(true);
+  m.rotation.y = Math.PI;                 // Nase auf -Z, wie beim Spieler
+  m.scale.setScalar(3);                   // im Weltall etwas größer, sonst sieht man sie nicht
+  holder.add(m);
+  const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+  holder.position.copy(state.pos).addScaledVector(dir, 900 + Math.random()*2600);
+  scene.add(holder);
+  aiXwings.push({ grp:holder, target:null, cool:0.5 + Math.random(),
+    speed: 300 + Math.random()*300,
+    vel: new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize() });
+}
+function updateAiXwings(dt){
+  while(aiXwings.length < AI_XW_COUNT && glbTemplates['XWing']) spawnAiXwing();
+  for(let i=aiXwings.length-1;i>=0;i--){
+    const w = aiXwings[i];
+    // Ziel suchen/nachziehen: der nächstgelegene Asteroid
+    if(!w.target || asteroids.indexOf(w.target) < 0){
+      let best = null, bd = Infinity;
+      for(const a of asteroids){
+        const d = a.grp.position.distanceTo(w.grp.position);
+        if(d < bd){ bd = d; best = a; }
+      }
+      w.target = best;
+    }
+    // Kurs: sanft auf das Ziel einschwenken (sonst driftet er einfach weiter)
+    if(w.target){
+      const to = w.target.grp.position.clone().sub(w.grp.position).normalize();
+      w.vel.lerp(to, Math.min(1, 1.2*dt)).normalize();
+    }
+    w.grp.position.addScaledVector(w.vel, w.speed*dt);
+    w.grp.lookAt(w.grp.position.clone().add(w.vel));      // Nase in Flugrichtung
+    // Feuern, wenn das Ziel vor ihm und in Reichweite ist
+    w.cool -= dt;
+    if(w.target && w.cool <= 0){
+      const to = w.target.grp.position.clone().sub(w.grp.position);
+      const d = to.length();
+      if(d < 3000 && to.normalize().dot(w.vel) > 0.9){
+        fireBolt(w.grp.position, w.vel, false);
+        w.cool = 0.8 + Math.random()*0.8;
+      }
+    }
+    if(w.grp.position.distanceTo(state.pos) > AST_DROP){   // zu weit weg -> neu einsetzen
+      scene.remove(w.grp); aiXwings.splice(i,1);
+    }
+  }
 }
 function boom(pos, r){
   const m = new THREE.Mesh(flashGeo, flashMat.clone());
   m.position.copy(pos); m.renderOrder = 998; scene.add(m);
   flashes.push({ mesh:m, t:0, r });
 }
-// Zwei Blitze von den Flügelspitzen — ein Schuss pro Tastendruck (B / Gamepad-B).
-function fireLaser(){
-  if(locale !== 'space' || state.crashed) return;
-  const fwd   = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-  const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
-  const v = fwd.clone().multiplyScalar(LASER_SPEED).add(state.vel);
+// Zwei Blitze links und rechts der Nase. mine = vom Spieler (zählt auf den Trefferzähler).
+function fireBolt(pos, fwd, mine, baseVel){
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,-1), fwd.clone().normalize());
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
+  const v = fwd.clone().normalize().multiplyScalar(LASER_SPEED);
+  if(baseVel) v.add(baseVel);
   for(const side of [-1, 1]){
     const m = new THREE.Mesh(boltGeo, laserMat);
-    m.position.copy(state.pos).addScaledVector(right, side*5).addScaledVector(fwd, 10);
-    m.quaternion.copy(state.quat);
+    m.position.copy(pos).addScaledVector(right, side*5).addScaledVector(fwd, 10);
+    m.quaternion.copy(q);
     m.renderOrder = 997;
     scene.add(m);
-    bolts.push({ mesh:m, vel:v.clone(), t:0 });
+    bolts.push({ mesh:m, vel:v.clone(), t:0, mine:!!mine });
   }
+}
+// Ein Schuss pro Tastendruck (B / Gamepad-B) — beide sind flankengesteuert.
+function fireLaser(){
+  if(locale !== 'space' || state.crashed) return;
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  fireBolt(state.pos, fwd, true, state.vel);
   rumble(80, 0.25, 0.2);
 }
 function updateAsteroids(dt){
-  // nur im Weltall und nur unterhalb von Warp 1 — im Hyperraum wäre das kein Zielen, sondern Zufall
-  const on = (locale === 'space' && state.vel.length() < SPACE_C*1.05);
-  if(!on){ if(asteroids.length || bolts.length || flashes.length) clearAsteroids(); return; }
+  // nur im Weltall und nur UNTERHALB des Hyperraums (unter Warp 1) — im Hyperraum wäre Zielen
+  // reine Glückssache, und die Brocken würden unsichtbar vorbeirauschen
+  const on = (locale === 'space' && state.vel.length() < SPACE_C);
+  if(!on){ if(asteroids.length || bolts.length || flashes.length || aiXwings.length) clearAsteroids(); return; }
   while(asteroids.length < AST_COUNT && asteroidTemplate) spawnAsteroid();
+  updateAiXwings(dt);
 
   for(let i=asteroids.length-1;i>=0;i--){
     const a = asteroids[i];
@@ -2444,9 +2535,9 @@ function updateAsteroids(dt){
     for(let k=asteroids.length-1;k>=0;k--){
       const a = asteroids[k];
       if(b.mesh.position.distanceTo(a.grp.position) < a.r + 14){
-        boom(a.grp.position, a.r*1.4); astHits++;
+        boom(a.grp.position, a.r*1.4);
+        if(b.mine){ astHits++; rumble(200, 0.5, 0.4); }   // fremde Treffer zählen nicht mit
         scene.remove(a.grp); asteroids.splice(k,1);
-        rumble(200, 0.5, 0.4);
         hit = true; break;
       }
     }
@@ -3432,7 +3523,17 @@ function updateHUD(){
   // Im Weltall zählt 💥 die zerstörten Asteroiden mit.
   const place = (locale === 'space') ? '🚀 ' : (locale === 'moon' ? '🌙 ' : '');
   const score = (locale === 'space' && astHits > 0) ? ' 💥' + astHits : '';
-  elStat.textContent = place + s + score;
+  // Im Weltall den nächsten Himmelskörper mit Entfernung zeigen — sonst sucht man ihn zu lange.
+  let near = '';
+  if(locale === 'space' && spacePlaced){
+    let best = null, bd = Infinity;
+    for(const b of bodies){
+      const d = state.pos.distanceTo(b.center) - b.def.r;
+      if(d < bd){ bd = d; best = b; }
+    }
+    if(best) near = ' ' + best.def.sym + Math.max(0, Math.round(bd/1000)) + 'km';
+  }
+  elStat.textContent = place + s + near + score;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------

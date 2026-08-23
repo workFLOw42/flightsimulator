@@ -81,8 +81,14 @@ Weltall, und ein **Modellwechsel bringt sofort zur Erde zurück**.
 Im Weltall wird die Erde zur **Kugel** unter einem, es ist **schwerelos**, und es gibt keine Höhenangabe
 mehr — dafür **Warp**: 100 % Schub sind **Warp 1**, und wer 100 % hält, rutscht immer weiter in den
 **Hyperraum** bis **Warp 10**. Das ist kein Tor und kein Schalter: der Effekt blendet sich mit der
-Geschwindigkeit ein, genau wie der Übergang vom Himmel ins Weltall. **Kurz vor jedem Himmelskörper
-bremst er von selbst aus dem Hyperraum**, damit man ihn in Ruhe ansehen kann.
+Geschwindigkeit ein, genau wie der Übergang vom Himmel ins Weltall — der leuchtende Ring erscheint
+**ab Lichtgeschwindigkeit** (Warp 1). **Kurz vor jedem Himmelskörper bremst er von selbst aus dem
+Hyperraum**, damit man ihn in Ruhe ansehen kann.
+
+**Suchhilfe**: Oben links steht immer der **nächste Himmelskörper mit Entfernung** (🌙 Mond, 🔴 Mars,
+☀️ Sonne), und das Radar zeigt die Richtung. Der Mond liegt immer genau in der Richtung, in die man
+die Atmosphäre verlassen hat. Zurück auf die Erde geht es erst, wenn man wieder **unter 2,5 km**
+sinkt — beim Suchen fällt man also nicht versehentlich heim.
 
 Drei Ziele hängen dort draußen: der **Mond** (150 km), der **Mars** (400 km) und die **Sonne** (900 km).
 Mars und Sonne kann man **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihnen hin,
@@ -90,10 +96,11 @@ seitlich fliegt man weiter. Beim **Mond** geht es hinunter: unter dem X-Wing lie
 Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt, mit **einem Sechstel der
 Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
 
-**Asteroiden abschießen**: Im Weltall treiben Felsbrocken umher (60–200 m groß). **B** feuert zwei
-**orangene Laserblitze** — ein Schuss pro Druck. Ein Treffer lässt den Asteroiden zerplatzen, und das
-HUD zählt die Treffer mit (💥). Wer hineinfliegt, zerlegt ihn ebenfalls, ohne selbst Schaden zu nehmen.
-Die Brocken erscheinen nur **unterhalb von Warp 1** — im Hyperraum wäre Zielen reine Glückssache.
+**Asteroiden abschießen**: Im Weltall treiben 14 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
+**B** feuert zwei **orangene Laserblitze** — ein Schuss pro Druck. Ein Treffer lässt den Asteroiden
+zerplatzen, und das HUD zählt die Treffer mit (💥). Wer hineinfliegt, zerlegt ihn ebenfalls, ohne selbst
+Schaden zu nehmen. Dazu sind **fremde X-Wings** unterwegs, die eigene Brocken ins Visier nehmen und
+abschießen. Alles das gibt es nur **unterhalb von Warp 1**: im Hyperraum ist der Raum leer.
 
 **Zurück** geht es jederzeit: Auf dem Mond hochsteigen (über 4 km) → Weltall. Im Weltall absinken →
 wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), auf dem Mond die Höhe

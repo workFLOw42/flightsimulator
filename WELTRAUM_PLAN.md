@@ -370,6 +370,18 @@ zentriert; die Skalierung einer Kopie **ist** damit ihr Radius, was die Trefferp
   Tempo schnell frustrierend. Umzustellen ist es mit wenigen Zeilen.
 - Im Weltall belegt B nur den Laser; die Erd-Aktionen (Wasser, Kisten, Schleudersitz) bleiben unberührt.
 
+### Nachjustierung nach dem Weltall-Testflug (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| Hyperraum-Ring erst ab c | Sicht-Anteil beginnt jetzt bei **Warp 1** statt 0,8 |
+| „Ich finde den Mond nicht mehr" | **Fehler gefunden**: die Himmelskörper wurden nur in `enterSpace()` sichtbar geschaltet. Wer schneller oben war, als die GLB-Modelle geladen hatten, sah sie **nie**. Jetzt zieht `placeBodies()` Position und Sichtbarkeit **jeden Frame** nach |
+| dito | Der Mond liegt jetzt genau in **Ausflugrichtung** (Mars/Sonne um ±120° gedreht), und das HUD zeigt den nächsten Körper mit Symbol und Entfernung |
+| Wiedereintritt zu leicht | **Hysterese**: raus ab 6000 m, zurück erst **unter 2500 m** — beim Suchen fällt man nicht mehr versehentlich zur Erde |
+| Asteroiden sollen zufällig fliegen | Spawn ohne Vorzugsrichtung rundum (2–9 km), Drift 20–120 m/s in beliebige Richtung, 14 statt 10 Stück |
+| Keine Asteroiden im Hyperraum | Grenze exakt bei Warp 1 (vorher 1,05) — im Hyperraum wird alles abgeräumt |
+| Fremde X-Wings, die mitschießen | 3 KI-X-Wings fliegen den nächsten Brocken an, feuern ab 3 km (wenn er vor ihnen liegt) mit 0,8–1,6 s Pause. Ihre Treffer zählen **nicht** auf den eigenen Zähler; Laser und Trefferlogik teilen sie mit dem Spieler (`fireBolt(..., mine)`) |
+
 ---
 
 ## Verifikation (alle Etappen)
