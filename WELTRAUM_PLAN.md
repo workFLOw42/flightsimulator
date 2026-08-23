@@ -21,6 +21,7 @@ fliegt und dort landet. Mars und Sonne kann er umkreisen.
 - [x] **Etappe 1** — X-Wing als spielbares Modell mit VTOL (Erde) — *fertig 23.08.2026*
 - [x] **Etappe 2** — Weltall-Übergang, Erdkugel, Mondlandung — *fertig 23.08.2026*
 - [x] **Etappe 3** — Hyperraum, Mars, Sonne — *fertig 23.08.2026*
+- [x] **Phase 4** — Asteroiden und Laser im Weltall — *fertig 23.08.2026*
 
 ---
 
@@ -340,6 +341,34 @@ bewusst noch nicht dabei.
 Dazu: Erdkugel auf 20 km Radius vergrößert (füllt beim Austritt den Blick nach unten), Sternenkuppel
 auf 1200 km, Kamera-`far` auf 1600000. Das Radar zeigt im Weltall auf den nächstgelegenen
 Himmelskörper.
+
+---
+
+## Phase 4 — Asteroiden und Laser im Weltall
+
+Nachträglich gewünscht: „im weltall sollte der x wing orange laser abfeuern, die dann umherfliegende
+asteroiden zerstören. laser feuer, nur einzelfeuer auf b und nur im wellall."
+
+**Quelle**: `asteroid_01_by_exabyte.glb` — 600 Dreiecke, Ø ~230 m, 4,3 MB (davon fast alles Textur),
+als `asteroid_glb.js` 5,7 MB base64. Beim Laden wird das Modell auf Durchmesser 2 normiert und
+zentriert; die Skalierung einer Kopie **ist** damit ihr Radius, was die Trefferprüfung trivial macht.
+
+**Umsetzung**
+
+- **10 Asteroiden** gleichzeitig, Radius 60–200 m, Spawn 1,5–6 km vom Flieger mit Übergewicht nach
+  vorne (damit man sie kommen sieht), Drift bis 80 m/s und Eigenrotation. Über 14 km Entfernung
+  werden sie eingesammelt und neu gesetzt.
+- **Nur im Weltall und nur unterhalb von Warp 1.** Im Hyperraum werden sie abgeräumt — bei 3000 m/s
+  und mehr wäre Zielen Glückssache, und man würde sie nicht einmal sehen.
+- **Laser auf B** (Tastatur `B` und Gamepad-B sind beide flankengesteuert, also von sich aus
+  Einzelfeuer): zwei orangene Blitze von den Flügelspitzen, 2500 m/s **über** der Eigenfahrt,
+  Lebensdauer 2,5 s, additiv gemischt und damit lichtunabhängig sichtbar.
+- **Treffer**: Blitz gegen Asteroid als Kugelprüfung; der Brocken zerplatzt mit einer aufblühenden
+  Leuchtkugel, das HUD zählt 💥 mit, der Controller vibriert kurz.
+- **Rammen** zerstört den Asteroiden ebenfalls, **ohne** den Flieger zu beschädigen. Das war nicht
+  ausdrücklich gefordert — ein Absturz wäre die Alternative, aber bei driftenden Brocken und hohem
+  Tempo schnell frustrierend. Umzustellen ist es mit wenigen Zeilen.
+- Im Weltall belegt B nur den Laser; die Erd-Aktionen (Wasser, Kisten, Schleudersitz) bleiben unberührt.
 
 ---
 

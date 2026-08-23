@@ -90,6 +90,11 @@ seitlich fliegt man weiter. Beim **Mond** geht es hinunter: unter dem X-Wing lie
 Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt, mit **einem Sechstel der
 Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
 
+**Asteroiden abschießen**: Im Weltall treiben Felsbrocken umher (60–200 m groß). **B** feuert zwei
+**orangene Laserblitze** — ein Schuss pro Druck. Ein Treffer lässt den Asteroiden zerplatzen, und das
+HUD zählt die Treffer mit (💥). Wer hineinfliegt, zerlegt ihn ebenfalls, ohne selbst Schaden zu nehmen.
+Die Brocken erscheinen nur **unterhalb von Warp 1** — im Hyperraum wäre Zielen reine Glückssache.
+
 **Zurück** geht es jederzeit: Auf dem Mond hochsteigen (über 4 km) → Weltall. Im Weltall absinken →
 wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), auf dem Mond die Höhe
 über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück. Eine **Feuerwehr** gibt es
@@ -147,6 +152,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Mars | **Akshat** |
 | Sun | **Sebastian Sosnowski** |
 | Spacedrive | **tamminen** |
+| Asteroid 01 | **exabyte** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 

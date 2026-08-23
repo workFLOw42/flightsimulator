@@ -95,6 +95,7 @@
     <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 6 km Weltall</b></div>
     <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10, vor jedem Himmelskörper bremst er selbst</b></div>
     <div class="hrow"><span>🌙 Mond</span><b>anfliegen und mit 10 % landen · Mars &amp; Sonne kann man umkreisen</b></div>
+    <div class="hrow"><span>💥 Asteroiden</span><b>im Weltall <b>B</b> = oranger Laser (Einzelschuss) · unter Warp 1 sichtbar</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -123,6 +124,7 @@
 <script src="mars_glb.js"></script>
 <script src="sun_glb.js"></script>
 <script src="spacedrive_glb.js"></script>
+<script src="asteroid_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -879,6 +881,7 @@ function isMustang(){ return MODEL_NAMES[currentModel] === 'Mustang'; }
 function isXWing(){ return MODEL_NAMES[currentModel] === 'XWing'; }
 // B-Taste: Canadair -> Wasser, AlphaJet/Mustang -> Schleudersitz, Transall -> Kiste abwerfen
 function buttonB(){
+  if(locale === 'space'){ fireLaser(); return; }    // im Weltall: Laser (Einzelschuss)
   if(isCanadair()) dropWater();
   else if(isAlphaJet() || isMustang()) ejectSeat();
   else if(isTransall()) dropCrate();
@@ -2073,6 +2076,7 @@ function preloadSpace(){
     preloadSphereGLB(data, b.def.r, (g)=>{ g.visible = false; b.obj = g; scene.add(g); });
   }
   preloadWarpRing();
+  preloadAsteroid();
   preloadCrater();
 }
 // Hyperraum-Ring (Spacedrive-Torus): liegt im Modell flach in der XZ-Ebene, wird aufgestellt und
@@ -2334,6 +2338,126 @@ function updateSpaceBlend(dt){
   if(locale === 'moon' && earthBall){
     earthBall.visible = true;
     earthBall.position.set(state.pos.x + 90000, 45000, state.pos.z - 60000);
+  }
+}
+
+// ---------- Asteroiden + Laser (nur im Weltall) ----------
+// Im Weltall treiben Asteroiden um den Flieger. Mit B feuert der X-Wing zwei orangene Laserblitze
+// (Einzelschuss pro Druck) und zerstört sie. Sie erscheinen nur bei Unterlicht-Fahrt: im Hyperraum
+// würde man sie bei Warp gar nicht sehen, geschweige denn treffen.
+const AST_COUNT = 10;              // wie viele gleichzeitig unterwegs sind
+const AST_NEAR = 1500, AST_FAR = 6000, AST_DROP = 14000;   // Spawn-Nähe/-Weite, Aufräum-Distanz
+const LASER_SPEED = 2500, LASER_LIFE = 2.5;                // m/s über Eigenfahrt, Sekunden
+let asteroidTemplate = null, astHits = 0;
+const asteroids = [], bolts = [], flashes = [];
+const laserMat = new THREE.MeshBasicMaterial({ color:0xff7a10, transparent:true, opacity:0.95,
+  blending:THREE.AdditiveBlending, depthWrite:false });
+const boltGeo = new THREE.CylinderGeometry(0.6, 0.6, 26, 6, 1, true);
+boltGeo.rotateX(Math.PI/2);        // Zylinderachse auf die Flugrichtung (-Z) legen
+const flashGeo = new THREE.SphereGeometry(1, 12, 8);
+const flashMat = new THREE.MeshBasicMaterial({ color:0xffb040, transparent:true, opacity:0.9,
+  blending:THREE.AdditiveBlending, depthWrite:false });
+
+function preloadAsteroid(){
+  if(!window.ASTEROID_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.ASTEROID_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    // auf Durchmesser 2 normieren und zentrieren -> die Skalierung der Kopie IST dann der Radius
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(2 / Math.max(size.x, size.y, size.z));
+    const c = new THREE.Vector3(); new THREE.Box3().setFromObject(obj).getCenter(c);
+    obj.position.sub(c);
+    const wrap = new THREE.Group(); wrap.add(obj);
+    asteroidTemplate = wrap;
+  }, (err)=>{ console.warn('Asteroid-GLB Ladefehler:', err); });
+}
+function spawnAsteroid(){
+  if(!asteroidTemplate) return;
+  const g = asteroidTemplate.clone(true);
+  const r = 60 + Math.random()*140;                     // 60–200 m Radius
+  g.scale.setScalar(r);
+  // rund um den Flieger, mit Übergewicht nach vorne (damit man sie kommen sieht)
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+  dir.lerp(fwd, 0.55).normalize();
+  g.position.copy(state.pos).addScaledVector(dir, AST_NEAR + Math.random()*(AST_FAR-AST_NEAR));
+  g.rotation.set(Math.random()*6.28, Math.random()*6.28, Math.random()*6.28);
+  scene.add(g);
+  asteroids.push({ grp:g, r,
+    vel:new THREE.Vector3((Math.random()-0.5)*80, (Math.random()-0.5)*80, (Math.random()-0.5)*80),
+    spin:new THREE.Vector3((Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4) });
+}
+function clearAsteroids(){
+  for(const a of asteroids) scene.remove(a.grp); asteroids.length = 0;
+  for(const b of bolts) scene.remove(b.mesh);    bolts.length = 0;
+  for(const f of flashes) scene.remove(f.mesh);  flashes.length = 0;
+}
+function boom(pos, r){
+  const m = new THREE.Mesh(flashGeo, flashMat.clone());
+  m.position.copy(pos); m.renderOrder = 998; scene.add(m);
+  flashes.push({ mesh:m, t:0, r });
+}
+// Zwei Blitze von den Flügelspitzen — ein Schuss pro Tastendruck (B / Gamepad-B).
+function fireLaser(){
+  if(locale !== 'space' || state.crashed) return;
+  const fwd   = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
+  const v = fwd.clone().multiplyScalar(LASER_SPEED).add(state.vel);
+  for(const side of [-1, 1]){
+    const m = new THREE.Mesh(boltGeo, laserMat);
+    m.position.copy(state.pos).addScaledVector(right, side*5).addScaledVector(fwd, 10);
+    m.quaternion.copy(state.quat);
+    m.renderOrder = 997;
+    scene.add(m);
+    bolts.push({ mesh:m, vel:v.clone(), t:0 });
+  }
+  rumble(80, 0.25, 0.2);
+}
+function updateAsteroids(dt){
+  // nur im Weltall und nur unterhalb von Warp 1 — im Hyperraum wäre das kein Zielen, sondern Zufall
+  const on = (locale === 'space' && state.vel.length() < SPACE_C*1.05);
+  if(!on){ if(asteroids.length || bolts.length || flashes.length) clearAsteroids(); return; }
+  while(asteroids.length < AST_COUNT && asteroidTemplate) spawnAsteroid();
+
+  for(let i=asteroids.length-1;i>=0;i--){
+    const a = asteroids[i];
+    a.grp.position.addScaledVector(a.vel, dt);
+    a.grp.rotation.x += a.spin.x*dt; a.grp.rotation.y += a.spin.y*dt; a.grp.rotation.z += a.spin.z*dt;
+    const d = a.grp.position.distanceTo(state.pos);
+    if(d > AST_DROP){ scene.remove(a.grp); asteroids.splice(i,1); continue; }
+    if(d < a.r + 10){                       // gerammt: er zerbricht, der Flieger bleibt heil
+      boom(a.grp.position, a.r*1.3); astHits++;
+      scene.remove(a.grp); asteroids.splice(i,1);
+      rumble(300, 0.7, 0.6);
+    }
+  }
+  for(let i=bolts.length-1;i>=0;i--){
+    const b = bolts[i];
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.t += dt;
+    let hit = false;
+    for(let k=asteroids.length-1;k>=0;k--){
+      const a = asteroids[k];
+      if(b.mesh.position.distanceTo(a.grp.position) < a.r + 14){
+        boom(a.grp.position, a.r*1.4); astHits++;
+        scene.remove(a.grp); asteroids.splice(k,1);
+        rumble(200, 0.5, 0.4);
+        hit = true; break;
+      }
+    }
+    if(hit || b.t > LASER_LIFE){ scene.remove(b.mesh); bolts.splice(i,1); }
+  }
+  for(let i=flashes.length-1;i>=0;i--){
+    const f = flashes[i]; f.t += dt;
+    const k = f.t/0.45;
+    if(k >= 1){ scene.remove(f.mesh); flashes.splice(i,1); continue; }
+    f.mesh.scale.setScalar(f.r*(0.4 + 1.6*k));
+    f.mesh.material.opacity = 0.9*(1-k);
   }
 }
 
@@ -3304,8 +3428,11 @@ function updateHUD(){
       s = mission + ('🧍'.repeat(paxLoad) || '·');   // eingestiegene Menschen
     }
   }
-  // Ort voranstellen: 🚀 Weltall · 🌙 Mond (auf der Erde kein Extra-Symbol)
-  elStat.textContent = (locale === 'space' ? '🚀 ' : (locale === 'moon' ? '🌙 ' : '')) + s;
+  // Ort voranstellen: 🚀 Weltall · 🌙 Mond (auf der Erde kein Extra-Symbol).
+  // Im Weltall zählt 💥 die zerstörten Asteroiden mit.
+  const place = (locale === 'space') ? '🚀 ' : (locale === 'moon' ? '🌙 ' : '');
+  const score = (locale === 'space' && astHits > 0) ? ' 💥' + astHits : '';
+  elStat.textContent = place + s + score;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
@@ -4153,6 +4280,7 @@ function loop(now){
   stepMoonField();           // Höhenraster des Mondes in Häppchen ausmessen
   updateLocale();            // Erde <-> Weltall <-> Mond
   updateWarp(dt);            // Hyperraum aufbauen/abbauen + Ring-Effekt
+  updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(locale === 'moon') updateMoonTiles();
