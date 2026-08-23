@@ -2309,15 +2309,18 @@ function preloadStationGLB(dataUrl, cb){
 // wird beim Laden EINMAL per Raycast ausgemessen (kein Höhenraster nötig). Wer weit genug hinaus-
 // oder hochfliegt, ist wieder im Weltall.
 const HANGAR_SPAN = 300;           // Kantenlänge, auf die das Modell normiert wird
-// Aus der Geometrie vermessen (C:\tmp\hangarmap2.js): der begehbare Bereich ist ein Streifen von
-// 14 x 300 m an der OFFENEN x-min-Kante mit Mittelpunkt (-134, 0); der Innenraum ist nur 37 m hoch
-// (Boden bei 43 m, Modell 80 m). Deshalb steht der Flieger dort und schwebt nur 15 m über dem Boden.
-const HANGAR_X = -134;             // Startplatz im freien Streifen
+// Aus der Geometrie vermessen (C:\tmp\hangarmap3.js — Halle = überdachte, innen freie Zellen):
+// Die Halle ist 235 x 200 m groß, ihre Mitte liegt bei (14, 0), der Boden bei 7 m, die Decke bei
+// 77 m (also 70 m Hallenhöhe), und die Öffnung liegt bei x-MAX (2179 freie Sichtlinien gegen 3 an
+// x-min). Gemessen wird der Boden deshalb in der Hallenmitte — die erste Messung hatte eine
+// Plattform im Aufbaubereich (43 m) für den Boden gehalten.
+const HANGAR_MID_X = 14, HANGAR_MID_Z = 0;   // Hallenmitte (dort wird der Boden gemessen)
+const HANGAR_X = 110;              // Startplatz: in der Öffnung, mit Blick nach draußen
 const HANGAR_Z = 0;
-const HANGAR_HOVER = 15;           // Schwebehöhe über dem Hangarboden
-const HANGAR_YAW = Math.PI/2;      // Nase (liegt auf -Z) zeigt damit auf -X, also zum Ausgang
-const HANGAR_OUT_R = 260;          // so weit vom Zentrum -> zurück ins All
-const HANGAR_OUT_H = 50;           // so hoch über dem Boden -> zurück ins All (Decke liegt bei ~37 m)
+const HANGAR_HOVER = 25;           // Schwebehöhe über dem Hangarboden
+const HANGAR_YAW = -Math.PI/2;     // Nase (liegt auf -Z) zeigt damit auf +X, also zum Ausgang
+const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All (Öffnung liegt bei 141)
+const HANGAR_OUT_H = 85;           // so hoch über dem Boden -> zurück ins All (Decke liegt bei ~70 m)
 let hangarObj = null, hangarFloorY = 0;
 // Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern oder ein Star Destroyer.
 let hangarHost = null;      // { pos: Vector3, up: number }
@@ -2338,19 +2341,22 @@ function preloadHangar(){
     const wrap = new THREE.Group(); wrap.add(obj);
     wrap.visible = false; scene.add(wrap);
     hangarObj = wrap;
-    // Bodenhöhe messen: der Strahl von oben trifft ZUERST das Dach — der Hangar ist ein Innenraum.
-    // Deshalb alle Treffer ansehen und den TIEFSTEN nehmen, das ist der Boden im Inneren.
+    // Bodenhöhe in der HALLENMITTE messen (nicht irgendwo): der Strahl von oben trifft zuerst das
+    // Dach, also je Strahl den tiefsten Treffer nehmen. Über mehrere Messpunkte dann den Median —
+    // das ist robust gegen einzelne Strahlen, die durch eine Öffnung fallen oder auf einem Aufbau
+    // landen.
     wrap.updateMatrixWorld(true);
     const ray = new THREE.Raycaster();
-    let floor = null;
-    for(const [dx,dz] of [[0,0],[10,0],[-10,0],[0,10],[0,-10],[20,20],[-20,-20]]){
-      ray.set(new THREE.Vector3(dx, HANGAR_SPAN*2, dz), new THREE.Vector3(0,-1,0));
-      let low = null;                                  // tiefster Treffer dieses Strahls = Innenboden
+    const hits = [];
+    for(const [dx,dz] of [[0,0],[25,0],[-25,0],[0,25],[0,-25],[25,25],[-25,-25],[25,-25],[-25,25]]){
+      ray.set(new THREE.Vector3(HANGAR_MID_X+dx, HANGAR_SPAN*2, HANGAR_MID_Z+dz), new THREE.Vector3(0,-1,0));
+      let low = null;
       for(const h of ray.intersectObject(wrap, true))
         if(low === null || h.point.y < low) low = h.point.y;
-      if(low !== null && (floor === null || low > floor)) floor = low;   // höchster Boden gewinnt
+      if(low !== null) hits.push(low);
     }
-    hangarFloorY = (floor === null) ? 0 : floor;
+    hits.sort((a,b)=>a-b);
+    hangarFloorY = hits.length ? hits[Math.floor(hits.length/2)] : 0;
   }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
 }
 function enterHangar(host){

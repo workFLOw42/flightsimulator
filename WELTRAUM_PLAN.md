@@ -523,11 +523,25 @@ Statt zu schätzen habe ich den Innenraum aus der GLB-Geometrie ausgemessen
 (`C:\tmp\hangarmap2.js`: Raster über die Grundfläche, Hindernisse im Höhenband Boden+4 … Boden+30,
 größtes freies Rechteck, freie Randzellen je Kante):
 
-| Messung | Ergebnis | Folge |
-|---|---|---|
-| Boden | 43 m, Modell 80 m hoch | Innenraum nur **37 m** — die alte Schwebehöhe Boden+45 lag **über dem Dach** → jetzt Boden+15 |
-| Größte freie Fläche | **14 × 300 m**, Mitte (−134, 0) | Der Rest der Grundfläche ist mit Aufbauten belegt; dort steht der Flieger jetzt statt in einer Ecke |
-| Freie Randzellen | x-min 60, x-max 0, z-min 50, z-max 50 | Die **Öffnung liegt bei x-min** → Nase dorthin: `rotation.y = +π/2` (die Nase liegt auf −Z) |
+**Erster Versuch, und was daran falsch war** (Screenshots des Nutzers haben es gezeigt): Als „Boden"
+hatte die Messung eine **Plattform im Aufbaubereich** genommen (43 m statt 7 m) — daraus folgte eine
+Hallenhöhe von 37 m statt 70 m, und die Schwebehöhe lag über dem Dach. Als „Öffnung" hatte sie den
+freien Raum **außerhalb** des Gebäudes an der x-min-Kante genommen; die echte Öffnung liegt bei x-max.
+
+**Zweite Messung** (`C:\tmp\hangarmap3.js`) mit der **Halle** als Kriterium — überdachte Zellen, die
+innen frei durchfliegbar sind (unterstes und oberstes belegtes Höhenband je Zelle, dazwischen
+mindestens vier freie Bänder):
+
+| Messung | Ergebnis |
+|---|---|
+| Halle | **235 × 200 m**, Mitte (14, 0) |
+| Boden / Decke | **7 m / 77 m** → 70 m Hallenhöhe (deckt sich mit den 45 m, die das HUD im Screenshot innen zeigte) |
+| Freie Sichtlinien nach außen | x-max **2179**, x-min 3, z-min 0, z-max 0 → **Öffnung bei x-max** |
+| Startplatz | (110, Boden+25, 0) — in der Öffnung mit Blick nach draußen, Nase auf +X (`rotation.y = −π/2`) |
+
+Der Boden wird jetzt in der **Hallenmitte** gemessen: je Strahl der tiefste Treffer (das Dach liegt
+darüber), über neun Messpunkte der Median — robust gegen Strahlen, die durch eine Öffnung fallen oder
+auf einem Aufbau landen.
 
 Die Ausrichtung gilt bei **jedem** Eintritt, egal aus welcher Richtung man anfliegt. Austrittsgrenzen
 angepasst: 260 m vom Zentrum (200 lag zu dicht an der Öffnung), 50 m über dem Boden, und neu auch
