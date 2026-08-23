@@ -74,17 +74,26 @@ Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
 ## 🌍 Ins Weltall und zum Mond (nur X-Wing)
 
 Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und die Sterne kommen, ab
-**9 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei 3 km ab — erst die volle Fahrt
-trägt hinaus. Alle anderen Flugzeuge behalten ihren gewohnten Höhendeckel.
+**6 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei **3 km** ab — erst die volle Fahrt
+trägt hinaus. Alle anderen Flugzeuge behalten ihren gewohnten Höhendeckel; **nur der X-Wing** kommt ins
+Weltall, und ein **Modellwechsel bringt sofort zur Erde zurück**.
 
-Im Weltall wird die Erde zur **Kugel** unter einem, es ist **schwerelos**, und in der Ferne hängt der
-**Mond**. Wer dorthin fliegt, wechselt automatisch in den **Landeanflug**: unter dem X-Wing liegt dann
-eine **echte Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt. Dort gilt
-**ein Sechstel der Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
+Im Weltall wird die Erde zur **Kugel** unter einem, es ist **schwerelos**, und es gibt keine Höhenangabe
+mehr — dafür **Warp**: 100 % Schub sind **Warp 1**, und wer 100 % hält, rutscht immer weiter in den
+**Hyperraum** bis **Warp 10**. Das ist kein Tor und kein Schalter: der Effekt blendet sich mit der
+Geschwindigkeit ein, genau wie der Übergang vom Himmel ins Weltall. **Kurz vor jedem Himmelskörper
+bremst er von selbst aus dem Hyperraum**, damit man ihn in Ruhe ansehen kann.
 
-**Zurück** geht es jederzeit: Auf dem Mond einfach hochsteigen (über 4 km) → Weltall. Im Weltall
-absinken → wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), und auf dem
-Mond die Höhe über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück.
+Drei Ziele hängen dort draußen: der **Mond** (150 km), der **Mars** (400 km) und die **Sonne** (900 km).
+Mars und Sonne kann man **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihnen hin,
+seitlich fliegt man weiter. Beim **Mond** geht es hinunter: unter dem X-Wing liegt dann eine **echte
+Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt, mit **einem Sechstel der
+Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
+
+**Zurück** geht es jederzeit: Auf dem Mond hochsteigen (über 4 km) → Weltall. Im Weltall absinken →
+wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mond), auf dem Mond die Höhe
+über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück. Eine **Feuerwehr** gibt es
+im Weltall und auf dem Mond nicht — dort endet ein Absturz einfach mit dem Neustart auf der Erde.
 
 ## ✈️ Flugverkehr in der Luft (Taste J / LB)
 Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
@@ -135,6 +144,9 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Earth · Moon | **Akshat** |
 | Moon – Giordano Bruno Crater | **Sebastian Sosnowski** |
 | Minecraft Java Edition Stars | **AjaxGb** |
+| Mars | **Akshat** |
+| Sun | **Sebastian Sosnowski** |
+| Spacedrive | **tamminen** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
