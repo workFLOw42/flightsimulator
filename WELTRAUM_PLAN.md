@@ -576,6 +576,33 @@ Serenity und Voyager die größten Einzelposten.
 (Öffnung bei x-max). Die Startposition (110, Boden+25, 0) liegt im Hallenrechteck (x −103 … +131)
 und mittig in der 70 m hohen Halle.
 
+### Nachtrag 8 — schwere Modelle vereinfacht (23.08.2026)
+
+Serenity und Voyager sollten leichter werden; da es „nicht auf den exakten Look ankommt", wurden sie
+nicht entfernt, sondern **vereinfacht**. Dafür gibt es jetzt `C:\tmp\decimate.js`: Vertex-Clustering
+auf ein Raster, entartete Dreiecke fallen weg, Normalen werden neu gemittelt, UVs vom ersten Vertex
+der Zelle übernommen. Texturen, Materialien und Sampler bleiben; die Node-Hierarchie wird eingebacken,
+Animationen fallen weg. Die Außenmaße bleiben auf Zentimeter gleich.
+
+| Modell | Dreiecke | Datei |
+|---|---|---|
+| Serenity | 288.678 → **32.930** | 23,4 → 5,6 MB |
+| Voyager | 147.206 → **14.526** | 16,8 → 7,9 MB |
+| Perseverance-Rover | 199.304 → **30.132** | 14,2 → 5,5 MB |
+| Enterprise-D | 49.588 → **19.388** | 6,8 → 3,5 MB |
+| Razor Crest | 38.112 → **9.843** | 5,1 → 1,8 MB |
+
+Bei diesen Modellen bestimmen jetzt allein die Texturen die Dateigröße — die Geometrie schrumpfte
+z. B. bei der Serenity von 18 MB auf 0,35 MB. **Bundle: 271,5 → 215,4 MB.**
+
+Weil alles günstiger ist, fliegen jetzt **mehr** Schiffe: Shuttle 9, Razor Crest 6, Serenity 2,
+Voyager 2, Enterprise 2, Star Destroyer 5, KI-X-Wings 5. Die Szene im Weltall liegt damit bei rund
+**600.000 Dreiecken** — vorher 999.000 mit weniger Schiffen.
+
+**Bewusst nicht vereinfacht**: das X-Wing-Modell (man sieht es aus wenigen Metern), die Terrains von
+Mond und Mars (die Bodenhöhe hängt an ihrer Geometrie) und der Hangar — bei ihm würde das Verfahren
+die feinen Voxel-Strukturen zerreißen und die Bodenmessung verfälschen.
+
 ---
 
 ## Verifikation (alle Etappen)

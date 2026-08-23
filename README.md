@@ -118,9 +118,10 @@ Flugzeugträger des Weltalls — anfliegen, im selben Hangar landen, wieder hina
 sieht man **andere Schiffe einfliegen**. Die **Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
 zu ihr hin, seitlich fliegt man weiter.
 
-Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (5×),
-**Razor Crest** (4×), **Serenity**, **USS Voyager** und **USS Enterprise-D** fliegen ihre eigenen
-Kurse durchs All — etwa jedes dritte Schiff steuert einen Star Destroyer an. Ihr Tempo liegt nahe an
+Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (9×),
+**Razor Crest** (6×), **Serenity** (2×), **USS Voyager** (2×) und **USS Enterprise-D** (2×) fliegen
+ihre eigenen Kurse durchs All — jedes fünfte Schiff steuert einen Star Destroyer an, von denen fünf
+im Raum verteilt stehen. Ihr Tempo liegt nahe an
 deinem — manche überholen dich langsam, andere werden überholt, mancher zieht einfach quer durchs
 Bild. **Rammen kann man sie nicht**, und Waffen haben sie keine; **nur X-Wings schießen** auf
 Asteroiden. Der Todesstern bleibt stumm: für ihn zeigt das HUD bewusst kein Symbol.
@@ -216,9 +217,11 @@ Weitere verwendete Technik:
 ## 🔧 Technik (kurz)
 - Reines HTML + JavaScript + WebGL, keine Installation, kein Build. Alle Modelle/Sounds sind
   eingebettet (Base64) — das Spiel läuft sowohl online als auch per Doppelklick lokal.
-- Die eingebetteten Modelle sind inzwischen **rund 270 MB**; der Service Worker cached sie beim
-  ersten Start komplett und lädt sie bei einem Update erneut. Die größten Posten sind der
-  Hangar (49 MB), Serenity (31 MB), Voyager (22 MB) und der Rover (19 MB).
+- Die eingebetteten Modelle sind **rund 215 MB**; der Service Worker cached sie beim ersten Start
+  komplett und lädt sie bei einem Update erneut. Fünf schwere Modelle (Serenity, Voyager, Rover,
+  Enterprise, Razor Crest) wurden dafür **vereinfacht** — zusammen 56 MB und 616.000 Dreiecke
+  gespart, bei gleichen Außenmaßen und unveränderten Texturen. Größter Einzelposten bleibt der
+  Hangar (49 MB).
 - Endlose, ortsfeste Inselwelt (deterministisch je Rasterzelle), animiertes Meer, Flugzeugträger,
   Häfen, Wolkenkratzer-Städte.
 
