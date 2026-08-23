@@ -2580,6 +2580,13 @@ function enterEarth(atSphere){
 let _basePosMoon = null;
 // Kamera hart hinter den Flieger setzen: nach einem Ortswechsel steht sie noch an der alten Stelle
 // und schwenkt sichtbar um ihn herum, während sie nachzieht.
+// Zusatzabstand der Kamera bei Fahrt: im Hyperraum sieht es besser aus (und gibt ein Tempogefühl),
+// wenn die Kamera zurückweicht. Der Faktor ist so gewählt, dass er den früheren Lerp-Rückstand bei
+// normaler Fahrt genau nachbildet (bei 690 m/s 43,7 m gegen vorher 43,3 m) — nur wächst er jetzt
+// nicht endlos weiter: gedeckelt auf +70 m, sonst wäre der Flieger bei Warp 10 ein Punkt (526 m).
+function camBackExtra(){
+  return Math.min(70, state.vel.length() * 0.025);
+}
 function snapCamera(){
   if(typeof camera === 'undefined') return;
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
@@ -2593,9 +2600,10 @@ function snapCamera(){
   if(f.lengthSq() < 1e-6) f.set(0,0,-1);
   f.normalize();
   const cfg = viewConfigs[viewMode], cc = camCfg();
-  camera.position.set(state.pos.x - f.x*cfg.dist*cc.dist,
+  const d = cfg.dist*cc.dist + camBackExtra();
+  camera.position.set(state.pos.x - f.x*d,
                       state.pos.y + cfg.height*cc.hgt,
-                      state.pos.z - f.z*cfg.dist*cc.dist);
+                      state.pos.z - f.z*d);
   // wie in updateCamera: nur in der Inselwelt gibt es unten einen Boden
   if(locale === 'earth' && camera.position.y < 2) camera.position.y = 2;
   camera.up.set(0,1,0);
@@ -4218,6 +4226,7 @@ function stepPhysics(dt, inp){
 }
 
 // ---------- Kamera ----------
+const _camOff = new THREE.Vector3(), _camDes = new THREE.Vector3();
 function updateCamera(){
   // Schleudersitz-Phasen: 1) Jet trudelt -> Fallschirm im Blick.
   // 2) Jet aufgeschlagen (crashed) -> Blick auf Wrack/Feuerwehr, Fallschirm oben im Bild.
@@ -4258,20 +4267,22 @@ function updateCamera(){
   const back = new THREE.Vector3(0,0,1).applyQuaternion(camQ);   // hinter dem Flieger (mit Nicken)
   const upV  = new THREE.Vector3(0,1,0).applyQuaternion(camQ);   // Kamera-Oben (rollt nie mit)
   const desired = state.pos.clone()
-    .addScaledVector(back, cfg.dist*cc.dist)
+    .addScaledVector(back, cfg.dist*cc.dist + camBackExtra())
     .addScaledVector(upV,  cfg.height*cc.hgt);
   // Nur in der Inselwelt ist y = 0 der Meeresboden. Im Weltall liegt die Erdkugel UNTER dem Spieler
   // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
   // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
   if(locale === 'earth' && desired.y < 2) desired.y = 2;
   camera.up.copy(upV);
-  // Bei hoher Fahrt straffer nachziehen: mit festem Lerp bliebe die Kamera bei Mach 2 rund
-  // 190 m hinter dem Flieger zurück (Gleichgewicht aus Vorschub pro Frame und Lerp-Anteil).
-  // Ab Warptempo reicht auch das nicht mehr — bei Warp 10 sind es 500 m Vorschub pro Frame, und der
-  // Flieger wäre nur noch ein Punkt im Bild. Darüber folgt die Kamera deshalb hart.
+  // Nachgezogen wird der ABSTAND zum Flieger, nicht die absolute Position. Zieht man die Position
+  // nach, wächst der Rückstand mit der Fahrt und mit sinkender Bildrate — bei Mach 2 waren es rund
+  // 190 m, bei Warp 10 etwa 500 m, und der Flieger war nur noch ein Punkt. So bleibt das weiche
+  // Nachziehen in Kurven, aber der Abstand ist genau der, den camBackExtra() vorgibt.
   const camSpd = state.vel.length();
-  if(camSpd > 900) camera.position.copy(desired);
-  else camera.position.lerp(desired, Math.min(0.5, cfg.lerp * (1 + camSpd/120)));
+  const k = Math.min(0.5, cfg.lerp * (1 + camSpd/120));
+  _camOff.copy(camera.position).sub(state.pos);
+  _camDes.copy(desired).sub(state.pos);
+  camera.position.copy(state.pos).add(_camOff.lerp(_camDes, k));
   camera.lookAt(state.pos);
 }
 
