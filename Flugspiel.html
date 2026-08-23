@@ -2581,12 +2581,17 @@ function updateLocale(){
 // Auf welchen Himmelskörper fliegt man zu? Es zählt die Richtung, nicht die Entfernung — sonst
 // springt die Anzeige beim Vorbeiflug auf einen Körper um, den man gar nicht ansteuert.
 // Rückgabe: { def, dist } oder null.
+const EARTH_TARGET = { key:'earth', sym:'🌍', r:EARTH_R };
 function aimedBody(){
   if(!spacePlaced) return null;
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
   const to = new THREE.Vector3();
+  // Die Erde steht nicht in der Körperliste (sie ist eine eigene Kugel), zählt aber als Ziel —
+  // sonst zeigte die Anzeige beim Heimflug irgendeinen Himmelskörper statt der Erde.
+  const cands = bodies.slice();
+  if(earthBall) cands.push({ def:EARTH_TARGET, center:earthBall.position });
   let best = null, bestDot = -2, nearest = null, nd = Infinity;
-  for(const b of bodies){
+  for(const b of cands){
     to.copy(b.center).sub(state.pos);
     const d = Math.max(0, to.length() - b.def.r);
     if(d < nd){ nd = d; nearest = { def:b.def, dist:d, dot:-1 }; }
@@ -2898,7 +2903,9 @@ function nearestDestroyer(from){
 // count = wie viele von der Sorte unterwegs sind. Die Serenity bleibt einmalig: ihr Modell hat
 // 289.000 Dreiecke (22-mal so viel wie das Shuttle), mehrere Exemplare würden das Bild ausbremsen.
 // Nase-Richtung je Modell vermessen: Shuttle +Z, Razor Crest senkrecht (-Y), Serenity -X,
-// Star-Trek-Schiffe längs Z (Voyager -Z, Enterprise +Z). Alles wird auf „Nase = -Z" vorgedreht.
+// Star-Trek-Schiffe längs Z, beide mit der Nase auf +Z (bei der Voyager sind die Warpgondeln
+// breiter als der Bug — das hatte die erste Achsvermessung in die Irre geführt).
+// Alles wird auf „Nase = -Z" vorgedreht, so wie es das Spiel überall erwartet.
 // count = wie viele von der Sorte unterwegs sind. Die schweren Modelle wurden vereinfacht
 // (Vertex-Clustering, siehe WELTRAUM_PLAN.md): Serenity 288.678 -> 32.930, Voyager 147.206 -> 14.526,
 // Enterprise 49.588 -> 19.388, Razor Crest 38.112 -> 9.843 Dreiecke. Deshalb sind jetzt von allen
@@ -2907,7 +2914,7 @@ const SHIP_DEFS = [
   { key:'shuttle',    glb:()=>window.SHUTTLE_GLB,    len:37,  rot:[0, Math.PI, 0],    count:9 },
   { key:'razor',      glb:()=>window.RAZOR_GLB,      len:30,  rot:[Math.PI/2, 0, 0],  count:6 },
   { key:'serenity',   glb:()=>window.SERENITY_GLB,   len:60,  rot:[0, -Math.PI/2, 0], count:2 },
-  { key:'voyager',    glb:()=>window.VOYAGER_GLB,    len:340, rot:[0, 0, 0],          count:2 },
+  { key:'voyager',    glb:()=>window.VOYAGER_GLB,    len:340, rot:[0, Math.PI, 0],    count:2 },
   { key:'enterprise', glb:()=>window.ENTERPRISE_GLB, len:640, rot:[0, Math.PI, 0],    count:2 },
 ];
 const ships = [];
