@@ -692,6 +692,30 @@ Bild ergeben:
    waagerechter Abstand übrig (`back.x/z ≈ 0`) — die Kamera stand 14 m **über** dem Flieger und blickte
    senkrecht nach unten. Sie rechnet jetzt nur mit dem Gieren, genau wie die Verfolgerkamera im Spiel.
 
+**Zweiter Nachschlag: „ist null wie beim Mond und dem Mars".** Der Wiedereintritt hatte weiterhin
+seinen **eigenen Code**, und der wich in drei Punkten von `setupApproach()` ab — deshalb fühlte er sich
+anders an, obwohl die Symptome nach dem ersten Anlauf schon kleiner waren:
+
+1. **Kamera zieht nach.** `snapCamera()` setzte 40 m Abstand und +14 m Höhe, die Verfolgerkamera
+   strebt aber `cfg.dist * cc.dist` an — beim X-Wing **26,4 m** und **8 m**. Mit `lerp 0,06` kroch die
+   Kamera danach rund eine halbe Sekunde auf ihre Sollposition, und genau das sah man. `snapCamera()`
+   nimmt jetzt **exakt** die Stelle ein, die `updateCamera()` anstrebt (dieselbe Formel, gerechnet über
+   die waagerechte Nasenrichtung statt über eine Euler-Zerlegung, die bei senkrechter Nase singulär
+   ist). Das gilt für alle Ortswechsel, also auch Mond, Mars und Hangar.
+2. **Fluglage „manchmal" falsch.** Der Kurs wurde per `Euler.setFromQuaternion(quat, 'YXZ')` aus der
+   Weltraumlage gezogen. Diese Zerlegung ist bei senkrechter Nase **singulär** (Gimbal Lock) und bei
+   kopfüber-Lage um 180° verdreht — beides kommt beim Anflug aus dem All ständig vor. `atan2` auf eine
+   echte Richtung, wie es `setupApproach()` macht, ist immer eindeutig.
+3. **Kein Ziel, andere Fahrt.** 160–260 m/s ohne Ausrichtung statt der ruhigen 110 m/s auf einen Punkt.
+
+Die Erde läuft jetzt durch **denselben `setupApproach()`** wie Mond und Mars: Ziel ist der Punkt, an dem
+man die Kugel berührt, 1600 m Abstand, 900 m Höhe (Wolkenkratzer reichen bis 160 m, Berge bis 60 m —
+die Höhe ist also sicher). Dafür kennt `setupApproach()` jetzt auch Orte ohne Höhenraster; bei der Erde
+zählt die Meereshöhe.
+
+**Notausgang:** Weil der Wiedereintritt nur noch an der Erdkugel hängt, bleibt der alte Höhentest als
+Rückfallebene stehen — lädt `earth_glb.js` nicht, gäbe es sonst keinen Weg mehr zurück in die Inselwelt.
+
 **Die ISS ist landbar** — dasselbe Hangar-Szenario wie Todesstern und Star Destroyer, Andockradius
 `ISS_DOCK = 170` (die Station ist 120 m gross, etwas mehr als ihre Länge, sonst trifft man sie im
 Flug kaum). Dazu neu: eine Andock-Sperre `dockLock` von 6 s nach dem Verlassen eines Hangars. ISS und
