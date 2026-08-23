@@ -463,6 +463,16 @@ Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: 
 | dito | Über beiden steht eine **Leuchtsäule** (260 m, additiv) — sie erscheint auch, wenn das Modell noch nicht geladen ist. Damit ist immer sichtbar, wo Basis bzw. Rover stehen |
 | Warp bricht beim Wegfliegen ab | Die Richtungsprüfung war zu empfindlich: sie akzeptierte jede positive Komponente, also schon ein leichtes Schwenken. Jetzt muss die Fahrt zu **mindestens 30 %** auf den Körper zeigen. Dazu ruht die Bremse **6 s nach jedem Ortswechsel**, weil man direkt nach dem Start von Mond oder Mars noch dicht am Körper ist |
 
+### Nachtrag 4 — Screenshot-Feinschliff (23.08.2026)
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| X-Wing versinkt beim Landen | Der Boden-Raycast prüfte nur **einen** Punkt unter der Rumpfmitte. Auf zerklüftetem Grund stecken dann Flügelspitzen oder Nase im Hang. Jetzt werden **fünf Punkte** abgetastet (Mitte, ±6 m quer, ±7 m längs) und der höchste genommen — er setzt auf der höchsten Stelle auf |
+| Mondbasis zu klein | Auf das **Dreifache** vergrößert (Original 100 m) |
+| Leuchtsäule verdeckte die Basis | Von 6 m auf **1,6 m** Radius und von 35 % auf **12 %** Deckkraft, dafür höher — sie zeigt die Stelle, ohne im Weg zu stehen |
+| Verkehr an Basis und Rover | Zwei Schiffe pendeln dauerhaft: absteigen, kurz stehen, aufsteigen, an anderer Stelle wieder herunterkommen. Sie sind Klone der Weltraum-Modelle (kein zusätzlicher Speicher) und reine Kulisse |
+| Mehr Raumschiffe, gut beobachtbar | Shuttle 5×, Razor Crest 4×, Serenity 1×. Der Rückstand reicht jetzt von **−6 % bis +14 %**: manche überholen langsam, andere werden überholt, mancher zieht mit seinem eigenen Kurs quer. Kollision gibt es bei ihnen nicht |
+
 ---
 
 ## Verifikation (alle Etappen)

@@ -2100,7 +2100,10 @@ function preloadSpace(){
   preloadAsteroid();
   preloadGround('moon');
   preloadGround('mars');
-  preloadStationGLB(window.MOONBASE_GLB, (g)=>{ moonBaseObj = g; });
+  preloadStationGLB(window.MOONBASE_GLB, (g)=>{
+    g.scale.setScalar(3);          // im Original 100 m — als Station auf dem Mond zu zierlich
+    moonBaseObj = g;
+  });
   preloadStationGLB(window.ISS_GLB, (g)=>{ issObj = g; });
   // Der Rover ist nur ~4 m lang — auf 10 m gestreckt, damit man ihn aus der Luft erkennt.
   preloadStationGLB(window.ROVER_GLB, (g)=>{
@@ -2221,6 +2224,11 @@ function groundHeightAt(key, x, z){
 // (zerklüftetes Gelände, 59 m Rasterweite) — damit würde der Flieger im Boden landen.
 let groundHitY = null, groundHitX = 0, groundHitZ = 0;
 const _gRay = new THREE.Raycaster(), _gFrom = new THREE.Vector3(), _gDown = new THREE.Vector3(0,-1,0);
+// Der X-Wing ist ~10 m breit und ~12 m lang: es genügt nicht, die Höhe unter der Rumpfmitte zu
+// messen. Auf zerklüftetem Grund steckten sonst Flügelspitzen oder Nase im Hang. Deshalb werden
+// fünf Punkte unter dem Flieger abgetastet und der HÖCHSTE genommen — er setzt auf der höchsten
+// Stelle auf, statt einzusinken.
+const GROUND_PROBES = [[0,0], [6,0], [-6,0], [0,7], [0,-7]];
 function stepGroundExact(){
   groundHitY = null;
   const G = GROUNDS[locale];
@@ -2228,11 +2236,16 @@ function stepGroundExact(){
   const approx = groundHeightAt(locale, state.pos.x, state.pos.z);
   if(state.pos.y - approx > 300) return;            // weit oben genügt das Raster
   const T = G.tile;
-  const tile = G.tiles.get(Math.round(state.pos.x/T) + ',' + Math.round(state.pos.z/T));
-  if(!tile) return;
-  _gRay.set(_gFrom.set(state.pos.x, approx + 400, state.pos.z), _gDown);
-  const hit = _gRay.intersectObject(tile, true);
-  if(hit.length){ groundHitY = hit[0].point.y; groundHitX = state.pos.x; groundHitZ = state.pos.z; }
+  let best = null;
+  for(const [dx, dz] of GROUND_PROBES){
+    const px = state.pos.x + dx, pz = state.pos.z + dz;
+    const tile = G.tiles.get(Math.round(px/T) + ',' + Math.round(pz/T));
+    if(!tile) continue;
+    _gRay.set(_gFrom.set(px, approx + 400, pz), _gDown);
+    const hit = _gRay.intersectObject(tile, true);
+    if(hit.length && (best === null || hit[0].point.y > best)) best = hit[0].point.y;
+  }
+  if(best !== null){ groundHitY = best; groundHitX = state.pos.x; groundHitZ = state.pos.z; }
 }
 function updateGroundTiles(){
   const G = GROUNDS[locale];
@@ -2286,13 +2299,15 @@ function preloadStationGLB(dataUrl, cb){
 // Über beiden steht eine Leuchtsäule, damit man sie aus der Luft findet; sie erscheint auch dann,
 // wenn das Modell selbst noch nicht geladen ist — dann weiß man trotzdem, wo es hingehört.
 let roverAnchor = null;
-const beaconMat = new THREE.MeshBasicMaterial({ color:0x9fd8ff, transparent:true, opacity:0.35,
+let _lastBase = null;      // wo Basis bzw. Rover gerade stehen (für den Start-/Landeverkehr)
+// Dünner, blasser Lichtstrahl: der erste Versuch war so breit, dass er die Basis verdeckte.
+const beaconMat = new THREE.MeshBasicMaterial({ color:0x9fd8ff, transparent:true, opacity:0.12,
   blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide });
-const beaconGeo = new THREE.CylinderGeometry(6, 6, 260, 10, 1, true);
+const beaconGeo = new THREE.CylinderGeometry(1.6, 1.6, 600, 8, 1, true);
 let beaconObj = null;
 function showBeacon(x, y, z, col){
   if(!beaconObj){ beaconObj = new THREE.Mesh(beaconGeo, beaconMat); beaconObj.renderOrder = 995; scene.add(beaconObj); }
-  beaconObj.position.set(x, y + 130, z);
+  beaconObj.position.set(x, y + 300, z);
   beaconMat.color.setHex(col);
   beaconObj.visible = true;
 }
@@ -2312,6 +2327,7 @@ function placeGroundBase(){
     const y = groundHeightAt('moon', p.x, p.z);
     if(moonBaseObj){ moonBaseObj.position.set(p.x, y, p.z); moonBaseObj.visible = true; }
     showBeacon(p.x, y, p.z, 0x9fd8ff);
+    _lastBase = p;
   } else if(locale === 'mars'){
     // beim Sinkflug mit 10 % Schub steht der Landepunkt praktisch fest -> Rover daneben setzen
     const landing = (state.throttle <= VTOL_LAND && !state.onGround);
@@ -2322,6 +2338,7 @@ function placeGroundBase(){
     const y = groundHeightAt('mars', roverAnchor.x, roverAnchor.z);
     if(roverObj){ roverObj.position.set(roverAnchor.x, y, roverAnchor.z); roverObj.visible = true; }
     showBeacon(roverAnchor.x, y, roverAnchor.z, 0xffb060);
+    _lastBase = roverAnchor;
   }
 }
 
@@ -2604,6 +2621,52 @@ function updateSpaceHint(dt){
   spaceEl.style.opacity = (_spaceV.z < 1) ? '1' : '0';       // nur wenn vor der Kamera
 }
 
+// ---------- Start- und Landeverkehr an Basis bzw. Rover ----------
+// Zwei Schiffe pendeln dauerhaft: aufsteigen, verschwinden, an anderer Stelle wieder herunterkommen,
+// kurz stehen, wieder los. Sie nutzen dieselben Modelle wie der Weltraumverkehr (geklont, also ohne
+// zusätzlichen Speicher) und lassen sich nicht rammen — sie sind Kulisse.
+const PAD_CLIMB = 70;              // m/s beim Auf- und Absteigen
+const PAD_TOP = 1400;              // Höhe, in der sie verschwinden bzw. auftauchen
+const shipTpl = {};                // key -> Vorlage zum Klonen
+const pads = [];                   // { obj, phase, t, x, z, hold }
+function ensurePads(){
+  if(pads.length >= 2) return;
+  const keys = Object.keys(shipTpl);
+  if(!keys.length) return;
+  while(pads.length < 2){
+    const tpl = shipTpl[keys[pads.length % keys.length]];
+    const obj = tpl.clone(true);
+    obj.visible = false; scene.add(obj);
+    pads.push({ obj, phase:'down', t:0, x:0, z:0, hold:0 });
+  }
+}
+function padSpot(p){
+  const c = _lastBase;                          // neben der Basis bzw. dem Rover aufsetzen
+  const a = Math.random()*Math.PI*2, d = 70 + Math.random()*90;
+  p.x = (c ? c.x : state.pos.x) + Math.cos(a)*d;
+  p.z = (c ? c.z : state.pos.z) + Math.sin(a)*d;
+}
+function updatePads(dt){
+  if(!GROUNDS[locale]){ for(const p of pads) p.obj.visible = false; return; }
+  ensurePads();
+  for(const p of pads){
+    const gy = groundHeightAt(locale, p.x, p.z);
+    if(p.phase === 'down'){
+      if(!p.obj.visible){ padSpot(p); p.obj.position.set(p.x, gy + PAD_TOP, p.z); p.obj.visible = true; }
+      p.obj.position.y -= PAD_CLIMB*dt;
+      p.obj.lookAt(p.obj.position.x, p.obj.position.y - 100, p.obj.position.z);
+      if(p.obj.position.y <= gy + 2){ p.obj.position.y = gy + 2; p.phase = 'hold'; p.hold = 3 + Math.random()*6; }
+    } else if(p.phase === 'hold'){
+      p.hold -= dt;
+      if(p.hold <= 0) p.phase = 'up';
+    } else {
+      p.obj.position.y += PAD_CLIMB*dt;
+      p.obj.lookAt(p.obj.position.x, p.obj.position.y + 100, p.obj.position.z);
+      if(p.obj.position.y > gy + PAD_TOP){ p.obj.visible = false; p.phase = 'down'; }
+    }
+  }
+}
+
 // ---------- Fremde Raumschiffe im Weltall ----------
 // Sie fliegen einfach geradeaus ihre Bahn und werden neu eingesetzt, wenn sie zu weit weg sind.
 // Die Modelle liegen in ihren Dateien unterschiedlich: das Shuttle zeigt mit der Nase auf +Z, die
@@ -2612,8 +2675,8 @@ function updateSpaceHint(dt){
 // count = wie viele von der Sorte unterwegs sind. Die Serenity bleibt einmalig: ihr Modell hat
 // 289.000 Dreiecke (22-mal so viel wie das Shuttle), mehrere Exemplare würden das Bild ausbremsen.
 const SHIP_DEFS = [
-  { key:'shuttle',  glb:()=>window.SHUTTLE_GLB,  len:37, rot:[0, Math.PI, 0],       count:3 },
-  { key:'razor',    glb:()=>window.RAZOR_GLB,    len:30, rot:[Math.PI/2, 0, 0],     count:3 },
+  { key:'shuttle',  glb:()=>window.SHUTTLE_GLB,  len:37, rot:[0, Math.PI, 0],       count:5 },
+  { key:'razor',    glb:()=>window.RAZOR_GLB,    len:30, rot:[Math.PI/2, 0, 0],     count:4 },
   { key:'serenity', glb:()=>window.SERENITY_GLB, len:60, rot:[0, -Math.PI/2, 0],    count:1 },
 ];
 const ships = [];
@@ -2634,6 +2697,8 @@ function preloadShips(){
       const box1 = new THREE.Box3().setFromObject(obj);
       const c = new THREE.Vector3(); box1.getCenter(c);
       obj.position.sub(c);                       // Schwerpunkt in den Ursprung
+      shipTpl[def.key] = new THREE.Group();
+      shipTpl[def.key].add(obj.clone(true));            // Vorlage für den Start-/Landeverkehr
       for(let i = 0; i < (def.count || 1); i++){
         const wrap = new THREE.Group();
         wrap.add(i === 0 ? obj : obj.clone(true));      // Klone teilen Geometrie und Texturen
@@ -2650,7 +2715,9 @@ function placeShip(s){
   // eigener Kurs, mit dem sie „hin und her" ziehen — Waffen haben sie keine, nur die X-Wings schießen
   s.drift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize()
     .multiplyScalar(80 + Math.random()*170);
-  s.lag = 0.04 + Math.random()*0.10;
+  // Gemischt: negativ = etwas schneller als der Spieler (überholt ihn langsam), positiv = langsamer
+  // (wird überholt). Zusammen mit dem eigenen Kurs zieht mancher auch einfach quer durchs Bild.
+  s.lag = -0.06 + Math.random()*0.20;
   s.obj.visible = true;
 }
 function updateShips(dt){
@@ -4697,6 +4764,7 @@ function loop(now){
   updateWarp(dt);            // Hyperraum aufbauen/abbauen + Ring-Effekt
   updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
   updateShips(dt);           // fremde Raumschiffe ziehen ihre Bahn durchs Weltall
+  updatePads(dt);            // Start- und Landeverkehr an Mondbasis bzw. Mars-Rover
   updateSpaceHint(dt);       // Ort/Ziel/Treffer kurz über dem Flieger (wie Tropfen und Kisten)
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
