@@ -36,6 +36,8 @@
   #hint .hrow { display: flex; justify-content: space-between; gap: 10px; }
   #hint .hrow span { color: #9cf; white-space: nowrap; }
   #hint .hrow b { text-align: right; }
+  /* Symbolzeile (Wasser, Pakete, Menschen, Verkehr, X-Wing-Schubphase, Ort) — deutlich groesser */
+  #status { font-size: 30px; line-height: 1.25; letter-spacing: 2px; }
   #pad { position: absolute; bottom: 12px; left: 12px; color: #cfe;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.7); font-size: 14px; pointer-events: none; user-select: none; }
 </style>
@@ -43,8 +45,8 @@
 <body>
 <div id="hud">
   <div>Modell: <span id="mdl">SuperCup</span></div>
-  <div>Höhe: <span id="alt">0</span> m</div>
-  <div>Speed: <span id="spd">0</span> km/h</div>
+  <div id="altrow">Höhe: <span id="alt">0</span> m</div>
+  <div>Speed: <span id="spd">0</span><span id="spdu"> km/h</span></div>
   <div>Schub: <span id="thr">0</span> %</div>
   <div id="status" style="color:#ffd">am Boden</div>
 </div>
@@ -90,8 +92,9 @@
     <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, über Ziel-Insel B = abwerfen</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
-    <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit <b>80–100 %</b> steil steigen: ab 3 km wird der Himmel dunkel, ab 9 km Weltall</b></div>
-    <div class="hrow"><span>🌙 Mond</span><b>im Weltall zum Mond fliegen, dort landen (10 %). Hochsteigen = zurück ins Weltall</b></div>
+    <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 6 km Weltall</b></div>
+    <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10, vor jedem Himmelskörper bremst er selbst</b></div>
+    <div class="hrow"><span>🌙 Mond</span><b>anfliegen und mit 10 % landen · Mars &amp; Sonne kann man umkreisen</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -117,6 +120,9 @@
 <script src="earth_glb.js"></script>
 <script src="moon_glb.js"></script>
 <script src="crater_glb.js"></script>
+<script src="mars_glb.js"></script>
+<script src="sun_glb.js"></script>
+<script src="spacedrive_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -127,7 +133,7 @@ scene.fog = new THREE.Fog(0x87b8e8, 900, 3000);
 
 // far muss bis zu den Himmelskoerpern reichen (Mond ~26 km, Sternenkuppel 40 km). Bei diesem
 // Tiefenbereich braucht es einen logarithmischen Tiefenpuffer, sonst flimmern nahe Flaechen.
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 120000);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 1600000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -829,6 +835,9 @@ function spawnRescue(x, z, onLand) {
   }
   startSiren();
 }
+// Die Feuerwehr rückt nur in der Erdwelt aus — im Weltall und auf dem Mond gibt es keine.
+// Ohne sie läuft nur der Crash-Timer ab und resetPlane() setzt zurück auf die Erde.
+function crashRescue(x, z, onLand){ if(locale === 'earth') spawnRescue(x, z, onLand); }
 function clearRescue(){
   stopSiren();
   for(const r of rescueUnits){ scene.remove(r.group); scene.remove(r.jet); }
@@ -1707,7 +1716,7 @@ function triggerSonicBoom(){
 }
 function updateSonic(dt){
   const speed = state.vel.length();
-  const canSupersonic = spec.aero && speed >= SOUND_SPEED;   // nur Kunstflug-Jets (AlphaJet)
+  const canSupersonic = spec.aero && speed >= SOUND_SPEED && locale === 'earth';   // nur in der Luft
   if(canSupersonic && !wasSupersonic && !state.onGround) triggerSonicBoom();  // Flanke: Durchbruch
   wasSupersonic = canSupersonic;
   // Vapor-Cone animieren: kurzes Aufblitzen am/hinter dem Flieger
@@ -1999,19 +2008,37 @@ function preloadHarbor(){
 // Die x/z-Koordinaten laufen durch: die Inselwelt ist unendlich, man taucht also genau dort
 // wieder ein, wo man absinkt — es braucht keine Rückrechnung auf den Startpunkt.
 let locale = 'earth';
+// Höhengrenzen: unter 80 % Schub riegelt der Höhendeckel des Modells ab (X-Wing 3000 m). Ab 80 %
+// ist der Deckel offen: ab 3000 m dunkelt der Himmel ein, bei 6000 m ist man im Weltall.
 const ATMO_TOP  = 3000;     // ab hier wird der Himmel dunkler
-const SPACE_Y   = 9000;     // ab hier ist man im Weltall
+const SPACE_Y   = 6000;     // ab hier ist man im Weltall
 const SPACE_THR = 0.8;      // erst ab 80 % Schub traegt die Fahrt aus der Atmosphäre heraus
-const EARTH_R   = 6000;     // Radius der Erdkugel
-const MOON_R    = 2500;     // Radius der Mondkugel
-const MOON_DIST = 25000;    // Entfernung des Mondes vom Austrittspunkt
-const MOON_ENTER = MOON_R + 1500;   // so nah am Mond -> Wechsel auf die Mondoberfläche
+const EARTH_R   = 20000;    // Radius der Erdkugel
 const MOON_LEAVE_ALT = 4000;        // so hoch über dem Mondboden -> zurück ins Weltall
 const MOON_TILE = 2999;             // Kantenlänge des Krater-Patches (aus der GLB vermessen)
 const GRAV_AT = { earth: 9.81, moon: 1.62, space: 0 };   // Mond: 1/6 der Erdanziehung
+const STAR_R    = 1200000;  // Radius der Sternenkuppel (muss hinter allen Himmelskörpern liegen)
+// Tempo im Weltall: 100 % Schub = Warp 1 ("Lichtgeschwindigkeit" im Spielmaßstab). Wer 100 % hält,
+// rutscht in den Hyperraum und wird weiter schneller — bis Warp 10.
+const SPACE_C   = 3000;     // m/s = Warp 1
+const WARP_MAX  = 10;       // Warp 10 als Obergrenze
+const WARP_RAMP = 12;       // Sekunden von Warp 1 auf Warp 10
+// Himmelskörper: Radius, Entfernung vom Austrittspunkt, Richtung (wird normiert), landbar?
+const BODY_DEFS = [
+  { key:'moon', r:12000,  dist:150000, dir:[ 0.80, 0.50,-0.33], land:true  },
+  { key:'mars', r:30000,  dist:400000, dir:[-0.60, 0.70, 0.40], land:false },
+  { key:'sun',  r:120000, dist:900000, dir:[ 0.20, 0.90, 0.40], land:false },
+];
+const BODY_GLB = { moon:()=>window.MOON_GLB, mars:()=>window.MARS_GLB, sun:()=>window.SUN_GLB };
+const bodies = BODY_DEFS.map(def => ({ def, obj:null, center:new THREE.Vector3() }));
+const bodyOf = (key)=> bodies.find(b => b.def.key === key);
 
-let starDome = null, starMat = null, earthBall = null, moonBall = null, craterTemplate = null;
-const moonCenter = new THREE.Vector3();
+let starDome = null, starMat = null, earthBall = null, craterTemplate = null;
+// warpDrive = Aufbau des Antriebs (bestimmt, wie schnell er werden KANN; wächst bei 100 % Schub).
+// warpVis   = wie tief er tatsächlich im Hyperraum steckt — haengt allein an der GESCHWINDIGKEIT und
+//             blendet den Effekt gleitend ein, genau wie der Uebergang Himmel -> Weltall.
+let warpDrive = 0, warpVis = 0, warpRing = null, warpMat = null, warpSpin = 0;
+function warpFactor(){ return 1 + (WARP_MAX-1)*warpDrive; }
 let spaceBlend = 0;                 // 0 = Tageshimmel, 1 = Weltall
 const SKY_DAY = new THREE.Color(0x87b8e8), SKY_SPACE = new THREE.Color(0x02030a);
 const _skyC = new THREE.Color();
@@ -2034,15 +2061,43 @@ function preloadSphereGLB(dataUrl, radius, cb){
 }
 function preloadSpace(){
   // Sternenkuppel: exakte Kugelschale, von innen sichtbar, lichtunabhängig, blendet mit der Höhe ein
-  preloadSphereGLB(window.STARS_GLB, 40000, (g)=>{
+  preloadSphereGLB(window.STARS_GLB, STAR_R, (g)=>{
     starMat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide,
                                             transparent:true, opacity:0, depthWrite:false });
     g.traverse(o=>{ if(o.isMesh){ o.material = starMat; o.renderOrder = -1; } });
     g.visible = false; starDome = g; scene.add(g);
   });
   preloadSphereGLB(window.EARTH_GLB, EARTH_R, (g)=>{ g.visible = false; earthBall = g; scene.add(g); });
-  preloadSphereGLB(window.MOON_GLB,  MOON_R,  (g)=>{ g.visible = false; moonBall  = g; scene.add(g); });
+  for(const b of bodies){
+    const data = BODY_GLB[b.def.key] && BODY_GLB[b.def.key]();
+    preloadSphereGLB(data, b.def.r, (g)=>{ g.visible = false; b.obj = g; scene.add(g); });
+  }
+  preloadWarpRing();
   preloadCrater();
+}
+// Hyperraum-Ring (Spacedrive-Torus): liegt im Modell flach in der XZ-Ebene, wird aufgestellt und
+// zentriert, damit er als Röhre um den Flieger sitzt. Eigenes additives Material -> leuchtet immer.
+function preloadWarpRing(){
+  if(!window.SPACEDRIVE_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.SPACEDRIVE_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    obj.rotation.x = Math.PI/2;                       // Ringebene senkrecht zur Flugachse
+    const box0 = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box0.getSize(size);
+    obj.scale.setScalar(44 / Math.max(size.x, size.y, size.z));   // ~44 m Außendurchmesser
+    const box1 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box1.getCenter(c);
+    obj.position.sub(c);                              // Ringmitte auf den Ursprung
+    warpMat = new THREE.MeshBasicMaterial({ color:0x88a0ff, transparent:true, opacity:0,
+      blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide });
+    obj.traverse(o=>{ if(o.isMesh){ o.material = warpMat; o.renderOrder = 996; } });
+    const wrap = new THREE.Group(); wrap.add(obj);
+    wrap.visible = false; warpRing = wrap; scene.add(wrap);
+  }, (err)=>{ console.warn('Spacedrive-GLB Ladefehler:', err); });
 }
 
 // ---------- Mondoberfläche: kachelnde Kraterlandschaft ----------
@@ -2153,24 +2208,29 @@ function enterSpace(){
   locale = 'space';
   // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
   if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
-  if(moonBall){
-    moonCenter.set(state.pos.x + MOON_DIST*0.8, SPACE_Y + MOON_DIST*0.5, state.pos.z - MOON_DIST*0.4);
-    moonBall.position.copy(moonCenter); moonBall.visible = true;
+  // Himmelskörper vom Austrittspunkt aus in ihre Richtungen setzen
+  for(const b of bodies){
+    const d = new THREE.Vector3(b.def.dir[0], b.def.dir[1], b.def.dir[2]).normalize();
+    b.center.copy(state.pos).addScaledVector(d, b.def.dist);
+    if(b.obj){ b.obj.position.copy(b.center); b.obj.visible = true; }
   }
   earthWorldVisible(false);
   showBig('🚀');
 }
 function enterEarth(){
   locale = 'earth';
+  warpDrive = 0; warpVis = 0;
   if(earthBall) earthBall.visible = false;
-  if(moonBall)  moonBall.visible  = false;
+  for(const b of bodies) if(b.obj) b.obj.visible = false;
   clearMoonTiles();
   earthWorldVisible(true);
   showBig('🌍');
 }
 function enterMoon(){
   locale = 'moon';
-  if(moonBall) moonBall.visible = false;              // man ist jetzt darauf
+  warpDrive = 0; warpVis = 0;
+  const mb = bodyOf('moon');
+  if(mb && mb.obj) mb.obj.visible = false;            // man ist jetzt darauf
   earthWorldVisible(false);
   // Landeanflug: über der Basiskachel einsetzen, Fahrt auf ein handliches Maß bringen
   state.pos.set(0, moonHeightAt(0,0) + 900, 0);
@@ -2183,9 +2243,10 @@ function enterMoon(){
 function leaveMoon(){
   locale = 'space';
   clearMoonTiles();
+  const mb = bodyOf('moon');
   // knapp über der Mondkugel wieder ins Weltall setzen (Fahrt und Blickrichtung bleiben)
-  state.pos.copy(moonCenter).add(new THREE.Vector3(0, MOON_R + 1800, 0));
-  if(moonBall)  moonBall.visible  = true;
+  if(mb) state.pos.copy(mb.center).add(new THREE.Vector3(0, mb.def.r*1.4, 0));
+  for(const b of bodies) if(b.obj) b.obj.visible = true;
   if(earthBall) earthBall.visible = true;
   showBig('🚀');
 }
@@ -2194,11 +2255,62 @@ function updateLocale(){
   if(locale === 'earth'){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
-    if(moonBall && state.pos.distanceTo(moonCenter) < MOON_ENTER) enterMoon();
-    else if(state.pos.y < SPACE_Y) enterEarth();
+    if(!updateSpaceBodies() && state.pos.y < SPACE_Y) enterEarth();
   } else {
     if(state.pos.y - moonHeightAt(state.pos.x, state.pos.z) > MOON_LEAVE_ALT) leaveMoon();
   }
+}
+// Himmelskörper im Weltall: Anflug, Hyperraum-Bremse und Orbit-Grenze.
+// Gibt true zurück, wenn der Ort gewechselt wurde.
+function updateSpaceBodies(){
+  for(const b of bodies){
+    if(!b.obj) continue;
+    const d = state.pos.distanceTo(b.center);
+    // Kurz vor dem Himmelskörper aus dem Hyperraum fallen, damit man ihn in Ruhe ansehen kann
+    if(d < b.def.r*3 && warpDrive > 0.02){
+      warpDrive = 0;
+      if(state.throttle > 0.5) state.throttle = 0.5;
+      showBig('🛑');
+    }
+    if(b.def.land){
+      if(d < b.def.r + 1500){ enterMoon(); return true; }
+    } else if(d < b.def.r + 300){
+      // Orbit-Grenze: nur die Bewegung ZUM Körper hin wird gestoppt, seitlich fliegt er weiter.
+      // So kann man ihn umkreisen, ohne hineinzufliegen (Landung dort kommt später).
+      const n = state.pos.clone().sub(b.center).normalize();
+      const radial = state.vel.dot(n);
+      if(radial < 0) state.vel.addScaledVector(n, -radial);
+      state.pos.copy(b.center).addScaledVector(n, b.def.r + 300);
+    }
+  }
+  return false;
+}
+// Hyperraum: kein Tor und kein Schalter — wer im Weltall 100 % hält, wird immer schneller
+// (Antriebsaufbau bis Warp 10), und der Hyperraum blendet sich GLEITEND MIT DER GESCHWINDIGKEIT ein.
+function updateWarp(dt){
+  const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
+  warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
+  // Sicht-Anteil rein aus dem Tempo: ab Warp 0,8 beginnt es, bei Warp 10 ist es voll da.
+  const warp = (locale === 'space') ? state.vel.length()/SPACE_C : 0;
+  const wv = Math.max(0, Math.min(1, (warp - 0.8) / (WARP_MAX - 0.8)));
+  const before = warpVis;
+  warpVis += (wv - warpVis) * Math.min(1, 4*dt);        // sanft nachziehen, kein Aufblitzen
+  if(before <= 0.02 && warpVis > 0.02){ playSonicBoom(); rumble(350, 0.8, 0.6); }   // Warp-Schwelle
+  warpSpin += dt*3;
+  if(warpRing){
+    warpRing.visible = warpVis > 0.01;
+    if(warpRing.visible){
+      warpRing.position.copy(state.pos);
+      warpRing.quaternion.copy(state.quat);
+      warpRing.rotateZ(warpSpin);
+      const s = 1 + warpVis*0.4;
+      warpRing.scale.set(s, s, s);
+      if(warpMat) warpMat.opacity = 0.15 + 0.6*warpVis;
+    }
+  }
+  // Himmelskörper langsam drehen (die Sonne etwas flotter)
+  if(locale === 'space') for(const b of bodies)
+    if(b.obj) b.obj.rotation.y += dt * (b.def.key === 'sun' ? 0.05 : 0.02);
 }
 // Sanfter Übergang Himmel -> Weltall: Farben, Nebel, Licht, Sterne, Erdkugel.
 function updateSpaceBlend(dt){
@@ -2209,8 +2321,8 @@ function updateSpaceBlend(dt){
   _skyC.copy(SKY_DAY).lerp(SKY_SPACE, f);
   scene.background.copy(_skyC);
   scene.fog.color.copy(_skyC);
-  scene.fog.near = 900  + f*60000;          // Nebel praktisch aus, sobald es dunkel wird
-  scene.fog.far  = 3000 + f*400000;
+  scene.fog.near = 900  + f*200000;         // Nebel praktisch aus, sobald es dunkel wird
+  scene.fog.far  = 3000 + f*1500000;
   hemiLight.intensity = 1.0  - 0.85*f;      // im All bleibt nur wenig Streulicht
   sun.intensity       = 0.85 + 0.35*f;      // dafür knallt die Sonne härter
   if(starDome){
@@ -2221,7 +2333,7 @@ function updateSpaceBlend(dt){
   // Auf dem Mond hängt die Erde als Kugel am Himmel und wandert mit (wie eine Kulisse)
   if(locale === 'moon' && earthBall){
     earthBall.visible = true;
-    earthBall.position.set(state.pos.x + 26000, 14000, state.pos.z - 18000);
+    earthBall.position.set(state.pos.x + 90000, 45000, state.pos.z - 60000);
   }
 }
 
@@ -2322,6 +2434,7 @@ buildModel(MODEL_NAMES[0]);
 spec = PLANE_SPECS[MODEL_NAMES[0]] || DEFAULT_SPEC;
 
 function cycleModel() {
+  if(locale !== 'earth') enterEarth();       // nur der X-Wing kann im Weltall sein
   currentModel = (currentModel+1) % MODEL_NAMES.length;
   document.getElementById('mdl').textContent = MODEL_NAMES[currentModel];
   buildModel(MODEL_NAMES[currentModel]);
@@ -2786,7 +2899,7 @@ function stepPhysics(dt, inp){
       state.quat.setFromEuler(new THREE.Euler(0.15, wreckE.y, 0.4, 'YXZ'));
       planeGroup.position.copy(state.pos);
       planeGroup.quaternion.copy(state.quat);
-      spawnRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
+      crashRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
       return;
     }
     planeGroup.position.copy(state.pos);
@@ -2834,7 +2947,9 @@ function stepPhysics(dt, inp){
   // gedeckelt -> kein Selbst-Steigen; Höhe kommt aus der Nase (Pitch). Sturz beschleunigt,
   // Steigflug bremst (über die Vektorzerlegung von Schwerkraft/Nase).
   const GRAV = GRAV_AT[locale] !== undefined ? GRAV_AT[locale] : 9.81;   // Mond leichter, Weltall schwerelos
-  const vMax = spec.vMax;
+  // Im Weltall gilt nicht die Luft-Höchstgeschwindigkeit, sondern Warp: 100 % = Warp 1,
+  // im Hyperraum wächst das weiter bis Warp 10.
+  const vMax = (locale === 'space') ? SPACE_C * warpFactor() : spec.vMax;
   const speed = state.vel.length();
   // X-Wing (VTOL): unter 30 % Schub übernehmen die Repulsoren. vtolMix blendet Vortrieb,
   // Schwerkraft und Auftrieb aus (1 = ganz aus bei <= 20 %, 0 = normaler Flug ab 30 %), damit
@@ -2846,7 +2961,8 @@ function stepPhysics(dt, inp){
   const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
   const fwdSpeed = state.vel.dot(forward);                     // aktuelle Fahrt in Nasenrichtung
   const dv = targetV - fwdSpeed;
-  const aMax = boosting ? spec.accel*1.6 : spec.accel;         // Boost (X/Shift): extra Beschleunigung
+  const aMax = (locale === 'space') ? SPACE_C                  // im Vakuum zieht der Antrieb voll durch
+             : (boosting ? spec.accel*1.6 : spec.accel);        // Boost (X/Shift): extra Beschleunigung
   const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), aMax) * vtolRest;  // m/s², begrenzt
   const accel = new THREE.Vector3();
   if(dv < 0){
@@ -2856,7 +2972,10 @@ function stepPhysics(dt, inp){
     // statt eines echten Absturzes. Im Waagerechtflug ist das identisch zu vorher.
     // Zusätzlich blendet die Bremse mit steigender Sinkrate aus (voll bis -4 m/s, ab -12 m/s gar
     // nicht mehr): im Sturz soll er Fahrt GEWINNEN. Der Umkehrschub (A/C halten) bremst immer.
-    const bFade = (state.throttle < 0) ? 1 : Math.max(0, Math.min(1, (state.vel.y + 12) / 8));
+    // Ausblenden gilt nur in der Erdatmosphäre — im Weltall/auf dem Mond gibt es keinen Sturzflug,
+    // dort soll der Antrieb immer sauber auf die Zielgeschwindigkeit herunterregeln.
+    const bFade = (locale !== 'earth' || state.throttle < 0) ? 1
+                : Math.max(0, Math.min(1, (state.vel.y + 12) / 8));
     const hx = state.vel.x, hz = state.vel.z, hl = Math.hypot(hx, hz);
     if(hl > 0.001 && bFade > 0){ const b = Math.abs(push)*bFade; accel.x -= (hx/hl)*b; accel.z -= (hz/hl)*b; }
   } else {
@@ -3002,7 +3121,7 @@ function stepPhysics(dt, inp){
       const w = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
       state.quat.setFromEuler(new THREE.Euler(0.15, w.y, 0.4, 'YXZ'));
       planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
-      spawnRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
+      crashRescue(state.pos.x, state.pos.z, isOnLand(state.pos.x, state.pos.z));
       return;
     }
     planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
@@ -3037,7 +3156,7 @@ function stepPhysics(dt, inp){
         state.pos.y = GROUND_Y;
         planeGroup.position.copy(state.pos);
         planeGroup.quaternion.copy(state.quat);
-        spawnRescue(state.pos.x, state.pos.z, overLand);
+        crashRescue(state.pos.x, state.pos.z, overLand);
         return;
       }
     }
@@ -3052,7 +3171,7 @@ function stepPhysics(dt, inp){
       state.pos.y = GROUND_Y;
       planeGroup.position.copy(state.pos);
       planeGroup.quaternion.copy(state.quat);
-      spawnRescue(state.pos.x, state.pos.z, overLand);
+      crashRescue(state.pos.x, state.pos.z, overLand);
       return;
     }
     state.pos.y = GROUND_Y;
@@ -3143,12 +3262,22 @@ function recycleWorld(){
 
 // ---------- HUD ----------
 const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd'),
-      elThr=document.getElementById('thr'), elStat=document.getElementById('status');
+      elThr=document.getElementById('thr'), elStat=document.getElementById('status'),
+      elAltRow=document.getElementById('altrow'), elSpdU=document.getElementById('spdu');
 function updateHUD(){
-  // Auf dem Mond die Höhe ÜBER DEM KRATERBODEN zeigen (der schwankt um ±60 m).
+  // Im Weltall gibt es keine sinnvolle Höhe -> Zeile ausblenden. Auf dem Mond zählt die Höhe
+  // ÜBER DEM KRATERBODEN (der schwankt um ±60 m).
+  if(elAltRow) elAltRow.style.display = (locale === 'space') ? 'none' : '';
   const altRef = (locale === 'moon') ? moonHeightAt(state.pos.x, state.pos.z) : 0.3;
   elAlt.textContent=Math.max(0,Math.round(state.pos.y-altRef));
-  elSpd.textContent=Math.round(state.vel.length()*3.6);
+  // Im Weltall wird in Warp gerechnet (Warp 1 = 100 % Schub), sonst in km/h.
+  if(locale === 'space'){
+    elSpd.textContent = 'Warp ' + (state.vel.length()/SPACE_C).toFixed(1);
+    if(elSpdU) elSpdU.textContent = '';
+  } else {
+    elSpd.textContent = Math.round(state.vel.length()*3.6);
+    if(elSpdU) elSpdU.textContent = ' km/h';
+  }
   elThr.textContent=Math.round(state.throttle*100);
   // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
   // 💧-Reihe = Tankfüllung, 🔥 = aktives Feuer.
@@ -3185,6 +3314,15 @@ function updateHUD(){
 const radarCv = document.getElementById('radar');
 const radarCtx = radarCv.getContext('2d');
 function activeTarget(){
+  if(locale === 'space'){          // im Weltall immer der nächste Himmelskörper
+    let best = null, bd = Infinity;
+    for(const b of bodies){
+      if(!b.obj) continue;
+      const d = state.pos.distanceTo(b.center);
+      if(d < bd){ bd = d; best = b; }
+    }
+    return best ? { x:best.center.x, z:best.center.z, col:'#88ccff' } : null;
+  }
   if(!missionsOn) return null;
   if(isCanadair() && fire) return {x:fire.x, z:fire.z, col:(state.water>0?'#33cc44':'#cc4444')};
   if(isTransall() && cargoTarget) return {x:cargoTarget.x, z:cargoTarget.z, col:(crateLoad>0?'#e8c020':'#cc4444')};
@@ -4014,6 +4152,7 @@ function loop(now){
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
   stepMoonField();           // Höhenraster des Mondes in Häppchen ausmessen
   updateLocale();            // Erde <-> Weltall <-> Mond
+  updateWarp(dt);            // Hyperraum aufbauen/abbauen + Ring-Effekt
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(locale === 'moon') updateMoonTiles();

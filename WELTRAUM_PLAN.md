@@ -20,7 +20,7 @@ fliegt und dort landet. Mars und Sonne kann er umkreisen.
 
 - [x] **Etappe 1** — X-Wing als spielbares Modell mit VTOL (Erde) — *fertig 23.08.2026*
 - [x] **Etappe 2** — Weltall-Übergang, Erdkugel, Mondlandung — *fertig 23.08.2026*
-- [ ] **Etappe 3** — Hyperraum, Mars, Sonne
+- [x] **Etappe 3** — Hyperraum, Mars, Sonne — *fertig 23.08.2026*
 
 ---
 
@@ -297,6 +297,49 @@ Nachgerechnet (`C:\tmp\vtolsim6.js`):
 
 **Test** — im Weltall 100 % → Hyperraum mit Tunnel-Effekt · Anflug auf Mars/Sonne bremst
 automatisch aus dem Hyperraum · einmal um beide herumfliegen, ohne hineinzufliegen.
+
+### Stand: erledigt (23.08.2026)
+
+Zusammen mit Etappe 3 sind die Rückmeldungen aus dem Weltall-Testflug eingeflossen.
+
+**Korrekturen**
+
+| Punkt | Umsetzung |
+|---|---|
+| Weltall soll früher beginnen | Übergang 3001–6000 m, Weltall ab **6000 m** (war 9000). Unter 80 % Schub riegelt der Höhendeckel des Modells weiter bei 3000 m ab — das ist die Grenze, nach der gefragt wurde |
+| Nur der X-Wing gehört ins Weltall | **Modellwechsel** kehrt sofort zur Erde zurück |
+| Reset startet immer auf der Erde | war schon so, bleibt |
+| Keine Feuerwehr im Weltall | alle Feuerwehr-Aufrufe des Spielers laufen über `crashRescue()`, das nur in der Erdwelt ausrückt. Ohne sie läuft nur der Crash-Timer ab, dann Neustart auf der Erde |
+| Keine Höhe im Weltall | HUD-Zeile wird dort ausgeblendet; auf dem Mond bleibt die Höhe über dem Kraterboden |
+| Symbole größer | `#status` (dieselbe Zeile wie Wasser, Pakete, Menschen) auf 30 px — dort stehen jetzt auch Ort und X-Wing-Schubphase |
+| Überschallknall im Vakuum | nur noch in der Erdwelt |
+
+**Tempo im Weltall (Warp)**
+
+- 100 % Schub = **Warp 1** (`SPACE_C` = 3000 m/s im Spielmaßstab). Wer 100 % hält, baut den Antrieb
+  über 12 s bis **Warp 10** auf (30000 m/s); geht er vom Gas, fällt der Aufbau zurück.
+- Der **sichtbare Hyperraum** hängt allein an der Geschwindigkeit und blendet gleitend ein (ab
+  Warp 0,8 bis Warp 10) — kein Tor, kein Schalter, dieselbe Logik wie der Übergang Himmel → Weltall.
+  Als Effekt sitzt der Spacedrive-Torus als leuchtende Röhre um den Flieger und dreht sich mit.
+- Im Vakuum zieht der Antrieb mit voller Kraft durch, und die Bremse regelt wieder auf jeder Achse —
+  die Sturz-Ausblendung gilt nur in der Atmosphäre.
+- Das HUD zeigt im Weltall **Warp x,x** statt km/h.
+
+**Himmelskörper** (Tabelle `BODY_DEFS`, vom Austrittspunkt aus in ihre Richtungen gesetzt)
+
+| Körper | Radius | Entfernung | Scheinbare Größe | Verhalten |
+|---|---|---|---|---|
+| Mond | 12 km | 150 km | ~9° | landbar → Kraterlandschaft |
+| Mars | 30 km | 400 km | ~8,6° | Orbit-Grenze bei Radius + 300 m |
+| Sonne | 120 km | 900 km | ~15° | Orbit-Grenze, leuchtet selbst (emissiv) |
+
+Die Orbit-Grenze nimmt nur die **radiale** Geschwindigkeit heraus und lässt die tangentiale stehen —
+man gleitet also sauber am Körper vorbei und kann ihn umkreisen. Landungen auf Mars und Sonne sind
+bewusst noch nicht dabei.
+
+Dazu: Erdkugel auf 20 km Radius vergrößert (füllt beim Austritt den Blick nach unten), Sternenkuppel
+auf 1200 km, Kamera-`far` auf 1600000. Das Radar zeigt im Weltall auf den nächstgelegenen
+Himmelskörper.
 
 ---
 
