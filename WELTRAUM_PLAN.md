@@ -394,6 +394,48 @@ zentriert; die Skalierung einer Kopie **ist** damit ihr Radius, was die Trefferp
 | Große Symbole sollen wieder verschwinden | Sie stehen nur noch **3 s** und sind ereignisgesteuert: Ortswechsel, Wechsel des angeflogenen Ziels (mit Entfernung) und Asteroiden-Treffer (dann **nur** der Zähler). Bei Trefferserien setzt jeder Treffer den Timer neu. Der Ortswechsel läuft nicht mehr über `showBig()` in der Bildmitte, sondern über dieselbe Anzeige. Damit die Suchhilfe nicht verloren geht, stehen Ort und Zielentfernung dauerhaft klein in der HUD-Statuszeile |
 | X-Wing als erstes Modell | `MODEL_NAMES` beginnt mit `'XWing'` — das Spiel startet damit auf der Landebahn. Das alte „SuperCup" in der Modellanzeige (Überbleibsel im HTML) ist ersetzt |
 
+## Phase 5 und 6 — Mars landbar, Stationen, Raumschiffe, Todesstern (23.08.2026)
+
+**Korrekturen zuvor**
+
+| Rückmeldung | Umsetzung |
+|---|---|
+| Symbol blieb dauerhaft stehen | Es wird nur noch bei einem **echten** Statuswechsel gezeigt: Ortswechsel oder ein neu angeflogener Körper, wobei der Anflug eng (Winkel > ~25°) und **mindestens eine Sekunde stabil** sein muss. Vorher triggerte jeder Schwenk neu. Gezeigt wird jetzt nur das Symbol, ohne Entfernung |
+| Übergänge dauern zu lang | Erde: Übergang 3000–4000 m (Weltall ab 4000 statt 6000), Rückkehr unter 2200 m. Mond: zurück ins All ab **1000 m**, Mars ab **2000 m** |
+| X-Wing versinkt beim Landen | Höhenraster auf 128×128 verfeinert, dazu in Bodennähe **ein echter Raycast pro Frame** gegen die Kachel unter dem Flieger. Nötig, weil das Raster auf dem zerklüfteten Mars bis zu **65 m** abweicht — damit wäre der Flieger im Boden gelandet. Weiter oben genügt das Raster (billiger) |
+
+**Mars ist landbar** — die Oberflächenlogik ist jetzt generisch (Tabelle `GROUNDS` für `moon` und
+`mars`): gleiche Spiegel-Kachelung, gleiches Höhenraster, gleicher Raycast. Vermessen:
+
+| | Mond (Giordano Bruno) | Mars (Aram Chaos) |
+|---|---|---|
+| Kachel | 2999 m | **7494 m** (nicht 7497: die z-Ausdehnung ist 3 m kleiner, sonst fielen 256 Rasterpunkte aus der Geometrie) |
+| Terrain-Dreiecke | 2.667 | 37.314 |
+| verworfen | 304 (Sockel) | 648 (Sockel + Maßstabs-Platte) |
+| Höhen | −72,9 … 48,7 m | −133,3 … 0 m |
+| Naht (Mirror-Tiling) | 0,000 m | 0,000 m |
+| Rasterfehler | 0,18 m ⌀ / 3,97 m max | 2,18 m ⌀ / 64,96 m max → deshalb der Raycast |
+| Schwerkraft | 1,62 m/s² | 3,71 m/s² |
+
+**Neue Modelle**
+
+- **Mondbasis** (eggshell.d) neben dem Aufsetzpunkt auf dem Mond, **Perseverance-Rover**
+  (Thomas Flynn, auf 10 m gestreckt — im Original nur 4 m und aus der Luft unsichtbar) auf dem Mars.
+- **ISS** (colinf) hängt in Erdnähe, gleich beim Austritt in Sichtweite, und dreht sich langsam.
+- **Drei Raumschiffe** fliegen geradeaus ihre Bahnen durchs All und werden neu eingesetzt, wenn sie
+  weiter als 26 km weg sind: **Space Shuttle** (37 m), **Razor Crest** (30 m), **Serenity** (60 m).
+  Ihre Modelle liegen unterschiedlich in ihren Dateien — Shuttle Nase +Z, Razor Crest senkrecht
+  (Nase −Y), Serenity längs (Nase −X); jedes wird im Wrapper so vorgedreht, dass außen einheitlich
+  „Nase = −Z" gilt.
+- **Todesstern** (Sebastian Sosnowski) als vierter Himmelskörper: 20 km Radius in 250 km Entfernung,
+  nur umkreisbar.
+
+**Größe und Last** — das GLB-Bundle liegt jetzt bei **183,5 MB** (Serenity allein 31 MB base64,
+Rover 19 MB). Auch die Dreiecksbilanz ist gewachsen: im Weltall grob 675.000 Dreiecke (Serenity
+289.000, sechs KI-X-Wings 228.000), auf dem Mars rund 535.000 (Kacheln 336.000, Rover 199.000).
+Falls es auf dem Tablet ruckelt, sind die Stellschrauben in dieser Reihenfolge: `AI_XW_COUNT`
+(6 → 3 spart 114.000 Dreiecke), `AST_COUNT`, und das Kachelraster der Marsfläche (3×3 → 2×2).
+
 ---
 
 ## Verifikation (alle Etappen)

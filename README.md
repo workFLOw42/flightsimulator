@@ -96,11 +96,19 @@ das Radar zeigt die Richtung. Der Mond
 liegt immer genau in der Richtung, in die man die Atmosphäre verlassen hat. Zurück auf die Erde geht es
 erst **unter 2,5 km** — beim Suchen fällt man also nicht versehentlich heim.
 
-Drei Ziele hängen dort draußen: der **Mond** (150 km), der **Mars** (400 km) und die **Sonne** (900 km).
-Mars und Sonne kann man **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihnen hin,
-seitlich fliegt man weiter. Beim **Mond** geht es hinunter: unter dem X-Wing liegt dann eine **echte
-Mondlandschaft** (der Giordano-Bruno-Krater), die sich endlos fortsetzt, mit **einem Sechstel der
-Erdanziehung** — die Landung mit 10 % Schub ist ganz sanft, und am Himmel steht die Erde.
+Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250 km), der **Mars**
+(400 km) und die **Sonne** (900 km).
+
+**Landen** kann man auf **Mond** und **Mars**: unter dem X-Wing liegt dann eine echte Landschaft, die
+sich endlos fortsetzt — auf dem Mond der **Giordano-Bruno-Krater** mit einem Sechstel der Erdanziehung
+und einer **Mondbasis** neben dem Aufsetzpunkt, auf dem Mars die **Aram-Chaos-Region** mit gut einem
+Drittel Anziehung und dem **Perseverance-Rover**. Am Himmel steht dabei die Erde.
+
+**Todesstern und Sonne** kann man nur **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung
+zu ihnen hin, seitlich fliegt man weiter.
+
+Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle**,
+**Razor Crest** und **Serenity** fliegen ihre eigenen Kurse durchs All.
 
 **Asteroiden abschießen**: Im Weltall treiben 20 Felsbrocken (60–200 m) auf zufälligen Kursen umher.
 Sie **passen ihr Tempo dem Flieger an** und bleiben nur 2–8 % zurück — man zieht also langsam an ihnen
@@ -168,6 +176,14 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Sun | **Sebastian Sosnowski** |
 | Spacedrive | **tamminen** |
 | Asteroid 01 | **exabyte** |
+| Mars – Aram Chaos Region | **Sebastian Sosnowski** |
+| Moonbase | **eggshell.d** |
+| ISS | **colinf** |
+| Space Shuttle | **Jan Tesař** |
+| Razor Crest (Star Wars) | **Quiznos323** |
+| Serenity | **mohamedhussien** |
+| Perseverance (NASA Mars Landing 2021) | **Thomas Flynn** |
+| Death Star (Star Wars) | **Sebastian Sosnowski** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
