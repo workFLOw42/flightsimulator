@@ -678,6 +678,20 @@ Kugel. Ein wirklich fliessender Übergang hiesse, das Terrain auf eine Kugel zu 
 Umbau, der Kollision und Landung berührt. Stattdessen kaschiert ein 0,4 s langes Aufblenden aus
 Schwarz (`flashFade`) den Schnitt.
 
+**Nachschlag: der Wiedereintritt fühlte sich anders an als eine Mondlandung** („ich bremse, blicke
+plötzlich von der Erde weg und sehe den X-Wing nicht mehr"). Zwei Ursachen, die zusammen genau dieses
+Bild ergeben:
+
+1. Die **Fluglage aus dem Weltall** wurde übernommen. Wer von oben anfliegt, hat die Nase steil nach
+   unten — der Flieger kam also im Sturzflug mit 260 m/s aus 2100 m in die Inselwelt und schlug binnen
+   Sekunden im Meer auf, daher „nicht mehr steuerbar" (das war die Feuerwehr-Kamera). Beim Mond
+   passiert das nicht, weil `setupApproach()` dort waagerecht einsetzt. Jetzt wird auch bei der Erde
+   nur der **Kurs** übernommen, Nicken und Rollen fallen weg, die Fahrt liegt bei 160–260 m/s und der
+   Schub bei 40–50 %.
+2. `snapCamera()` rechnete mit der **vollen Nasenrichtung**. Bei senkrechter Nase bleibt kein
+   waagerechter Abstand übrig (`back.x/z ≈ 0`) — die Kamera stand 14 m **über** dem Flieger und blickte
+   senkrecht nach unten. Sie rechnet jetzt nur mit dem Gieren, genau wie die Verfolgerkamera im Spiel.
+
 **Die ISS ist landbar** — dasselbe Hangar-Szenario wie Todesstern und Star Destroyer, Andockradius
 `ISS_DOCK = 170` (die Station ist 120 m gross, etwas mehr als ihre Länge, sonst trifft man sie im
 Flug kaum). Dazu neu: eine Andock-Sperre `dockLock` von 6 s nach dem Verlassen eines Hangars. ISS und

@@ -2559,10 +2559,17 @@ function enterEarth(atSphere){
     const n = state.pos.clone().sub(earthBall.position).normalize();
     const hit = earthBall.position.clone().addScaledVector(n, EARTH_R);
     state.pos.set(hit.x, EARTH_Y - 100, hit.z);
-    // Nase waagerecht und Fahrt herunter — mit Warptempo in die Inselwelt zu fallen war nicht zu
-    // beherrschen, und der Nutzer wollte den Wiedereintritt ausdrücklich langsamer.
-    if(state.vel.length() > 260) state.vel.setLength(260);
-    if(state.throttle > 0.5) state.throttle = 0.5;
+    // Waagerecht ausrichten und nur den Kurs behalten: die Lage aus dem Weltall zeigt beim Anflug
+    // von oben steil nach unten (oder kopfüber). So kam der Flieger im Sturzflug in die Inselwelt,
+    // schlug binnen Sekunden im Meer auf und war nicht mehr zu steuern. Beim Mond passiert das
+    // nicht, weil der Anflug dort ebenfalls waagerecht eingesetzt wird.
+    const e = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+    state.quat.setFromEuler(new THREE.Euler(0, e.y, 0, 'YXZ'));
+    const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    state.vel.copy(fwd).multiplyScalar(Math.min(Math.max(state.vel.length(), 160), 260));
+    state.onGround = false; state.stalling = false;
+    // Schub in den ruhigen Bereich: genug für Auftrieb, aber nicht gleich wieder himmelwärts.
+    state.throttle = Math.max(0.4, Math.min(state.throttle, 0.5));
     snapCamera();
     flashFade();
   }
@@ -2584,8 +2591,13 @@ let _basePosMoon = null;
 function snapCamera(){
   if(typeof camera === 'undefined') return;
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
-  const back = new THREE.Vector3(0,0,1).applyQuaternion(state.quat);
+  // Nur das Gieren zählt — mit der vollen Nasenrichtung bleibt bei steiler Lage kein waagerechter
+  // Abstand übrig, und die Kamera stünde 14 m über dem Flieger und blickte senkrecht nach unten.
+  const e = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, e.y, 0, 'YXZ'));
+  const back = new THREE.Vector3(0,0,1).applyQuaternion(q);
   camera.position.set(state.pos.x + back.x*40, state.pos.y + 14, state.pos.z + back.z*40);
+  camera.up.set(0,1,0);
   camera.lookAt(state.pos);
 }
 function setupApproach(key, tx, tz, dist, alt){
