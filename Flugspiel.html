@@ -2032,6 +2032,8 @@ function preloadHarbor(){
 // wieder ein, wo man absinkt — es braucht keine Rückrechnung auf den Startpunkt.
 let locale = 'earth';
 let wantHangarStart = true;   // beim Spielstart einmal in den Todesstern-Hangar wechseln
+let hangarStartT = 1.5;       // erst so viele Sekunden nach dem Laden wechseln: beim App-Start
+                              // laufen danach noch andere GLB-Callbacks, die die Position verschoben
 // Höhengrenzen: unter 80 % Schub riegelt der Höhendeckel des Modells ab (X-Wing 3000 m). Ab 80 %
 // ist der Deckel offen: ab 3000 m dunkelt der Himmel ein, bei 6000 m ist man im Weltall.
 const ATMO_TOP  = 3000;     // ab hier wird der Himmel dunkler
@@ -2816,6 +2818,15 @@ function updatePads(dt){
   }
 }
 
+// Ein Objekt in Flugrichtung drehen. NICHT lookAt() verwenden: das richtet bei normalen Objekten
+// die +Z-Achse zum Ziel (anders als bei Kameras), und alle Modelle hier sind auf „Nase = -Z"
+// vorgedreht — mit lookAt fliegen sie rückwärts.
+const _NOSE = new THREE.Vector3(0,0,-1);
+function faceAlong(obj, dir){
+  if(dir.lengthSq() < 1e-9) return;
+  obj.quaternion.setFromUnitVectors(_NOSE, dir.clone().normalize());
+}
+
 // ---------- Star Destroyer: der Flugzeugträger des Weltalls ----------
 // Sie stehen verteilt im Raum (praktisch ortsfest) und lassen sich anfliegen — die Landung führt in
 // denselben Hangar wie beim Todesstern. Fremde Schiffe steuern sie ebenfalls an und verschwinden
@@ -2967,7 +2978,7 @@ function updateShips(dt){
         const dist = to.length();
         s.vel.lerp(to.normalize().multiplyScalar(Math.max(260, state.vel.length()*0.9)), Math.min(1, 0.8*dt));
         s.obj.position.addScaledVector(s.vel, dt);
-        if(s.vel.lengthSq() > 1) s.obj.lookAt(s.obj.position.clone().add(s.vel));
+        faceAlong(s.obj, s.vel);
         if(dist < DESTROYER_LEN*0.45){ placeShip(s); }        // eingeflogen -> neu einsetzen
         continue;
       }
@@ -2977,7 +2988,7 @@ function updateShips(dt){
     const want = state.vel.clone().multiplyScalar(1 - s.lag).add(s.drift);
     s.vel.lerp(want, Math.min(1, 1.2*dt));
     s.obj.position.addScaledVector(s.vel, dt);
-    if(s.vel.lengthSq() > 1) s.obj.lookAt(s.obj.position.clone().add(s.vel));   // Nase voraus
+    faceAlong(s.obj, s.vel);                                                    // Nase voraus
     // relativ zur eigenen Größe aufräumen: kleine Schiffe früher, damit sie nicht als Punkt enden
     if(s.obj.position.distanceTo(state.pos) > Math.max(4000, s.def.len*90)) placeShip(s);
   }
@@ -3086,7 +3097,7 @@ function updateAiXwings(dt){
     const keep = Math.max(w.speed, state.vel.length()*0.92);
     w.cruise = keep;                                   // für die Laserbolzen (siehe unten)
     w.grp.position.addScaledVector(w.vel, keep*dt);
-    w.grp.lookAt(w.grp.position.clone().add(w.vel));      // Nase in Flugrichtung
+    faceAlong(w.grp, w.vel);                             // Nase in Flugrichtung
     // Feuern, wenn das Ziel vor ihm und in Reichweite ist
     w.cool -= dt;
     if(w.target && w.cool <= 0){
@@ -5011,9 +5022,13 @@ function loop(now){
   if(locale === 'earth') updateSea(dt);   // animierte Meereswellen (nur in der Erdwelt)
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
-  // Erststart: sobald der Hangar geladen ist, beginnt der X-Wing dort (siehe resetPlane)
+  // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
+  // Die Wartezeit ist nötig, weil beim App-Start noch weitere Modelle nachladen (siehe oben).
   if(wantHangarStart && hangarObj && MODEL_NAMES[currentModel] === 'XWing' && locale === 'earth'
-     && !state.crashed && state.onGround){ wantHangarStart = false; enterHangar(); }
+     && !state.crashed && state.onGround){
+    hangarStartT -= dt;
+    if(hangarStartT <= 0){ wantHangarStart = false; enterHangar(); }
+  }
   stepGroundFields();        // Höhenraster von Mond und Mars in Häppchen ausmessen
   stepGroundExact();         // exakte Bodenhöhe unter dem Flieger (nur in Bodennähe)
   updateLocale();            // Erde <-> Weltall <-> Mond
