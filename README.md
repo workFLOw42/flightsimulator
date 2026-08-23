@@ -217,11 +217,10 @@ Weitere verwendete Technik:
 ## 🔧 Technik (kurz)
 - Reines HTML + JavaScript + WebGL, keine Installation, kein Build. Alle Modelle/Sounds sind
   eingebettet (Base64) — das Spiel läuft sowohl online als auch per Doppelklick lokal.
-- Die eingebetteten Modelle sind **rund 215 MB**; der Service Worker cached sie beim ersten Start
-  komplett und lädt sie bei einem Update erneut. Fünf schwere Modelle (Serenity, Voyager, Rover,
-  Enterprise, Razor Crest) wurden dafür **vereinfacht** — zusammen 56 MB und 616.000 Dreiecke
-  gespart, bei gleichen Außenmaßen und unveränderten Texturen. Größter Einzelposten bleibt der
-  Hangar (49 MB).
+- Die eingebetteten Modelle sind **rund 170 MB**; der Service Worker cached sie beim ersten Start
+  komplett und lädt sie bei einem Update erneut. Sechs schwere Modelle (Hangar, Serenity, Voyager,
+  Rover, Enterprise, Razor Crest) wurden dafür **vereinfacht** — zusammen rund 100 MB und
+  1,1 Mio. Dreiecke gespart, bei gleichen Außenmaßen und unveränderten Texturen.
 - Endlose, ortsfeste Inselwelt (deterministisch je Rasterzelle), animiertes Meer, Flugzeugträger,
   Häfen, Wolkenkratzer-Städte.
 

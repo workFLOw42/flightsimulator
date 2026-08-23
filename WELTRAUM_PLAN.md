@@ -599,9 +599,28 @@ Weil alles günstiger ist, fliegen jetzt **mehr** Schiffe: Shuttle 9, Razor Cres
 Voyager 2, Enterprise 2, Star Destroyer 5, KI-X-Wings 5. Die Szene im Weltall liegt damit bei rund
 **600.000 Dreiecken** — vorher 999.000 mit weniger Schiffen.
 
-**Bewusst nicht vereinfacht**: das X-Wing-Modell (man sieht es aus wenigen Metern), die Terrains von
-Mond und Mars (die Bodenhöhe hängt an ihrer Geometrie) und der Hangar — bei ihm würde das Verfahren
-die feinen Voxel-Strukturen zerreißen und die Bodenmessung verfälschen.
+**Der Hangar kam später dazu** und war der lohnendste Fall: Er hat **keine Texturen** (alles
+einfarbig grau, `baseColor 0.5`), trägt aber **fünf ungenutzte UV-Sätze** pro Vertex mit sich — die
+36,5 MB waren praktisch reine Geometrie, und ohne Texturen kann das Verfahren auch keine
+UV-Verzerrung verursachen.
+
+  613.824 → **90.676** Dreiecke (14,8 %), 36,47 → **2,35 MB** (base64 48,6 → 3,13 MB).
+
+Gegengeprüft mit 30 Sondierungen (`C:\tmp\hangarprobe2.js`), Original gegen vereinfacht:
+
+| | Original | vereinfacht |
+|---|---|---|
+| Außenmaße | 282 × 80 × 300 m | 283 × 81 × 300 m |
+| Boden | 5,9 m | 6,2 m |
+| freie Höhe (Mittel) | 68,6 m | 68,3 m |
+| Löcher im Boden | 0 von 30 | 0 von 30 |
+| Hindernisse auf dem Weg hinaus | 3 von 135 | 0 von 135 |
+
+Die Bodenhöhe wird im Spiel ohnehin zur Laufzeit per Raycast gemessen, passt sich also automatisch an.
+
+**Bundle: 215,4 → 169,9 MB.** Bewusst nicht vereinfacht bleiben das X-Wing-Modell (man sieht es aus
+wenigen Metern) und die Terrains von Mond und Mars, weil die Bodenhöhe beim Landen an ihrer
+Geometrie hängt.
 
 ---
 
