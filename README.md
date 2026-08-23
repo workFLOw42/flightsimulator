@@ -88,9 +88,11 @@ Hyperraum**, damit man ihn in Ruhe ansehen kann.
 
 Der Schub ist im Weltall **linear**: 10 % sind Warp 0,1, 50 % sind Warp 0,5, 100 % ist Warp 1.
 
-**Suchhilfe**: Über dem Flieger steht — genauso groß wie die Wassertropfen und Kisten — der Ort, das
-**angeflogene Ziel mit Entfernung** (🌙 Mond, 🔴 Mars, ☀️ Sonne) und die Trefferzahl. Angezeigt wird
-der Körper, auf den man **zufliegt**, nicht der nächstgelegene; das Radar zeigt die Richtung. Der Mond
+**Suchhilfe**: Über dem Flieger blitzen — genauso groß wie die Wassertropfen und Kisten — für drei
+Sekunden Symbole auf: beim Ortswechsel (🌍 🚀 🌙), wenn man ein neues Ziel ansteuert (mit Entfernung)
+und bei jedem Asteroiden-Treffer der Zähler (💥). Dauerhaft und klein steht oben links der Ort mit der
+Entfernung zum **angeflogenen** Himmelskörper (🌙 Mond, 🔴 Mars, ☀️ Sonne) — nicht zum nächstgelegenen;
+das Radar zeigt die Richtung. Der Mond
 liegt immer genau in der Richtung, in die man die Atmosphäre verlassen hat. Zurück auf die Erde geht es
 erst **unter 2,5 km** — beim Suchen fällt man also nicht versehentlich heim.
 

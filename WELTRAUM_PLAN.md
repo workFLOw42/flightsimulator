@@ -390,7 +390,8 @@ zentriert; die Skalierung einer Kopie **ist** damit ihr Radius, was die Trefferp
 | Asteroiden sollen mithalten | Ihr Kurs wird jeden Frame an die Fliegergeschwindigkeit angeglichen, minus 2–8 % Rückstand, plus eigene Drift (15–50 m/s). Man überholt sie also nur langsam — bei Warp 0,1 genauso wie knapp unter Warp 1 |
 | mehr Brocken und Jäger | 20 Asteroiden (war 14), 6 fremde X-Wings (war 3). Die Jäger halten mit 92 % der Spielergeschwindigkeit mit, sonst sind sie sofort außer Sicht |
 | Entfernung zum **angeflogenen** Körper | `aimedBody()` wählt nach Richtung (bester Winkel zur Flugrichtung), nicht nach Entfernung; fliegt man auf keinen zu, erscheint der nächste |
-| Symbol wie Tropfen/Kisten über dem Flieger | Neue Anzeige `updateSpaceHint()` in derselben Machart wie `updateScoopHint`: 60-px-Symbol, an die projizierte Position über dem Flugzeug gesetzt. Zeigt Ort, Ziel mit Entfernung und Treffer; die HUD-Statuszeile ist dafür entlastet |
+| Symbol wie Tropfen/Kisten über dem Flieger | Neue Anzeige `updateSpaceHint()` in derselben Machart wie `updateScoopHint`: 60-px-Symbol, an die projizierte Position über dem Flugzeug gesetzt |
+| Große Symbole sollen wieder verschwinden | Sie stehen nur noch **3 s** und sind ereignisgesteuert: Ortswechsel, Wechsel des angeflogenen Ziels (mit Entfernung) und Asteroiden-Treffer (dann **nur** der Zähler). Bei Trefferserien setzt jeder Treffer den Timer neu. Der Ortswechsel läuft nicht mehr über `showBig()` in der Bildmitte, sondern über dieselbe Anzeige. Damit die Suchhilfe nicht verloren geht, stehen Ort und Zielentfernung dauerhaft klein in der HUD-Statuszeile |
 | X-Wing als erstes Modell | `MODEL_NAMES` beginnt mit `'XWing'` — das Spiel startet damit auf der Landebahn. Das alte „SuperCup" in der Modellanzeige (Überbleibsel im HTML) ist ersetzt |
 
 ---

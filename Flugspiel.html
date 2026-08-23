@@ -2233,7 +2233,7 @@ function enterSpace(){
   }
   spacePlaced = true;
   earthWorldVisible(false);
-  showBig('🚀');
+  showSpaceHint('🚀');
 }
 function enterEarth(){
   locale = 'earth';
@@ -2242,7 +2242,7 @@ function enterEarth(){
   for(const b of bodies) if(b.obj) b.obj.visible = false;
   clearMoonTiles();
   earthWorldVisible(true);
-  showBig('🌍');
+  showSpaceHint('🌍');
 }
 function enterMoon(){
   locale = 'moon';
@@ -2256,7 +2256,7 @@ function enterMoon(){
   state.vel.copy(fwd).multiplyScalar(Math.min(state.vel.length(), 120));
   state.throttle = 0.4; state.onGround = false; state.stalling = false;
   updateMoonTiles();
-  showBig('🌙');
+  showSpaceHint('🌙');
 }
 function leaveMoon(){
   locale = 'space';
@@ -2266,7 +2266,7 @@ function leaveMoon(){
   if(mb) state.pos.copy(mb.center).add(new THREE.Vector3(0, mb.def.r*1.4, 0));
   for(const b of bodies) if(b.obj) b.obj.visible = true;
   if(earthBall) earthBall.visible = true;
-  showBig('🚀');
+  showSpaceHint('🚀');
 }
 function updateLocale(){
   if(state.crashed || state.ejected || state.falling) return;
@@ -2318,7 +2318,7 @@ function updateSpaceBodies(){
     if(d < b.def.r*3 && warpDrive > 0.02){
       warpDrive = 0;
       if(state.throttle > 0.5) state.throttle = 0.5;
-      showBig('🛑');
+      showSpaceHint('🛑', 2);
     }
     if(b.def.land){
       if(d < b.def.r + 1500){ enterMoon(); return true; }
@@ -2391,24 +2391,31 @@ function updateSpaceBlend(dt){
 // Gleiche Machart und Größe wie die Wassertropfen/Kisten: ein 60-px-Symbol, das an die projizierte
 // Position über dem Flugzeug gesetzt wird. Zeigt Ort, das angeflogene Ziel mit Entfernung und die
 // Trefferzahl — auf der Erde bleibt es leer (dort erscheinen dort Tropfen und Kisten).
-let spaceEl = null;
+let spaceEl = null, spaceHintT = 0, spaceHintTxt = '', lastAimKey = '';
 const _spaceV = new THREE.Vector3();
-function updateSpaceHint(){
+// Kurz etwas über dem Flieger zeigen (Standard 3 s). Wird bei jedem neuen Ereignis neu gestartet,
+// bei Trefferserien bleibt der Zähler also stehen, solange es weiterknallt.
+function showSpaceHint(txt, sec){ spaceHintTxt = txt; spaceHintT = (sec === undefined) ? 3 : sec; }
+function updateSpaceHint(dt){
   if(!spaceEl){
     spaceEl = document.createElement('div');
-    spaceEl.style.cssText = 'position:absolute;font-size:60px;opacity:0;transition:opacity .2s;'
+    spaceEl.style.cssText = 'position:absolute;font-size:60px;opacity:0;transition:opacity .3s;'
       + 'pointer-events:none;transform:translate(-50%,-50%);white-space:nowrap;'
       + 'text-shadow:2px 2px 6px rgba(0,0,0,0.8);';
     document.body.appendChild(spaceEl);
   }
-  if(locale === 'earth'){ spaceEl.style.opacity = '0'; return; }
-  let sym = (locale === 'space') ? '🚀' : '🌙';
+  // Wechselt das angeflogene Ziel, blitzt die neue Entfernung kurz auf
   if(locale === 'space'){
     const aim = aimedBody();
-    if(aim) sym += ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km';
-    if(astHits > 0) sym += ' 💥' + astHits;
-  }
-  spaceEl.textContent = sym;
+    const key = aim ? aim.def.key : '';
+    if(key && key !== lastAimKey) showSpaceHint(aim.def.sym + ' ' + Math.round(aim.dist/1000) + ' km');
+    lastAimKey = key;
+  } else lastAimKey = '';
+
+  if(spaceHintT <= 0){ spaceEl.style.opacity = '0'; return; }
+  spaceHintT -= dt;
+  if(spaceHintT <= 0){ spaceEl.style.opacity = '0'; return; }
+  spaceEl.textContent = spaceHintTxt;
   _spaceV.set(state.pos.x, state.pos.y + 16, state.pos.z).project(camera);
   spaceEl.style.left = ((_spaceV.x*0.5+0.5)*innerWidth) + 'px';
   spaceEl.style.top  = ((-_spaceV.y*0.5+0.5)*innerHeight) + 'px';
@@ -2579,7 +2586,7 @@ function updateAsteroids(dt){
     if(d < a.r + 10){                       // gerammt: er zerbricht, der Flieger bleibt heil
       boom(a.grp.position, a.r*1.3); astHits++;
       scene.remove(a.grp); asteroids.splice(i,1);
-      rumble(300, 0.7, 0.6);
+      rumble(300, 0.7, 0.6); showSpaceHint('💥 ' + astHits);
     }
   }
   for(let i=bolts.length-1;i>=0;i--){
@@ -2591,7 +2598,7 @@ function updateAsteroids(dt){
       const a = asteroids[k];
       if(b.mesh.position.distanceTo(a.grp.position) < a.r + 14){
         boom(a.grp.position, a.r*1.4);
-        if(b.mine){ astHits++; rumble(200, 0.5, 0.4); }   // fremde Treffer zählen nicht mit
+        if(b.mine){ astHits++; rumble(200, 0.5, 0.4); showSpaceHint('💥 ' + astHits); }  // fremde zählen nicht
         scene.remove(a.grp); asteroids.splice(k,1);
         hit = true; break;
       }
@@ -3578,8 +3585,14 @@ function updateHUD(){
   }
   // Ort voranstellen: 🚀 Weltall · 🌙 Mond (auf der Erde kein Extra-Symbol).
   // Im Weltall zählt 💥 die zerstörten Asteroiden mit.
-  // Ort, Ziel und Trefferzahl stehen über dem Flieger (updateSpaceHint) — hier bleibt nur der Rest.
-  elStat.textContent = s;
+  // Die großen Symbole über dem Flieger blitzen nur kurz auf (updateSpaceHint). Damit die Suchhilfe
+  // nicht verloren geht, steht Ort und Entfernung zum angeflogenen Körper dauerhaft klein hier.
+  let nav = '';
+  if(locale === 'space'){
+    const aim = aimedBody();
+    nav = '🚀' + (aim ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
+  } else if(locale === 'moon') nav = '🌙';
+  elStat.textContent = nav ? (nav + ' ' + s) : s;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
@@ -4428,7 +4441,7 @@ function loop(now){
   updateLocale();            // Erde <-> Weltall <-> Mond
   updateWarp(dt);            // Hyperraum aufbauen/abbauen + Ring-Effekt
   updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
-  updateSpaceHint();         // Ort/Ziel/Treffer über dem Flieger (wie Tropfen und Kisten)
+  updateSpaceHint(dt);       // Ort/Ziel/Treffer kurz über dem Flieger (wie Tropfen und Kisten)
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(locale === 'moon') updateMoonTiles();
