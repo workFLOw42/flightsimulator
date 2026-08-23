@@ -2583,9 +2583,10 @@ let _basePosMoon = null;
 // Zusatzabstand der Kamera bei Fahrt: im Hyperraum sieht es besser aus (und gibt ein Tempogefühl),
 // wenn die Kamera zurückweicht. Der Faktor ist so gewählt, dass er den früheren Lerp-Rückstand bei
 // normaler Fahrt genau nachbildet (bei 690 m/s 43,7 m gegen vorher 43,3 m) — nur wächst er jetzt
-// nicht endlos weiter: gedeckelt auf +70 m, sonst wäre der Flieger bei Warp 10 ein Punkt (526 m).
+// nicht endlos weiter: gedeckelt bei rund 250 m Gesamtabstand (ab Warp 3), sonst wäre der Flieger
+// bei Warp 10 nur noch ein Punkt — dort waren es vorher 526 m.
 function camBackExtra(){
-  return Math.min(70, state.vel.length() * 0.025);
+  return Math.min(225, state.vel.length() * 0.025);
 }
 function snapCamera(){
   if(typeof camera === 'undefined') return;
