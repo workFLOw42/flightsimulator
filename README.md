@@ -49,6 +49,10 @@ Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugze
 - **Transall C-160** — 📦 **Fracht abwerfen**: auf der Bahn 4 Kisten laden, über der Ziel-Insel **B** =
   am Fallschirm abwerfen.
 - **P-51 Mustang** — flotter Warbild (Kunstflug), **B = Schleudersitz**. Startet auf einem Flugzeugträger.
+- **X-Wing** 🚀 — **Senkrechtstarter**. Unter 30 % steuert der Schub nicht die Fahrt, sondern die
+  Senkrechte: **20 % = senkrecht steigen** (von Landebahn, Wiese, Trägerdeck oder Wasser),
+  **ab 30 % fliegt er vorwärts** (Flugverhalten wie der Alpha-Jet), **10 % = saubere
+  Senkrechtlandung**, **0 % = Antrieb aus** — dann fällt er. Er darf **überall landen**.
 
 **Leitsystem**: eine weiche Pfeilkette führt zum Ziel — **rot** = leer/hinfliegen, **gelb** = beladen,
 **grün** = jetzt! Ein **Radar** zeigt die Richtung immer an. Aufgaben lassen sich per **RB / T**
@@ -102,6 +106,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Parachute | **stroodledoodle** |
 | Gerald R. Ford Aircraft Carrier | **Usman Zia** |
 | The Wharf – Fishing Harbor | **Mehdi Shahsavan** |
+| X-Wing 2.0 | **GaryPhelps** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 

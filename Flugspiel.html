@@ -89,6 +89,7 @@
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, über Ziel-Insel B = abwerfen</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um</b></div>
+    <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % senkrecht steigen · ab 30 % vorwärts · 0 % = Antrieb aus</b></div>
     <div class="hrow"><span>🎯 Ziel</span><b>Radar-Blip: rot = leer/hin · gelb = voll · grün = am Ziel</b></div>
     <div class="hrow"><span>📡 Radar</span><b>oben rechts zeigt immer die Richtung zum Ziel</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
@@ -109,6 +110,7 @@
 <script src="mustang_glb.js"></script>
 <script src="ford_glb.js"></script>
 <script src="harbor_glb.js"></script>
+<script src="xwing_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -330,6 +332,7 @@ function canLandHere(x, z) {
   const onLand = isOnLand(x, z);
   const onRunway = isOnRunway(x, z);
   const onCarrier = isOnCarrier(x, z);
+  if (model === 'XWing')    return true;                    // X-Wing: senkrecht -> überall (auch Wasser)
   if (model === 'AlphaJet') return onRunway || onCarrier;   // Jet: Bahn oder Trägerdeck
   if (model === 'Mustang')  return onLand   || onCarrier;   // Warbird: ganze Insel oder Trägerdeck
   if (model === 'Airbus')   return onRunway;
@@ -854,6 +857,7 @@ function isAlphaJet(){ return MODEL_NAMES[currentModel] === 'AlphaJet'; }
 function isTransall(){ return MODEL_NAMES[currentModel] === 'Transall'; }
 function isAirbus(){ return MODEL_NAMES[currentModel] === 'Airbus'; }
 function isMustang(){ return MODEL_NAMES[currentModel] === 'Mustang'; }
+function isXWing(){ return MODEL_NAMES[currentModel] === 'XWing'; }
 // B-Taste: Canadair -> Wasser, AlphaJet/Mustang -> Schleudersitz, Transall -> Kiste abwerfen
 function buttonB(){
   if(isCanadair()) dropWater();
@@ -1730,7 +1734,7 @@ for (let i=0;i<45;i++){ const c=makeCloud();
 // "Canadair" ist ein eigengebautes Löschflugzeug (kein FMS-Mesh) und kommt ans Ende.
 // Feste Reihenfolge (Wunsch): Löschflugzeug, Jet, Airbus, Eindecker, Doppeldecker.
 // 'Canadair','AlphaJet' sind eigengebaut; SuperCup=Eindecker, Pitts=Doppeldecker.
-const MODEL_NAMES = ['Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang'];
+const MODEL_NAMES = ['Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang', 'XWing'];
 const loader = new THREE.TextureLoader();
 const planeGroup = new THREE.Group();  // Container, den wir bewegen
 scene.add(planeGroup);
@@ -1751,6 +1755,9 @@ const GLB_CONFIG = {
   Airbus:   { data: () => window.AIRBUS_GLB,   span: 27.1, yOff: 0 },
   Mustang:  { data: () => window.MUSTANG_GLB,  span: 11,   yOff: 0 },
   Transall: { data: () => window.TRANSALL_GLB, span: 20,   yOff: 0 },
+  // X-Wing: im Modell liegt die Nase auf +Z und die Spannweite auf X — die längere Achse (Z)
+  // ist also die LÄNGE. 12,5 m Rumpflänge normiert ergibt ~10 m Spannweite (echt: 12,5 / 11 m).
+  XWing:    { data: () => window.XWING_GLB,    span: 12.5, yOff: 0 },
 };
 function preloadGLB(name){
   const cfg = GLB_CONFIG[name];
@@ -1996,8 +2003,8 @@ function buildModel(name) {
 
   // Alle Flugzeuge sind externe GLB-Modelle. Ausrichtung (rotation.y) pro Modell.
   const GLB_ROT = { Canadair: Math.PI, AlphaJet: Math.PI/2, Airbus: Math.PI,
-                    Mustang: -Math.PI, Transall: 0 };
-  const GLB_SPAN = { Canadair: 20, AlphaJet: 9, Airbus: 30, Mustang: 11, Transall: 20 };
+                    Mustang: -Math.PI, Transall: 0, XWing: Math.PI };
+  const GLB_SPAN = { Canadair: 20, AlphaJet: 9, Airbus: 30, Mustang: 11, Transall: 20, XWing: 11 };
   if(glbTemplates[name]){
     const m = glbTemplates[name].clone(true);
     m.rotation.y = GLB_ROT[name] || 0;
@@ -2023,7 +2030,22 @@ const PLANE_SPECS = {
   Canadair:   { vTO: 40, vMax: 63,  accel: 16,  pitch: 1.1, roll: 1.8, turn: 0.9, aero:false, maxAlt: 500, maxBank: 0.7 }, // ~228 km/h
   // Alpha-Jet: sau schnell + sehr wendig. Überschall bei 100 % (~1300 km/h). Beschleunigt gemächlich.
   AlphaJet:   { vTO: 55, vMax: 361, accel: 28, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 2200 },
+  // X-Wing: Flugverhalten wie der Alpha Jet (aero, gleiche Raten), zusätzlich Senkrechtstart (vtol).
+  XWing:      { vTO: 55, vMax: 361, accel: 28, pitch: 1.9, roll: 3.8, turn: 1.6, aero:true, maxAlt: 3000, vtol:true },
 };
+
+// ---------- X-Wing: Senkrechtstart und -landung (VTOL) ----------
+// Der Schub steuert unter 30 % nicht die Fahrt, sondern das SENKRECHTE Steigen/Sinken:
+//   0 %  Antrieb aus -> freier Fall (Absturz möglich, wie ein Strömungsabriss)
+//  10 %  saubere Senkrechtlandung (sinkt langsam, Nase wird waagerecht gezogen)
+//  20 %  senkrecht steigen (Start von Landebahn, Wiese, Trägerdeck oder Wasser)
+//  25 %  Übergangszone (Steigen klingt aus, Vorwärtsschub setzt ein)
+//  30 %+ normaler Vorwärtsflug — ab hier greift die unveränderte Flugphysik
+const VTOL_LAND  = 0.10;   // bis hier: sinken
+const VTOL_HOVER = 0.20;   // hier: senkrecht steigen
+const VTOL_FWD   = 0.30;   // ab hier: kein VTOL mehr
+const VTOL_SINK  = -4;     // m/s Sinkrate bei VTOL_LAND
+const VTOL_CLIMB = 6;      // m/s Steigrate bei VTOL_HOVER
 const DEFAULT_SPEC = { vTO: 44, vMax: 80, accel: 18, pitch: 1.2, roll: 2.2, turn: 1.0 };
 let spec = DEFAULT_SPEC;   // aktive Flugeigenschaften (bei Modellwechsel gesetzt)
 
@@ -2153,8 +2175,9 @@ function decodeSound(dataUrl) {
   });
 }
 function soundUrlFor(name){
-  // Canadair -> Propellersound (SuperCup), AlphaJet -> Turbine (Airbus), sonst passend/Propeller
-  return window.FMS_SND[name] || (name==='AlphaJet' ? window.FMS_SND['Airbus'] : window.FMS_SND['SuperCup']);
+  // Canadair -> Propellersound (SuperCup), AlphaJet/X-Wing -> Turbine (Airbus), sonst Propeller
+  const turbine = (name==='AlphaJet' || name==='XWing');
+  return window.FMS_SND[name] || (turbine ? window.FMS_SND['Airbus'] : window.FMS_SND['SuperCup']);
 }
 function startEngineLoop(buf) {
   if (!audioCtx || !buf) return;
@@ -2463,6 +2486,7 @@ const CAM_CFG = {
   Airbus:   { dist: 1.8,  hgt: 1.4 },
   Canadair: { dist: 1.3,  hgt: 1.1 },
   Transall: { dist: 1.7,  hgt: 1.2 },    // großer Transporter
+  XWing:    { dist: 1.2,  hgt: 1.0 },    // X-Wing: kompakt, minimal mehr Abstand als der Jet
 };
 function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
 
@@ -2558,18 +2582,25 @@ function stepPhysics(dt, inp){
   // Steigflug bremst (über die Vektorzerlegung von Schwerkraft/Nase).
   const GRAV=9.81, vMax=spec.vMax;
   const speed = state.vel.length();
+  // X-Wing (VTOL): unter 30 % Schub übernehmen die Repulsoren. vtolMix blendet Vortrieb,
+  // Schwerkraft und Auftrieb aus (1 = ganz aus bei <= 20 %, 0 = normaler Flug ab 30 %), damit
+  // „senkrecht" wirklich senkrecht ist und die Steig-/Sinkrate exakt am Schub hängt.
+  // Bei 0 % Schub bewusst 0 -> Antrieb aus, normale Physik/Stall -> er fällt.
+  const vtolMix = (spec.vtol && state.throttle > 0.001 && state.throttle < VTOL_FWD)
+    ? Math.min(1, (VTOL_FWD - state.throttle) / (VTOL_FWD - VTOL_HOVER)) : 0;
+  const vtolRest = 1 - vtolMix;
   const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
   const fwdSpeed = state.vel.dot(forward);                     // aktuelle Fahrt in Nasenrichtung
   const dv = targetV - fwdSpeed;
   const aMax = boosting ? spec.accel*1.6 : spec.accel;         // Boost (X/Shift): extra Beschleunigung
-  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), aMax);  // m/s², begrenzt
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), aMax) * vtolRest;  // m/s², begrenzt
   const accel = new THREE.Vector3();
   accel.addScaledVector(forward, push);                        // Vortrieb entlang Nase (sanft an Ziel)
-  accel.y -= GRAV;                                             // Schwerkraft (immer -Y)
+  accel.y -= GRAV * vtolRest;                                  // Schwerkraft (immer -Y)
   // Auftrieb ⟂ Flügel, GEDECKELT auf 1 g: ab vTO hält er das Gewicht (waagerecht = Höhe halten),
   // darunter reicht er nicht -> Flieger sinkt (Gleitflug/Stall). Nie mehr als 1 g -> kein Hochschießen.
   const liftF = Math.min(1, (speed*speed)/(spec.vTO*spec.vTO));
-  accel.addScaledVector(upV, GRAV * liftF);
+  accel.addScaledVector(upV, GRAV * liftF * vtolRest);
   state.vel.addScaledVector(accel, dt);
 
   // Harte Obergrenze: Normalflug knapp über der Zielgeschwindigkeit, im Sturz etwas mehr (Gleitflug).
@@ -2594,10 +2625,37 @@ function stepPhysics(dt, inp){
   const vlen = state.vel.length();
   if(vlen > 0.001){
     const authority = Math.min(1, speed / spec.vTO);           // 0 (steht) .. 1 (ab vTO volle Kontrolle)
-    const base = spec.aero ? 0.14 : 0.09;                      // Kunstflug-Jets koppeln straffer
+    // Im VTOL-Schweben abgeschaltet (vtolRest = 0) — sonst zieht die waagerechte Nase die
+    // senkrechte Fahrt nach vorne und der Senkrechtstart driftet weg.
+    const base = (spec.aero ? 0.14 : 0.09) * vtolRest;         // Kunstflug-Jets koppeln straffer
     const dir = state.vel.clone().normalize();
     dir.lerp(forward, base * authority);
     state.vel.copy(dir.multiplyScalar(vlen));
+  }
+
+  // --- X-Wing (VTOL): Steig-/Sinkrate aus dem Schub anregeln. Läuft NACH der Ruderwirksamkeit,
+  // damit das senkrechte Steigen nicht Richtung Nase weggedreht wird (vtolMix siehe oben).
+  if(vtolMix > 0){
+    // Zielrate aus dem Schub: 10 % -> Sinken, 20 % -> Steigen (linear dazwischen)
+    let tv = state.throttle <= VTOL_LAND ? VTOL_SINK
+      : VTOL_SINK + (VTOL_CLIMB - VTOL_SINK) * (state.throttle - VTOL_LAND) / (VTOL_HOVER - VTOL_LAND);
+    tv = Math.min(VTOL_CLIMB, tv);
+    // Höhendeckel auch beim Senkrechtsteigen einhalten (sanft über die letzten 120 m)
+    if(spec.maxAlt && tv > 0){
+      const over = (state.pos.y - ISLAND_Y) - (spec.maxAlt - 120);
+      if(over > 0) tv *= Math.max(0, 1 - over/120);
+    }
+    // Senkrechtrate anregeln (ersetzt Schwerkraft/Auftrieb), Horizontalfahrt austrudeln lassen
+    state.vel.y += (tv - state.vel.y) * Math.min(1, 4*dt) * vtolMix;
+    const vDamp = 1 - (1 - Math.exp(-1.2*dt)) * vtolMix;
+    state.vel.x *= vDamp; state.vel.z *= vDamp;
+    // Landeanflug (10 %): Nase und Querlage sanft waagerecht ziehen -> setzt immer gerade auf
+    if(state.throttle <= VTOL_LAND && !state.onGround){
+      const eV = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+      const kV = Math.min(1, 2.5*dt);
+      eV.x += (0 - eV.x) * kV; eV.z += (0 - eV.z) * kV;
+      state.quat.setFromEuler(eV);
+    }
   }
 
   // --- STALL: zu wenig Fahrt -> Nase kippt nach unten (übersteuert Looping/Input), Flieger fällt.
@@ -2605,7 +2663,7 @@ function stepPhysics(dt, inp){
   // und kommt wieder raus. Bodenkontakt im Stall = IMMER Crash. Ausstieg sobald Fahrt >= vStall.
   const vStall = spec.vTO * 0.20;   // NUR geschwindigkeitsabhaengig (nicht vom Schub): Stall erst bei fast
                                     // keiner Fahrt. Langsamflug/Landen mit wenig Schub bleibt moeglich.
-  if(!state.onGround && speed < vStall){
+  if(!state.onGround && speed < vStall && vtolMix <= 0){
     state.stalling = true;
     // Nase konsequent nach unten zwingen (bis ~ -75° Pitch), Querlage rausnehmen -> kein Trudeln.
     const eS = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
@@ -2620,7 +2678,7 @@ function stepPhysics(dt, inp){
 
   // Abhebe-Sperre: am Boden unter der modell-Abhebe-Geschwindigkeit kein Steigen,
   // egal wie sehr man die Nase zieht -> abheben erst ab genug Schub/Fahrt.
-  if(state.onGround && speed < spec.vTO && state.vel.y > 0) state.vel.y = 0;
+  if(state.onGround && speed < spec.vTO && state.vel.y > 0 && vtolMix <= 0) state.vel.y = 0;
 
   // Umkehrschub (throttle<0) bremst -> bei Stillstand STOPP (kein Rückwärtsgang). Sobald die
   // Vorwärts-Komponente der Geschwindigkeit auf 0 fällt, Horizontalfahrt komplett anhalten.
@@ -2680,7 +2738,9 @@ function stepPhysics(dt, inp){
       // Crash, wenn: hier nicht landbar (falsche Oberfläche fürs Modell) ODER
       // zu schnell / zu steil gesunken / zu schräg aufgesetzt.
       const badSpot   = !canLandHere(state.pos.x, state.pos.z);
-      const hardLand  = vspeed > 55 || sinkRate > 16 || tilt > 0.9 || state.stalling;  // Stall = kein sanftes Landen
+      // X-Wing im Senkrecht-Sinkflug (10 % Schub) setzt IMMER sauber auf — nie „hart gelandet".
+      const vtolLand  = spec.vtol && state.throttle > 0 && state.throttle <= VTOL_LAND;
+      const hardLand  = !vtolLand && (vspeed > 55 || sinkRate > 16 || tilt > 0.9 || state.stalling);  // Stall = kein sanftes Landen
       if(badSpot || hardLand){
         state.crashed = true;
         state.crashTimer = 3.0;              // 3 Sek Löschsequenz
@@ -2808,7 +2868,12 @@ function updateHUD(){
     const traffic = trafficOn ? '✈️ ' : '🚫 ';       // Verkehr-Symbol (Taste J) links vom Missions-Symbol
     const mission = traffic + (missionsOn ? '🎯 ' : '🚫 ');
     s = traffic;                                        // Mustang/AlphaJet: nur Verkehr-Symbol
-    if(isCanadair()){
+    if(isXWing()){
+      // Schub-Phase: 🛬 am Boden · ⚠️ Antrieb aus · ⬇️ Senkrecht-Landung · ⬆️ steigen · 🚀 vorwärts
+      const tq = state.throttle;
+      s = traffic + (state.onGround ? '🛬' : (tq <= 0 ? '⚠️'
+        : (tq <= VTOL_LAND ? '⬇️' : (tq < VTOL_FWD ? '⬆️' : '🚀'))));
+    } else if(isCanadair()){
       const drops = Math.round(state.water*4);       // 0..4 Tropfen
       s = mission + (waterDrop ? '💦' : ('💧'.repeat(drops) || '·'));
       if(missionsOn && fire) s += ' 🔥';
