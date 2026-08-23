@@ -2330,21 +2330,26 @@ function preloadHangar(){
     const wrap = new THREE.Group(); wrap.add(obj);
     wrap.visible = false; scene.add(wrap);
     hangarObj = wrap;
-    // Bodenhöhe in der Mitte messen: der tiefste Punkt des Modells ist irgendein Detail, nicht der Boden
+    // Bodenhöhe messen: der Strahl von oben trifft ZUERST das Dach — der Hangar ist ein Innenraum.
+    // Deshalb alle Treffer ansehen und den TIEFSTEN nehmen, das ist der Boden im Inneren.
     wrap.updateMatrixWorld(true);
     const ray = new THREE.Raycaster();
-    let best = null;
-    for(const [dx,dz] of [[0,0],[10,0],[-10,0],[0,10],[0,-10]]){
-      ray.set(new THREE.Vector3(dx, HANGAR_SPAN, dz), new THREE.Vector3(0,-1,0));
-      const hit = ray.intersectObject(wrap, true);
-      if(hit.length && (best === null || hit[0].point.y > best)) best = hit[0].point.y;
+    let floor = null;
+    for(const [dx,dz] of [[0,0],[10,0],[-10,0],[0,10],[0,-10],[20,20],[-20,-20]]){
+      ray.set(new THREE.Vector3(dx, HANGAR_SPAN*2, dz), new THREE.Vector3(0,-1,0));
+      let low = null;                                  // tiefster Treffer dieses Strahls = Innenboden
+      for(const h of ray.intersectObject(wrap, true))
+        if(low === null || h.point.y < low) low = h.point.y;
+      if(low !== null && (floor === null || low > floor)) floor = low;   // höchster Boden gewinnt
     }
-    hangarFloorY = (best === null) ? 0 : best;
+    hangarFloorY = (floor === null) ? 0 : floor;
   }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
 }
 function enterHangar(host){
   if(!hangarObj) return false;
-  hangarHost = host || null;
+  if(!spacePlaced) layoutBodies();          // sonst liegen alle Körper auf (0,0,0) — siehe layoutBodies
+  const dsb = bodyOf('death');
+  hangarHost = host || (dsb ? { pos: dsb.center.clone(), up: dsb.def.r*1.4 } : null);
   locale = 'death';
   warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
   for(const b of bodies) if(b.obj) b.obj.visible = false;
@@ -2452,15 +2457,10 @@ function earthWorldVisible(on){
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
 }
-function enterSpace(){
-  locale = 'space';
-  // Erst mal umschauen: der Schub geht auf die Hälfte, sonst rutscht man mit 100 % direkt in den
-  // Hyperraum und ist weg, bevor man Erde, ISS und Mond gesehen hat.
-  warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
-  if(state.throttle > 0.5) state.throttle = 0.5;
-  // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
-  if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
-  // Himmelskörper setzen: waagerechte Ausflugrichtung als Bezug, dann pro Körper drehen und anheben
+// Himmelskörper um die aktuelle Position herum setzen: waagerechte Flugrichtung als Bezug, dann pro
+// Körper drehen (yaw) und anheben (up). Muss laufen, BEVOR irgendeine Körper-Distanz geprüft wird —
+// sonst liegen alle Zentren bei (0,0,0) und der nächstgrößte Körper "schluckt" den Spieler.
+function layoutBodies(){
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
   const base = new THREE.Vector3(fwd.x, 0, fwd.z);
   if(base.lengthSq() < 1e-6) base.set(0,0,-1);
@@ -2472,6 +2472,16 @@ function enterSpace(){
     b.center.copy(state.pos).addScaledVector(d, b.def.dist);
   }
   spacePlaced = true;
+}
+function enterSpace(){
+  locale = 'space';
+  // Erst mal umschauen: der Schub geht auf die Hälfte, sonst rutscht man mit 100 % direkt in den
+  // Hyperraum und ist weg, bevor man Erde, ISS und Mond gesehen hat.
+  warpDrive = 0; warpVis = 0; warpBrakeLock = 6;
+  if(state.throttle > 0.5) state.throttle = 0.5;
+  // Erdkugel so legen, dass ihre Oberfläche dort liegt, wo die flache Welt war
+  if(earthBall){ earthBall.position.set(state.pos.x, -EARTH_R, state.pos.z); earthBall.visible = true; }
+  layoutBodies();
   // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
@@ -2575,6 +2585,7 @@ function placeBodies(){
 // Gibt true zurück, wenn der Ort gewechselt wurde.
 const _bodyDir = new THREE.Vector3();
 function updateSpaceBodies(){
+  if(!spacePlaced) return false;            // ohne gesetzte Zentren nichts prüfen
   for(const b of bodies){
     if(!b.obj) continue;
     const d = state.pos.distanceTo(b.center);
@@ -2721,15 +2732,25 @@ const PAD_CLIMB = 70;              // m/s beim Auf- und Absteigen
 const PAD_TOP = 1400;              // Höhe, in der sie verschwinden bzw. auftauchen
 const shipTpl = {};                // key -> Vorlage zum Klonen
 const pads = [];                   // { obj, phase, t, x, z, hold }
+// Auf dem Landeplatz sollen alle gleich groß wirken (die Enterprise ist im All 640 m lang) und wie
+// der X-Wing senkrecht auf- und absteigen: waagerecht bleiben, nur Höhe ändern. Dazu wird jeder
+// Klon auf PAD_LEN normiert und so verschoben, dass seine UNTERSEITE auf dem Boden sitzt.
+const PAD_LEN = 34;
 function ensurePads(){
   if(pads.length >= 2) return;
   const keys = Object.keys(shipTpl);
   if(!keys.length) return;
   while(pads.length < 2){
     const tpl = shipTpl[keys[pads.length % keys.length]];
-    const obj = tpl.clone(true);
-    obj.visible = false; scene.add(obj);
-    pads.push({ obj, phase:'down', t:0, x:0, z:0, hold:0 });
+    const inner = tpl.wrap.children[0].clone(true);
+    inner.scale.multiplyScalar(PAD_LEN / tpl.def.len);
+    const holder = new THREE.Group();
+    holder.add(inner);
+    holder.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(holder);
+    inner.position.y -= box.min.y;                    // Unterseite auf y = 0 des Halters
+    holder.visible = false; scene.add(holder);
+    pads.push({ obj:holder, phase:'down', t:0, x:0, z:0, hold:0, yaw:Math.random()*Math.PI*2 });
   }
 }
 function padSpot(p){
@@ -2743,17 +2764,19 @@ function updatePads(dt){
   ensurePads();
   for(const p of pads){
     const gy = groundHeightAt(locale, p.x, p.z);
+    p.obj.rotation.set(0, p.yaw, 0);                  // immer waagerecht, nur gedreht
     if(p.phase === 'down'){
-      if(!p.obj.visible){ padSpot(p); p.obj.position.set(p.x, gy + PAD_TOP, p.z); p.obj.visible = true; }
+      if(!p.obj.visible){
+        padSpot(p); p.yaw = Math.random()*Math.PI*2;
+        p.obj.position.set(p.x, gy + PAD_TOP, p.z); p.obj.visible = true;
+      }
       p.obj.position.y -= PAD_CLIMB*dt;
-      p.obj.lookAt(p.obj.position.x, p.obj.position.y - 100, p.obj.position.z);
-      if(p.obj.position.y <= gy + 2){ p.obj.position.y = gy + 2; p.phase = 'hold'; p.hold = 3 + Math.random()*6; }
+      if(p.obj.position.y <= gy){ p.obj.position.y = gy; p.phase = 'hold'; p.hold = 3 + Math.random()*6; }
     } else if(p.phase === 'hold'){
       p.hold -= dt;
       if(p.hold <= 0) p.phase = 'up';
     } else {
       p.obj.position.y += PAD_CLIMB*dt;
-      p.obj.lookAt(p.obj.position.x, p.obj.position.y + 100, p.obj.position.z);
       if(p.obj.position.y > gy + PAD_TOP){ p.obj.visible = false; p.phase = 'down'; }
     }
   }
@@ -2856,8 +2879,8 @@ function preloadShips(){
       const box1 = new THREE.Box3().setFromObject(obj);
       const c = new THREE.Vector3(); box1.getCenter(c);
       obj.position.sub(c);                       // Schwerpunkt in den Ursprung
-      shipTpl[def.key] = new THREE.Group();
-      shipTpl[def.key].add(obj.clone(true));            // Vorlage für den Start-/Landeverkehr
+      shipTpl[def.key] = { wrap:new THREE.Group(), def };
+      shipTpl[def.key].wrap.add(obj.clone(true));       // Vorlage für den Start-/Landeverkehr
       for(let i = 0; i < (def.count || 1); i++){
         const wrap = new THREE.Group();
         wrap.add(i === 0 ? obj : obj.clone(true));      // Klone teilen Geometrie und Texturen
@@ -3212,6 +3235,8 @@ function cycleModel() {
   buildModel(MODEL_NAMES[currentModel]);
   spec = PLANE_SPECS[MODEL_NAMES[currentModel]] || DEFAULT_SPEC;
   placeAtStart(MODEL_NAMES[currentModel]);   // neues Flugzeug an passender Startposition am Boden
+  // Der X-Wing gehört in den Todesstern-Hangar — auch wenn man ihn per Modellwechsel wieder wählt.
+  if(MODEL_NAMES[currentModel] === 'XWing' && hangarObj) enterHangar();
   // Motorsound wird von updateEngineSound automatisch nachgezogen (erkennt Modellwechsel)
 }
 

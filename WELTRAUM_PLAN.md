@@ -507,6 +507,15 @@ dieses Modell der erste Kandidat für einen kleineren Ersatz.
 Serenity (31 MB / 289.000), Voyager (22,4 MB / 147.000, 4K-Texturen) und Rover (19 MB / 199.000) —
 zusammen rund 120 MB. Das sind die Kandidaten, falls der erste Download zu lange dauert.
 
+### Nachtrag 5 — vier Hangar-Fehler (23.08.2026)
+
+| Fehler | Ursache und Behebung |
+|---|---|
+| Man schwebte **über** dem Hangar | Der Boden-Raycast kam von oben und traf zuerst das **Dach** — der Hangar ist ein Innenraum. Jetzt pro Messpunkt der **tiefste** Treffer (Innenboden) und über sieben Messpunkte der höchste davon, damit ein Strahl durch eine Bodenöffnung den Boden nicht nach unten zieht |
+| Modellwechsel startete auf der Erde | Die Wahl des X-Wing führt jetzt immer in den Hangar — der Start ist durchgehend der Todesstern |
+| Enterprise stand senkrecht, riesig, halb im Boden | Der Start-/Landeverkehr nutzte die **Weltraum-Größe** (Enterprise 640 m), drehte per `lookAt` in die Bewegungsrichtung (Nase nach unten) und hatte den Ursprung im Schwerpunkt. Jetzt: alle Landeplatz-Schiffe auf **34 m** normiert, **Unterseite** auf dem Boden, **waagerecht** bleibend und senkrecht auf-/absteigend wie der X-Wing |
+| Nach dem Start aus dem Todesstern sofort auf dem Mars | Ohne vorherigen Weltraum-Besuch waren die Körper-Zentren nicht gesetzt, lagen also **alle bei (0,0,0)**. Beim Verlassen stand man 28 km über dem Ursprung — wo auch der Mars (30 km Radius) lag, dessen Landung damit sofort griff. Das Setzen steckt jetzt in `layoutBodies()` und läuft auch beim Hangar-Eintritt; `updateSpaceBodies()` prüft nichts, solange nicht platziert ist |
+
 ---
 
 ## Verifikation (alle Etappen)
