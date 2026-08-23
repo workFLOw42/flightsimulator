@@ -821,6 +821,45 @@ mit rund 98 MB dauerhaft im Speicher (`window.*_GLB` wird nie freigegeben), und
 
 ---
 
+### Nachtrag 11 — das Ruckeln beim Start war das Höhenraster (23.08.2026)
+
+Nach dem Halbieren der Texturen war der Start kürzer, es ruckelte aber weiter. Die Frage war, ob der
+Hangar selbst schuld ist. Gemessen mit `C:\tmp\raycost.js` (echter Ray-Dreieck-Test, wie three.js):
+
+| | Dreiecke | pro Frame | über 128 Zeilen |
+|---|---|---|---|
+| Mond-Krater | 2.971 | 12 ms | 1,6 s |
+| **Mars-Terrain** | 37.962 | **128 ms** | **16,4 s** |
+| Hangar (9 Strahlen, einmalig) | 90.676 | 14 ms | — |
+
+Ein 60-Hz-Frame hat 16,7 ms. `stepGroundFields()` brauchte für **eine** Rasterzeile des Mars 128 ms —
+achtmal darüber, auf einem Tablet 3 bis 6 mal so viel, und das ortsunabhängig direkt beim Start. Der
+Hangar ist unschuldig: er hat **null Texturen**, und seine Bodenmessung läuft genau einmal.
+
+Der Grund: der three.js-Raycaster prüft pro Strahl **jedes** Dreieck des Meshes. Deshalb werden die
+Terrain-Dreiecke jetzt beim Laden einmal in ein **XZ-Zellenraster** einsortiert (`buildGroundIndex`,
+Zellenkante 24 m); ein Höhenwert kostet danach nur noch die Handvoll Dreiecke seiner Zelle
+(`sampleGroundTpl`). Weil eine Zeile damit fast nichts kostet, laufen jetzt **acht Zeilen pro Frame**
+— das Raster steht nach 16 Frames statt nach 128.
+
+Gegengeprüft mit `C:\tmp\groundidx_verify.js`: 817 Punkte je Terrain gegen die Suche über alle
+Dreiecke, größte Abweichung **0,000000 m**, keine Punkte, die nur eine der beiden Methoden findet.
+Mond 47 mal schneller, **Mars 392 mal schneller**. Die Landehöhen bleiben also exakt dieselben.
+
+**Die Hangardecke ist jetzt fest.** Man konnte hindurchfliegen, während der Boden korrekt einen Crash
+auslöst: als Ausgang nach oben galt `HANGAR_OUT_H = 85` m über dem Boden, die Decke liegt aber schon
+bei rund 74 m — man flog also durch das Dach und war im Weltall. Die Deckenhöhe wird jetzt beim Laden
+gemessen, genau wie der Boden (neun Strahlen nach oben, Median des jeweils tiefsten Treffers), und
+7 m darunter ist Schluss: der Flieger stößt an und bleibt drin. Hinaus geht es durch die Öffnung.
+Bewusst **kein** Crash an der Decke — im Hangar gibt es keine Feuerwehr, ein Absturz würde einen
+direkt zur Erde zurückschicken.
+
+Noch offen aus derselben Messung: `stepGroundExact()` schießt beim Landen 5 Strahlen pro Frame gegen
+die Kachel (auf dem Mars rund 5 ms, auf einem Tablet entsprechend mehr). Das ließe sich mit demselben
+Zellenraster erledigen, braucht aber die Umrechnung der Spiegel-Kachelung.
+
+---
+
 ## Verifikation (alle Etappen)
 
 Das Spiel ist eine statische Seite ohne Testsuite. Nach jeder Etappe:

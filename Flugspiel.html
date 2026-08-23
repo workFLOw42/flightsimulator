@@ -2195,24 +2195,81 @@ function preloadGround(key){
     G.field = new Float32Array(GROUND_FIELD_N*GROUND_FIELD_N);
     G.row = 0;
     G.ray = new THREE.Raycaster();
+    buildGroundIndex(G);
   }, (err)=>{ console.warn('Boden-GLB Ladefehler ('+key+'):', err); });
 }
-// Höhenraster aus der ECHTEN Geometrie ausmessen (nicht geschätzt): pro Frame eine Rasterzeile,
-// damit der Spielstart nicht blockiert.
+// Suchraster über die Terrain-Dreiecke. Der Grund: der three.js-Raycaster prüft pro Strahl JEDES
+// Dreieck des Meshes. Beim Mars sind das 37.962 Stück, also 128 ms für eine Rasterzeile — achtmal
+// über dem Budget eines 60-Hz-Frames, und das lief beim Start minutenlang (gemessen mit
+// C:\tmp\raycost.js). Mit den Dreiecken in XZ-Zellen kostet ein Höhenwert nur noch die Handvoll
+// Dreiecke seiner Zelle. Aufgebaut wird das Raster einmal beim Laden.
+const GROUND_CELL = 24;             // Zellenkante in Metern
+function buildGroundIndex(G){
+  const cells = new Map(), verts = [];
+  const p = new THREE.Vector3();
+  G.tpl.traverse(o=>{
+    if(!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const pos = o.geometry.attributes.position, idx = o.geometry.index;
+    const n = idx ? idx.count : pos.count;
+    for(let k = 0; k+2 < n; k += 3){
+      const tri = [];
+      for(let c = 0; c < 3; c++){
+        const vi = idx ? idx.getX(k+c) : k+c;
+        p.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi)).applyMatrix4(o.matrixWorld);
+        tri.push(p.x, p.y, p.z);
+      }
+      const base = verts.length;
+      verts.push(tri[0],tri[1],tri[2], tri[3],tri[4],tri[5], tri[6],tri[7],tri[8]);
+      const x0 = Math.floor(Math.min(tri[0],tri[3],tri[6])/GROUND_CELL);
+      const x1 = Math.floor(Math.max(tri[0],tri[3],tri[6])/GROUND_CELL);
+      const z0 = Math.floor(Math.min(tri[2],tri[5],tri[8])/GROUND_CELL);
+      const z1 = Math.floor(Math.max(tri[2],tri[5],tri[8])/GROUND_CELL);
+      for(let gx = x0; gx <= x1; gx++) for(let gz = z0; gz <= z1; gz++){
+        const key = gx + ',' + gz;
+        let list = cells.get(key);
+        if(!list){ list = []; cells.set(key, list); }
+        list.push(base);
+      }
+    }
+  });
+  G.idx = { cells, v: new Float32Array(verts) };
+  console.log('Höhenraster-Index', G.tile.toFixed(0), ':', (verts.length/9).toFixed(0), 'Dreiecke in', cells.size, 'Zellen');
+}
+// Höhe der Kachelvorlage an (x,z) — der höchste Punkt unter dem Strahl, wie beim Raycast von oben.
+function sampleGroundTpl(G, x, z){
+  if(!G.idx) return null;
+  const list = G.idx.cells.get(Math.floor(x/GROUND_CELL) + ',' + Math.floor(z/GROUND_CELL));
+  if(!list) return null;
+  const v = G.idx.v;
+  let top = null;
+  for(const b of list){
+    const ax=v[b], ay=v[b+1], az=v[b+2], bx=v[b+3], by=v[b+4], bz=v[b+5], cx=v[b+6], cy=v[b+7], cz=v[b+8];
+    const d1x=bx-ax, d1z=bz-az, d2x=cx-ax, d2z=cz-az;
+    const den = d1x*d2z - d2x*d1z;
+    if(Math.abs(den) < 1e-12) continue;              // senkrechte Fläche, von oben nicht zu treffen
+    const px = x-ax, pz = z-az;
+    const u = (px*d2z - d2x*pz)/den, w = (d1x*pz - px*d1z)/den;
+    if(u < -1e-9 || w < -1e-9 || u+w > 1+1e-9) continue;
+    const y = ay + u*(by-ay) + w*(cy-ay);
+    if(top === null || y > top) top = y;
+  }
+  return top;
+}
+// Höhenraster aus der ECHTEN Geometrie ausmessen (nicht geschätzt). Mit dem Zellenraster ist eine
+// Zeile so billig, dass acht Zeilen pro Frame passen — nach 16 Frames steht das Raster.
 function stepGroundFields(){
   for(const k in GROUNDS){
     const G = GROUNDS[k];
     if(!G.tpl || !G.field || G.row >= GROUND_FIELD_N) continue;
-    const N = GROUND_FIELD_N, half = G.tile/2, step = G.tile/(N-1), iz = G.row;
-    const down = new THREE.Vector3(0,-1,0), from = new THREE.Vector3();
-    for(let ix=0; ix<N; ix++){
-      from.set(-half + ix*step, 2000, -half + iz*step);
-      G.ray.set(from, down);
-      const hit = G.ray.intersectObject(G.tpl, true);
-      G.field[iz*N+ix] = hit.length ? hit[0].point.y : 0;
+    const N = GROUND_FIELD_N, half = G.tile/2, step = G.tile/(N-1);
+    for(let n = 0; n < 8 && G.row < N; n++, G.row++){
+      const iz = G.row;
+      for(let ix=0; ix<N; ix++){
+        const y = sampleGroundTpl(G, -half + ix*step, -half + iz*step);
+        G.field[iz*N+ix] = (y === null) ? 0 : y;
+      }
     }
-    G.row++;
-    return;                     // pro Frame nur eine Zeile insgesamt
+    return;                     // pro Frame nur ein Terrain
   }
 }
 // Bodenhöhe: Spiegel-Kachelung + bilineare Interpolation im Höhenraster.
@@ -2334,8 +2391,8 @@ const HANGAR_X = -20;              // Startplatz: tief in der Halle, die Öffnun
 const HANGAR_Z = 0;
 const HANGAR_HOVER = 25;           // Schwebehöhe über dem Hangarboden
 const HANGAR_YAW = -Math.PI/2;     // Nase (liegt auf -Z) zeigt damit auf +X, also zum Ausgang
+let hangarCeilY = 1e9;             // Unterkante des Dachs, beim Laden gemessen (siehe preloadHangar)
 const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All (Öffnung liegt bei 141)
-const HANGAR_OUT_H = 85;           // so hoch über dem Boden -> zurück ins All (Decke liegt bei ~70 m)
 let hangarObj = null, hangarFloorY = 0;
 // Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern, Star Destroyer oder die ISS.
 let hangarHost = null;      // { pos: Vector3, up: number }
@@ -2375,7 +2432,17 @@ function preloadHangar(){
     }
     hits.sort((a,b)=>a-b);
     hangarFloorY = hits.length ? hits[Math.floor(hits.length/2)] : 0;
-    console.log('Hangar geladen: Boden bei y =', hangarFloorY.toFixed(1),
+    // Decke genauso vermessen: Strahlen nach OBEN, tiefster Treffer ist die Unterkante des Dachs.
+    // Vorher galt "höher als 85 m über dem Boden" als hinausgestiegen — man flog also durch das Dach.
+    const up = new THREE.Vector3(0,1,0), tops = [];
+    for(const dx of [-60,0,60]) for(const dz of [-60,0,60]){
+      const r = new THREE.Raycaster(new THREE.Vector3(HANGAR_X+dx, hangarFloorY+3, HANGAR_Z+dz), up);
+      const h = r.intersectObject(wrap, true);
+      if(h.length) tops.push(h[0].point.y);
+    }
+    tops.sort((a,b)=>a-b);
+    if(tops.length) hangarCeilY = tops[Math.floor(tops.length/2)];
+    console.log('Hangar geladen: Boden bei y =', hangarFloorY.toFixed(1), '| Decke bei y =', hangarCeilY.toFixed(1),
                 '| Startplatz', HANGAR_X, HANGAR_Z, '| Blickrichtung yaw', HANGAR_YAW.toFixed(3));
   }, (err)=>{ console.warn('Hangar-GLB Ladefehler:', err); });
 }
@@ -2673,9 +2740,15 @@ function updateLocale(){
     // erledigt Anflug, Hyperraum-Bremse, Orbit-Grenze UND den Wiedereintritt an der Erdkugel
     updateSpaceBodies();
   } else if(locale === 'death'){
-    // hinaus durch die Hangaröffnung oder nach oben -> wieder im Weltall
+    // Die Decke ist fest — wer hochzieht, stößt an und bleibt drin. Vorher zählte "85 m über dem
+    // Boden" als hinausgestiegen, also flog man einfach durch das Dach, während der Boden einen
+    // Crash auslöst. Hinaus geht es durch die Öffnung (oder nach unten, wenn man den Boden verfehlt).
+    const top = hangarCeilY - 7;
+    if(state.pos.y > top){
+      state.pos.y = top;
+      if(state.vel.y > 0) state.vel.y = 0;
+    }
     if(Math.hypot(state.pos.x, state.pos.z) > HANGAR_OUT_R ||
-       state.pos.y - hangarFloorY > HANGAR_OUT_H ||
        state.pos.y < hangarFloorY - 20) leaveHangar();     // auch nach unten hinaus
   } else {
     const G = GROUNDS[locale];

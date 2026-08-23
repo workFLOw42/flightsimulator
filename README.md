@@ -115,8 +115,8 @@ Beim Übergang ins Weltall geht der Schub automatisch auf **50 %**, damit man si
 und nicht sofort in den Hyperraum rutscht.
 
 Auf dem **Todesstern** kann man **im Hangar landen**: einfach anfliegen wie einen Planeten. Drinnen
-schwebt man mittig über dem Hangarboden (20 % Schub) und setzt mit 10 % auf; wer hinausfliegt oder
-hochsteigt, ist wieder im All. **Dort startet der X-Wing auch** — beim Spielstart und nach jedem
+schwebt man mittig über dem Hangarboden (20 % Schub) und setzt mit 10 % auf; **Boden und Decke sind
+fest**, hinaus geht es durch die Öffnung. **Dort startet der X-Wing auch** — beim Spielstart und nach jedem
 Reset. Genauso funktionieren die **Star Destroyer** (fünf davon, die Flugzeugträger des Weltalls) und
 die **ISS** — anfliegen, im selben Hangar landen, wieder hinausfliegen. Rundherum sieht man **andere
 Schiffe einfliegen**. Nach dem Hinausfliegen bleibt das Andocken ein paar Sekunden gesperrt, sonst
