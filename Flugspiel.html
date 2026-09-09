@@ -874,13 +874,19 @@ function refreshCarriers(){
 // Die WASSERLINIE wurde für jedes Modell einzeln ausgemessen (Höhe, ab der der Rumpf seine volle
 // Breite erreicht, jeweils mittschiffs — Bug und Heck sind immer schmal und verfälschen das).
 // Angegeben in Prozent der Schiffslänge, weil die Modelle völlig verschiedene Eigenmaßstäbe haben
-// (0,14 bis 27.000 Einheiten). Ohne diese Werte schwimmt ein Schiff sichtbar obenauf oder säuft ab:
-//   Kreuzfahrtschiff 2,99 %  ·  Liberty 6,69 %  ·  Container 1,46 %  ·  Segler 8,05 %
+// (0,14 bis 27.000 Einheiten). Ohne diese Werte schwimmt ein Schiff sichtbar obenauf oder säuft ab.
+// Maßgeblich ist der TIEFGANG DES VORBILDS, nicht eine am Modell gemessene Breitenregel — mit der
+// habe ich mich zweimal in die Irre führen lassen:
+//   Panamax-Container 300 m -> 13 m (der Rumpf gibt nur 4,2 her)  ·  Kreuzfahrtschiff 250 m -> 8 m
+//   Liberty-Frachter 135 m -> 8,2 m (27 ft der Baureihe)          ·  Großsegler 90 m -> 5 m
+// Daraus die Werte hier: 3,20 % · 6,07 % · 2,86 % · 5,56 %.
 // Beim Kreuzfahrtschiff ist der Rumpf unter der Wasserlinie GAR NICHT modelliert (gemessen: nur
 // 0,5 % der Fläche zeigt nach unten, das Modell ist dort abgeschnitten) — deshalb der kleine Wert.
 // Zwei Werte sind nachträglich korrigiert, weil die 92-%-Breitenregel dort in die Irre führte:
-//  · Container: sein Rumpf endet bei y = -2,79, der tiefste HECKpunkt lag aber bei +0,58 — die
-//    Schraube stand also über Wasser. 1,46 % gibt ihr 1 m Überdeckung.
+//  · Container: erst stand seine Schraube über Wasser (tiefster Heckpunkt +0,58), dann schwebte er
+//    sichtbar — sein ganzer roter Unterwasserrumpf war zu sehen. Ein Panamax-Schiff dieser Größe hat
+//    rund 13 m Tiefgang; so tief geht es nicht, weil sein Rumpf nur bis y = -4,38 modelliert ist.
+//    2,86 % holen 8,6 m heraus und nutzen den Rumpf fast vollständig aus (4,20 von 4,38 m).
 //  · Segler: seine breiteste Stelle mittschiffs liegt bei y = -0,11, das ist das SCHANZKLEID. Sein
 //    Deck stand damit praktisch im Wasser, während Back und Poop reichlich Luft hatten. Mit 6,00 %
 //    hat er 3,74 m Freibord — nötig, weil er als kürzestes der vier Schiffe voll mit der Welle
@@ -894,12 +900,12 @@ function refreshCarriers(){
 // Modell gebaut). Ich habe den Container deshalb erst falsch gedreht. Wer hier etwas ändert:
 // im Spiel nachsehen, nicht rechnen.
 const SHIP_TYPES = [
-  { key:'cruise',    glb:()=>window.CRUISE_GLB,    len:250, wl:0.0299, spd:5.5, sym:'🛳️', rot180:true },
+  { key:'cruise',    glb:()=>window.CRUISE_GLB,    len:250, wl:0.0320, spd:5.5, sym:'🛳️', rot180:true },
   // rot180: das Modell zeigt mit dem Bug nach hinten — gemessen war die Breite vorne 16,5 und hinten
   // 15,0, also lief die schmale Seite falsch herum. Es fuhr sichtbar rueckwaerts.
-  { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0669, spd:4.5, sym:'🚢', rot180:true },
-  { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0146, spd:5.0, sym:'🚢' },
-  { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.0600, spd:3.0, sym:'⛵' },
+  { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0607, spd:4.5, sym:'🚢', rot180:true },
+  { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0286, spd:5.0, sym:'🚢' },
+  { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.0556, spd:3.0, sym:'⛵' },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
 // belebt wirken, ohne dass man ständig ausweichen muss: bei 3.500 m Radius liegt selten mehr als
@@ -942,24 +948,34 @@ function preloadSeaShips(){
       // die anderen auf Z) — die größere der beiden waagerechten Achsen ist immer die Länge.
       const longest = Math.max(size.x, size.z);
       obj.scale.setScalar(def.len / Math.max(0.001, longest));
+      // ZUERST drehen, DANN zentrieren — in dieser Reihenfolge, und das ist wichtig:
+      // rotation.y dreht um den OBJEKTURSPRUNG, nicht um den Modellmittelpunkt. Zentriert man vorher,
+      // hebt die Drehung das wieder auf. Gemessen stand der Container-Rumpf danach bei
+      // x = -61,7 .. -19,4, also 40 m neben seiner Kollisionshülle (hw = 21,2 um x = 0): 86 % seiner
+      // Punkte lagen außerhalb, davon 414 direkt an der Wasserlinie. Genau dort fährt ein Boot
+      // hindurch, ohne etwas zu berühren — und genau das war zu sehen.
+      // Längsachse auf Z bringen (Nase auf -Z, wie bei den Flugzeugen). Beim Container liegt sie auf X.
+      if(size.x > size.z) obj.rotation.y = Math.PI/2;
+      // Einzelne Modelle sind gegen die Fahrtrichtung modelliert -> um 180 Grad drehen.
+      if(def.rot180) obj.rotation.y += Math.PI;
+      obj.updateMatrixWorld(true);
       const box2 = new THREE.Box3().setFromObject(obj);
       const c = new THREE.Vector3(); box2.getCenter(c);
       obj.position.x -= c.x; obj.position.z -= c.z;
       // Wasserlinie auf y = 0: der ausgemessene Anteil der Länge über der Modell-Unterkante.
       obj.position.y -= box2.min.y + def.len * def.wl;
       const wrap = new THREE.Group();
-      // Längsachse auf Z drehen, damit alle Schiffe dieselbe Konvention haben wie die Flugzeuge
-      // (Nase auf -Z). Beim Container liegt sie auf X, er braucht die Vierteldrehung.
-      const box3 = new THREE.Box3().setFromObject(obj);
-      const s3 = new THREE.Vector3(); box3.getSize(s3);
-      if(s3.x > s3.z) obj.rotation.y = Math.PI/2;
-      // Einzelne Modelle sind gegen die Fahrtrichtung modelliert -> um 180 Grad drehen.
-      if(def.rot180) obj.rotation.y += Math.PI;
       wrap.add(obj);
       shipTemplates[def.key] = wrap;
+      wrap.updateMatrixWorld(true);
       const box4 = new THREE.Box3().setFromObject(wrap);
-      const s4 = new THREE.Vector3(); box4.getSize(s4);
-      shipHalf[def.key] = { hl: s4.z/2, hw: s4.x/2, top: box4.max.y };
+      // Halbmaße aus den TATSÄCHLICHEN Grenzen, nicht aus der Größe: liegt die Box (etwa wegen einer
+      // unsymmetrischen Aufbaustruktur) nicht genau um 0, deckt die größere Seite beides ab. Sonst
+      // steht ein Teil des Schiffs außerhalb seiner eigenen Kollisionshülle.
+      shipHalf[def.key] = {
+        hl: Math.max(Math.abs(box4.min.z), Math.abs(box4.max.z)),
+        hw: Math.max(Math.abs(box4.min.x), Math.abs(box4.max.x)),
+        top: box4.max.y };
       // Schon fahrende Platzhalter dieses Typs gegen das echte Modell tauschen.
       for(const sh of seaShips) if(sh.key === def.key) refreshSeaShip(sh);
     }, (err)=>{ console.warn('Schiff-GLB Ladefehler ('+def.key+'):', err); });
@@ -2943,10 +2959,13 @@ const DINGHY_FLOOR = 0.24;   // Anteil der Modellhoehe, auf dem der Innenboden l
 // hinunter, der Innenboden liegt bei 0,46 und die Oberkante des Schlauchwulstes bei 1,31.
 // Damit ist das brauchbare Fenster 0,10 (Antrieb gerade nass) bis 0,46 (Boden gerade trocken) —
 // 0,55 hatte den Innenboden um 9 cm absaufen lassen, der Astronaut haette im Wasser gestanden.
-// 0,32 liegt mittig: Antrieb 22 cm unter Wasser, Innenboden 14 cm darueber, Bordwand ragt 0,99 m
-// heraus. Das Nicken in der Duenung hebt das Heck nur um 4 cm (staerkste Wellenneigung 1,7 Grad
-// ueber 4,2 m Bootslaenge, davon DINGHY_BOB), es kann den Antrieb also nicht freilegen.
-const DINGHY_DRAFT = 0.32;
+// 0,32 war rechnerisch richtig, sah aber falsch aus: das Boot schwamm sichtbar obenauf, weil der
+// 1,93 m hohe Schlauchwulst 1,61 m aus dem Wasser ragte. Ein Schlauchboot liegt tiefer IM Wasser.
+// 0,42 lässt den Innenboden noch 4 cm trocken (er liegt bei 0,462 — gemessen) und versenkt den
+// Antrieb 0,31 m. Mehr geht nicht: bei 0,46 stünde der Astronaut im Wasser.
+// Das Nicken hebt das Heck nur um 0,14 m (stärkste Wellenneigung über 4,2 m Bootslänge, davon
+// DINGHY_BOB), der Antrieb bleibt also auch im Wellenberg unter Wasser.
+const DINGHY_DRAFT = 0.42;
 let dinghyTemplate = null, dinghyFloorY = 0;
 function preloadDinghy(){
   if(!window.DINGHY_GLB || !THREE.GLTFLoader) return;
@@ -5506,13 +5525,17 @@ const BOAT_ROLL = 0.25;      // wie stark es sich in die Kurve legt (rein optisc
 // sie. Deshalb wackeln die Boote und die 250-m-Schiffe bleiben ruhig, ohne dass man das eigens
 // einbauen muss (gemessen: 3,2 Grad beim Boot gegen 0,5 Grad beim Kreuzfahrtschiff).
 const BOAT_BOB = 1.0;
-// Tiefgang: um so viel liegt der Kiel UNTER der Wasserlinie. Das Modell ist 6,40 m hoch, seine
-// Schrauben sitzen bei 0,14–1,31 m (ausgemessen), das Deck beginnt bei ~2,70 m.
-// Von 1,5 auf 2,0 erhöht, als die Wellen größer wurden (AMP 1,6 -> 3,0): das stärkere Nicken hebt
-// das Heck um 0,44 m, und bei 1,5 m Tiefgang lag die Schraubenoberkante damit 0,25 m ÜBER Wasser —
-// genau der Effekt, den man vorher schon einmal gesehen hat. Mit 2,0 bleiben die Schrauben auch im
-// Wellenberg 0,25 m unter Wasser, und das Deck hat noch 0,70 m Luft.
-const BOAT_DRAFT = 2.0;
+// Tiefgang: um so viel liegt der Kiel UNTER der Wasserlinie.
+// Alle Werte am GEBAUTEN Objekt nachgemessen (makeFireBoat), nicht geschätzt — der frühere
+// Kommentar hier war falsch und hat zwei Korrekturen in die falsche Richtung verursacht:
+//   Deck bei y = 3,00 (die dichteste Punktebene des Modells, 70.401 Punkte) — nicht 2,70.
+//   Antrieb bis y = 0,55 hinunter — nicht 1,31. Die Schrauben brauchen also viel weniger Tiefe.
+// Nötige Reserve nach oben: 0,45 m, weil das GERENDERTE Wasser im Wellental bis 0,45 m höher liegt
+// als der Wert, mit dem das Boot rechnet (das Meeresgitter interpoliert linear zwischen Punkten,
+// die 62,5 m auseinander liegen — das Boot ist nur 16 m lang), plus 0,44 m Nicken = 0,89 m.
+// Mit 2,0 blieben davon 0,11 m: das Boot stand sichtbar voll Wasser, vom Rumpf war nichts mehr zu
+// sehen. 1,1 m versenkt den Antrieb 0,55 m und lässt 1,90 m Freibord, davon 1,01 m nach Reserve.
+const BOAT_DRAFT = 1.1;
 // An der Küste ABGLEITEN statt anzuhalten: von der Fahrtrichtung aus schrittweise zur Seite drehen
 // (abwechselnd links/rechts), bis ein Schritt im Wasser landet, und die Fahrt dorthin umlenken. So
 // gleitet ein Boot an jedem Ufer ab, in jedem Anfahrtwinkel. Beide Boote nutzen das.

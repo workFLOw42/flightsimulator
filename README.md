@@ -277,10 +277,21 @@ nicht — das Meeresgitter hat 62,5 m Punktabstand, darstellbar sind erst Wellen
 und mehr Segmente sind nicht drin (das Gitter kostet bei 96 Segmenten schon 8,3 ms von 16,7, bei 128
 wären es 14,7). Deshalb sind sie **höher** statt kürzer.
 
-Als Nebenwirkung musste das **Feuerwehrboot tiefer** liegen (1,5 → 2,0 m): das stärkere Nicken hob
-sein Heck um 0,44 m, und damit stand die Schraubenoberkante 0,25 m über Wasser. Beim **Großsegler**
-brauchte es mehr Freibord (3,74 m), weil er als kürzestes der vier Schiffe voll mitschwingt *und*
-nickt — bei 1,89 m tauchte sein Deck im Zusammenspiel beider um 1,08 m ein.
+Der **Großsegler** brauchte dadurch mehr Freibord (4,13 m), weil er als kürzestes der vier Schiffe voll
+mitschwingt *und* nickt — bei 1,89 m tauchte sein Deck im Zusammenspiel beider um 1,08 m ein.
+
+Und das **Feuerwehrboot** lief danach sichtbar mit Wasser voll. Schuld war ein falscher Kommentar in
+meinem eigenen Code: er verortete das Deck bei 2,70 m und die Schrauben bei 0,14–1,31. Am gebauten
+Objekt nachgemessen liegt das **Deck bei 3,00** (die dichteste Punktebene, 70.401 Punkte) und der
+**Antrieb reicht nur bis 0,55** hinunter. Ich hatte den Tiefgang deshalb zweimal in die falsche
+Richtung korrigiert, bis auf 2,0 m — davon blieben nach Wellenreserve 0,11 m, und der Rumpf war
+komplett unter Wasser. Richtig sind **1,1 m**: Antrieb 0,55 m unter Wasser, 1,90 m Freibord, davon
+1,01 m Reserve.
+
+Zu dieser Reserve gehört ein Effekt, der leicht übersehen wird: das **gerenderte Wasser liegt im
+Wellental bis 0,45 m höher** als der Wert, mit dem ein Boot rechnet. Das Meeresgitter interpoliert
+linear zwischen Punkten, die 62,5 m auseinander liegen, während das Boot nur 16 m lang ist und den
+exakten Wellenwert an seinem Mittelpunkt benutzt. Wer nur gegen `waveY` rechnet, liegt zu hoch.
 
 ### Bug und Heck: nicht berechenbar
 Zwei der vier Modelle sind **gegen** die Fahrtrichtung gebaut und fuhren rückwärts (Kreuzfahrtschiff
@@ -295,6 +306,22 @@ zuverlässig:
 
 Wer hier etwas ändert: **im Spiel nachsehen, nicht rechnen.**
 
+### Der Fehler, der alles Durchfahren erklärte
+Trotz Kollisionshülle konnte man mit dem Boot durch die Schiffe fahren — und die Flugzeuge auch. Die
+Ursache war eine falsche **Reihenfolge** beim Aufbereiten der Modelle: ich habe erst zentriert, dann
+gedreht. `rotation.y` dreht aber um den *Objektursprung*, nicht um den Modellmittelpunkt, und hebt das
+Zentrieren damit wieder auf.
+
+Gemessen stand der Container-Rumpf danach bei x = −61,7 bis −19,4 — also **40 m neben seiner eigenen
+Kollisionshülle** (die 21,2 m um x = 0 abdeckt). **86 % seiner Punkte lagen außerhalb**, davon 414
+direkt an der Wasserlinie: genau dort, wo ein Boot vorbeifährt. Es hat also nie etwas berührt.
+
+Jetzt wird **nach** der Drehung zentriert, und die Halbmaße kommen aus den tatsächlichen Grenzen
+(`max(|min|, |max|)`) statt aus der Boxgröße — liegt ein Modell doch einmal unsymmetrisch, deckt die
+größere Seite beides ab. Der breiteste Punkt liegt seither bei jedem Schiff **innerhalb** der Hülle
+(Container 21,2 statt 61,7 m). Nachgemessen mit 112 Anfahrten aus je 16 Richtungen: tiefste
+Eindringung 2,7 m in die 4-m-Pufferzone, in den Rumpf selbst **nie**.
+
 ### Die Wasserlinie muss man ausmessen
 Jedes Modell hat seinen eigenen Maßstab (von 0,14 bis 27.000 Einheiten) und seine eigene Bauart. Wo
 die Wasseroberfläche hingehört, ist deshalb pro Schiff gemessen: die Höhe, ab der der Rumpf **mittschiffs**
@@ -306,13 +333,19 @@ Beim Kreuzfahrtschiff fällt der Wert aus dem Rahmen, und das hat einen Grund: s
 das Modell ist dort einfach abgeschnitten. Hätte man es so tief gelegt wie die anderen, würde man in
 ein Loch sehen.
 
-Zwei Werte musste ich nach dem ersten Spielen korrigieren, weil die 92-%-Regel dort in die Irre führte:
-- **Containerschiff 0,93 → 1,46 %.** Sein Rumpf endet bei −2,79, der tiefste **Heck**punkt lag aber
-  bei +0,58 — die Schraube stand also über Wasser und war sichtbar.
-- **Großsegler 10,27 → 8,05 %.** Seine breiteste Stelle mittschiffs liegt bei −0,11, und das ist das
-  **Schanzkleid**: sein Deck stand damit praktisch im Wasser, während Back und Poop reichlich Luft
-  hatten. Jetzt hat er 1,89 m Freibord, was für einen 90-m-Segler passt; sein tiefster Heckpunkt
-  (−9,03) bleibt weit unter Wasser.
+Die 92-%-Regel hat mich dabei zweimal in die Irre geführt, und ich habe deshalb umgestellt: **maßgeblich
+ist jetzt der Tiefgang des Vorbilds**, nicht eine am Modell gemessene Breite.
+
+| | Länge | Vorbild-Tiefgang | Wert |
+|---|---|---|---|
+| 🚢 Containerschiff | 300 m | 13 m (Panamax) | 2,86 % → 8,6 m |
+| 🛳️ Kreuzfahrtschiff | 250 m | 8 m | 3,20 % → 8,0 m |
+| 🚢 Liberty-Frachter | 135 m | 8,2 m (27 ft der Baureihe) | 6,07 % → 8,2 m |
+| ⛵ Großsegler | 90 m | 5 m | 5,56 % → 5,0 m |
+
+Beim Containerschiff geht die volle Tiefe nicht: sein Rumpf ist nur bis −4,38 modelliert (auf die
+Ziellänge skaliert −8,58), tiefer würde man in ein Loch sehen. 2,86 % nutzen ihn fast vollständig aus.
+Vorher lag er bei 1,46 % und **schwebte sichtbar** — der ganze rote Unterwasserrumpf war zu sehen.
 
 ## 🛟 Ins Wasser: das Schlauchboot
 
@@ -348,14 +381,13 @@ darum nur **zu Fuß**, nicht im Boot).
 - Der Astronaut **steht** im Boot. Sitzen kann er nicht: seine Pose ist beim Verkleinern des Modells
   fest in die Geometrie gebacken, es gibt keine Knochen mehr. Stehend passt es aber besser — er ist
   auf **4,2 m** Bootslänge gut zu sehen, sitzend verschwände er hinter dem Wulst.
-- **Der Tiefgang ist ausgemessen, nicht geschätzt.** Mit 0,18 m schaute der Außenborder aus dem
-  Wasser — derselbe Fehler, der beim Feuerwehrboot schon einmal auffiel. Am normierten Modell gilt:
-  der Antrieb reicht bis **0,10 m** über dem Kiel hinunter, der **Innenboden** liegt bei 0,46 und die
-  Oberkante des Schlauchwulstes bei 1,31. Das brauchbare Fenster ist damit **0,10 bis 0,46** — 0,55
-  hätte den Innenboden um 9 cm absaufen lassen, der Astronaut hätte im Wasser gestanden. Gewählt sind
-  **0,32 m**: Antrieb 22 cm unter Wasser, Innenboden 14 cm darüber, Bordwand ragt 0,99 m heraus. Das
-  Nicken in der Dünung hebt das Heck nur um 4 cm (stärkste Wellenneigung 1,7° über 4,2 m Bootslänge),
-  es kann den Antrieb also nicht freilegen.
+- **Der Tiefgang ist ausgemessen, nicht geschätzt** — und musste zweimal nach: mit 0,18 m schaute der
+  Außenborder heraus, mit 0,32 m schwamm das Boot sichtbar obenauf (der 1,93 m hohe Wulst ragte 1,61 m
+  aus dem Wasser). Am normierten Modell reicht der Antrieb bis **0,114 m** über dem Kiel hinunter, der
+  **Innenboden** liegt bei **0,462** — das brauchbare Fenster ist also nur 35 cm breit. Gewählt sind
+  **0,42 m**: Antrieb 0,31 m unter Wasser, Innenboden noch 4 cm trocken, Wulst ragt 1,51 m heraus.
+  Dass die Füße gelegentlich nass werden, ist bei einem Schlauchboot in Ordnung — anders als bei einem
+  Feuerwehrboot, dessen ganzes Deck dann unter Wasser läge.
 
 ### Zwei Fallen beim Einbau (beide ausgemessen)
 - **Der Trägerrumpf ist 4 m breiter als das Deck.** Direkt neben der Deckkante ist also Bordwand,
