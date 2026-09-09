@@ -19,25 +19,43 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 |---|---|---|
 | Lenken | linker Stick ←→ | ← / → |
 | Nase hoch/runter | linker Stick ↕ | ↑ / ↓ |
-| Rollen | LT / RT | Q / E |
+| Rollen (loslassen = richtet sich auf) | LT / RT | Q / E |
 | Schub 0–100 % | rechter Stick ↕ | W / S |
 | Vollgas | — | Leertaste |
 | **Boost** (halten): 100 % + extra Schub | X | Shift |
 | **Bremse / Umkehrschub** (halten) | A | C |
 | Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
-| Aufgaben an/aus | RB | T |
-| Flugverkehr an/aus | LB | J |
 | Modell wechseln | Y | M |
 | Kamera wechseln | — | V |
-| Ansicht von links/rechts (halten) | D-Pad ←→ | — |
+| Ansicht von links/rechts (halten) | LB / RB | — |
 | Hilfe/Anleitung ein/aus (pausiert das Spiel) | D-Pad ↑ | H |
 | Ton an/aus | D-Pad ↓ | N |
 | Reset | Start | R |
 
-Oben rechts: **Radar** (zeigt die Richtung zum Ziel) und darunter ein **Gyroskop / künstlicher
-Horizont** — sein Ring wird **grün**, wenn die Fluglage für eine sanfte Landung passt.
+Oben rechts: **Radar** und darunter ein **Gyroskop / künstlicher Horizont** — sein Ring wird
+**grün**, wenn die Fluglage für eine sanfte Landung passt. In der Inselwelt zeigt das Radar die
+**nächstgelegene brennende Stelle** (bewusst nur eine, sonst wird die Scheibe zu voll), im Weltall
+die anfliegbaren Ziele: **Mond, Mars, Erde, ISS und Todesstern**, jedes in eigener Farbe.
 
-## ✈️ Flugzeuge & Aufgaben
+### Selbst-Aufrichten der Querlage
+Lässt man **LT/RT** (bzw. **Q/E**) los, dreht sich die Schräglage von allein wieder auf null — der
+Flieger legt sich also waagerecht, ohne dass man gegensteuern muss. Betroffen ist **nur die
+Querlage**: die Nase bleibt, wo der linke Stick sie hingestellt hat, Steigen und Sinken sind
+unverändert steuerbar.
+
+Damit **Kunstflug** möglich bleibt, wirkt die Hilfe nur bis **60° Querlage**. Wer weiter rollt
+(Richtung Rückenflug), bleibt dort liegen und kann die Rolle sauber durchziehen; kleine Schräglagen
+räumt der Flieger von selbst auf. Im **Weltall ist die Hilfe aus** — dort gibt es kein „oben",
+nach dem er sich ausrichten könnte.
+
+### Kein Aufgaben- und kein Verkehrsschalter mehr
+Die früheren **Aufgaben** (RB / T) sind **ausgebaut**: vorgegebene Zielringe und die Erfolgsmeldung
+danach haben sich als unpraktisch erwiesen. **Alle Fähigkeiten bleiben** — es brechen Brände aus,
+die man löschen kann, der Airbus transportiert Leute von A nach B, die Transall wirft Fracht ab.
+Man sucht sich das Wohin nur selbst aus. Der **Flugverkehr läuft immer** (kein LB / J mehr), und
+das HUD zeigt entsprechend keine Schaltersymbole.
+
+## ✈️ Flugzeuge, Boot & was man mit ihnen macht
 Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugzeugträger) — der
 **X-Wing im Hangar des Todessterns**. **Das Spiel startet mit ihm**; mit **Y** bzw. **M** schaltet man
 durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
@@ -47,10 +65,23 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
 - **Dornier Alpha-Jet** — Kunstflug-Jet (Looping/Rolle), **Überschall** bei Vollgas. **B = Schleudersitz**.
   Startet/landet auf Landebahn oder Flugzeugträger.
 - **Airbus A380** — 🧍 **Menschen transportieren**: auf einer Landebahn stehen bleiben, Leute steigen
-  um. Startet in einer Wolkenkratzer-Stadt.
-- **Transall C-160** — 📦 **Fracht abwerfen**: auf der Bahn 4 Kisten laden, über der Ziel-Insel **B** =
-  am Fallschirm abwerfen.
+  um — bei **jeder** Landung, auf **jeder** Bahn. Man fliegt sie also weiter von A nach B und sucht
+  sich B selbst aus. Startet in einer Wolkenkratzer-Stadt.
+- **Transall C-160** — 📦 **Fracht abwerfen**: auf der Bahn 4 Kisten laden, dann mit **B** am
+  Fallschirm abwerfen — wo man mag, ein vorgegebenes Ziel gibt es nicht mehr.
 - **P-51 Mustang** — flotter Warbild (Kunstflug), **B = Schleudersitz**. Startet auf einem Flugzeugträger.
+- **Feuerwehrboot** 🚤 — **fährt** auf dem Meer statt zu fliegen und ist das siebte Fahrzeug in der
+  **Y/M**-Reihe. Es startet **vor dem Hafen** einer Insel im offenen Wasser (weiter draußen als die
+  Canadair, weil die Hafenmole für ein Boot eine Wand ist und es dort sonst nicht wegkäme).
+  Es liegt immer auf der Wasseroberfläche und nickt mit der Dünung; gelenkt wird mit dem linken
+  Stick, der Schub arbeitet wie bei den Fliegern als Zielgeschwindigkeit (rund 86 km/h bei Vollgas),
+  und **A/C** fährt rückwärts. **Land ist eine Wand**: es rammt nicht und sinkt nicht, es kommt
+  einfach nicht weiter — schräg an einer Küste fährt man entlang, statt festzukleben.
+  **B = Wasserstrahl** nach vorn (2,5 s), der alles Brennende um den Zielpunkt des Strahls löscht:
+  einen **Waldbrand am Ufer** genauso wie die **brennenden Wracks** abgestürzter KI-Flieger und die
+  Brände der KI-Canadairs. Zusammen reicht das gut 120 m weit — nach **hinten** löscht es nicht.
+  Einen **Tank braucht es nicht**: das Boot schöpft aus dem Meer, unter dem es fährt. Höhenanzeige,
+  Gyro und Flugschatten sind beim Boot ausgeblendet, weil sie dort nichts zu sagen haben.
 - **X-Wing** 🚀 — **Senkrechtstarter** und mit Abstand der schnellste: **Schallmauer schon bei 50 %**
   Schub, **Mach 2 bei Vollgas** (2470 km/h). Unter 30 % steuert der Schub nicht die Fahrt, sondern die
   Senkrechte:
@@ -63,9 +94,11 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
   Er darf **überall landen**. Solange der Antrieb läuft, trägt ihn sein Repulsorlift: er sackt nie
   durch und hat keinen Strömungsabriss.
 
-**Leitsystem**: eine weiche Pfeilkette führt zum Ziel — **rot** = leer/hinfliegen, **gelb** = beladen,
-**grün** = jetzt! Ein **Radar** zeigt die Richtung immer an. Aufgaben lassen sich per **RB / T**
-komplett abschalten (dann nur freies Fliegen).
+**Brände** brechen aus, solange man ein **Löschfahrzeug** steuert — die **Canadair** oder das
+**Feuerwehrboot**. Für das Boot brennt es dabei **nahe am Ufer** (auf 80–93 % des Inselradius),
+weil sein Strahl nicht weit reicht und es nicht an Land kann; für die Canadair bleibt die ganze
+Wiese offen (35–75 %). Das **Radar** zeigt die nächste brennende Stelle. Auch die **KI-Canadairs**
+legen eigene Brände, und die kann man mit beiden Löschfahrzeugen selbst ausmachen.
 
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
@@ -79,6 +112,11 @@ Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und 
 **4 km** ist man im **Weltall**. Unter 80 % riegelt die Atmosphäre bei **3 km** ab — erst die volle Fahrt
 trägt hinaus. Alle anderen Flugzeuge behalten ihren gewohnten Höhendeckel; **nur der X-Wing** kommt ins
 Weltall, und ein **Modellwechsel bringt sofort zur Erde zurück**.
+
+Im Weltall **dreht sich die Kamera mit dem Flieger**: er bleibt immer richtig herum im Bild, und die
+Sternenkulisse kippt stattdessen. Vorher sah man dem X-Wing kaum an, ob er aufrecht oder auf dem Kopf
+flog — und ein „oben" gibt es dort ohnehin nicht. Der Übergang blendet sich weich ein; auf **Mond und
+Mars** (mit Boden und Schwerkraft) bleibt die Kamera aufrecht.
 
 Im Weltall wird die Erde zur **Kugel** unter einem, es ist **schwerelos**, und es gibt keine Höhenangabe
 mehr — dafür **Warp**: 100 % Schub sind **Warp 1**, und wer 100 % hält, rutscht immer weiter in den
@@ -148,14 +186,14 @@ wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mon
 über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück. Eine **Feuerwehr** gibt es
 im Weltall und auf dem Mond nicht — dort endet ein Absturz einfach mit dem Neustart auf der Erde.
 
-## ✈️ Flugverkehr in der Luft (Taste J / LB)
+## ✈️ Flugverkehr in der Luft (läuft immer)
 Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
 echten Missionen wie du** (keine bloße Deko) — **ohne Kollision mit dir**. Fliegt einer zu weit weg,
 taucht in deiner Nähe ein neuer mit neuer Mission auf, so bleibt der Himmel immer belebt.
 
 - **Canadair** pendelt **Wasser ↔ Feuer**: tankt tief über dem Meer, fliegt zu einer brennenden Insel
-  und löscht. Dieses **KI-Feuer kannst du mit deiner eigenen Canadair auch selbst löschen** (Wasser
-  drüber ablassen) — egal ob deine Aufgaben an sind.
+  und löscht. Dieses **KI-Feuer kannst du selbst löschen** — mit der eigenen Canadair (Wasser drüber
+  ablassen) oder vom **Feuerwehrboot** aus (Wasserstrahl mit **B**).
 - **Transall** lädt auf der **Landebahn von Insel A** Kisten, fliegt zu **Insel B** und wirft sie am
   Fallschirm ab.
 - **Airbus** nimmt Passagiere auf, fliegt **weit** zu einer anderen Landebahn und lässt sie aussteigen.
@@ -173,7 +211,7 @@ taucht in deiner Nähe ein neuer mit neuer Mission auf, so bleibt der Himmel imm
   Regel: über einer Stadt steigt er drüber oder stürzt ab — je nach Distanz.
 
 Nah vorbeikommende Flieger **wackeln** zum Gruß mit den Flügeln; schnelle/hohe ziehen
-**Kondensstreifen**. Mit **J** oder **LB** schaltet man den gesamten Verkehr an/aus (Standard: an).
+**Kondensstreifen**. Der Verkehr **läuft immer** — der frühere Schalter (J / LB) ist entfallen.
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.
