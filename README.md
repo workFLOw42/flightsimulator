@@ -164,16 +164,25 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
 - Die Kamera folgt von **hinten**, leicht von oben. **LB/RB** gehalten zeigt von der Seite — dieselben
   Tasten wie im Flugzeug.
 - Mit dem **rechten Stick** kann man sich **umsehen**: ←→ schwenkt den Blick nach links und rechts,
-  ↕ hebt und senkt sie (von flach von der Seite bis steil von oben). Der Stick ist zu Fuß komplett
-  frei — im Fahrzeug steuert er den Schub, aber draußen ist der Motor aus.
+  ↕ hebt ihn **in den Himmel** (bis 52° hinauf) oder senkt ihn **auf den Boden** vor sich (25°
+  hinunter). Der Stick ist zu Fuß komplett frei — im Fahrzeug steuert er den Schub, aber draußen ist
+  der Motor aus. Entscheidend ist, dass das **Blickziel** mitwandert und nicht nur die Kamera um den
+  Astronauten kreist: sonst schaut man immer nur auf ihn, und „nach oben schauen" gibt es nicht.
+- Das **HUD oben links** zeigt zu Fuß **Höhe**, **Lauftempo** (rund 22 km/h) und die **Sprungweite**
+  in Metern statt Schub — der Motor ist draußen ja aus. Die Weite bleibt nach der Landung stehen,
+  damit man sie ablesen kann: auf der Erde etwa 6 m, auf dem Mars 14 m, auf dem **Mond 40 m** — und
+  vom **Dach der Mondbasis** noch deutlich weiter.
   **Lässt man ihn los, gleitet die Kamera von allein wieder hinter den Astronauten**, damit man die
   Orientierung nicht verliert. Gelaufen wird weiter mit dem linken Stick: Blick und Laufrichtung sind
   unabhängig, das Umsehen dreht die Figur also nicht. Auf der Tastatur liegt es auf **I J K L**.
 - Das **Radar** zeigt draußen genau eine Sache: **wo dein Flugzeug steht**. Der Maßstab ist dabei ein
   anderer als im Flug (500 m statt 2500 m füllen die Scheibe), denn zu Fuß sind ein paar Hundert Meter
   weit. Brände zeigt es nicht — löschen kann man zu Fuß ohnehin nicht.
-- Auf dem **Mars** steht der **Perseverance-Rover** beim Aussteigen gleich neben dir und bleibt dabei,
-  während du läufst. Seine Leuchtsäule ist dann aus: es gibt nichts zu suchen.
+- Auf dem **Mars** fährt der **Perseverance-Rover** beim Aussteigen **schräg vor dir** mit und bleibt
+  dabei, während du läufst — genau seitlich stand er fast außerhalb des Bildes. Seine Leuchtsäule ist
+  dann aus: es gibt nichts zu suchen. Seine Bodenhöhe wird über ein kleines Kreuz gemessen, nicht an
+  einem einzelnen Punkt: das Mars-Höhenraster hat nur alle 59 m einen Stützpunkt, und dazwischen sank
+  ein 10 m langes Fahrzeug sonst in den Hang ein.
 - Der **Astronaut hat die Arme angelegt**. Das Originalmodell schwebt mit ausgestreckten Armen; die
   Pose wurde umgerechnet, damit er wie ein Fußgänger aussieht (Spannweite von 262 auf 76 Einheiten,
   bei unveränderter Höhe und Tiefe).

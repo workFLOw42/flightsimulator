@@ -47,7 +47,7 @@
   <div>Modell: <span id="mdl">XWing</span></div>
   <div id="altrow">Höhe: <span id="alt">0</span> m</div>
   <div>Speed: <span id="spd">0</span><span id="spdu"> km/h</span></div>
-  <div>Schub: <span id="thr">0</span> %</div>
+  <div><span id="thrlbl">Schub</span>: <span id="thr">0</span><span id="thru"> %</span></div>
   <div id="status" style="color:#ffd">am Boden</div>
 </div>
 <div id="big"></div>
@@ -105,7 +105,8 @@
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
-    <div class="hrow"><span>👀 umsehen</span><b>zu Fuß dreht der <b>rechte Stick</b> die Kamera um dich herum und hebt sie · loslassen = sie gleitet von allein zurück · Tastatur: <b>I J K L</b></b></div>
+    <div class="hrow"><span>👀 umsehen</span><b>zu Fuß schwenkt der <b>rechte Stick</b> den Blick: ←→ herum, ↕ in den Himmel hinauf oder auf den Boden hinunter · loslassen = alles gleitet von allein zurück · Tastatur: <b>I J K L</b></b></div>
+    <div class="hrow"><span>📊 zu Fuß</span><b>oben links stehen deine <b>Höhe</b>, dein <b>Lauftempo</b> und die <b>Sprungweite</b> — vom Dach der Mondbasis kommt man richtig weit</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -1965,8 +1966,12 @@ const EVA_MAX_DIST = 4000;    // weiter als das kommt man nicht weg (dann zieht 
 // sonst den Schub, aber der Motor ist draußen aus, und horizontal war er ohnehin unbelegt.
 const EVA_LOOK_SPEED  = 2.2;  // rad/s, mit der der Stick die Kamera herumzieht
 const EVA_LOOK_RETURN = 3.0;  // wie schnell sie ohne Eingabe zurückgleitet
-const EVA_PITCH_MIN   = -0.5; // rad: so weit darf sie herunter (flach von der Seite)
-const EVA_PITCH_MAX   = 1.15; // rad: und so weit hinauf (steil von oben, ~66°)
+// Wie weit der Blick gehoben und gesenkt werden darf. Positiv = hinauf in den Himmel, negativ =
+// hinunter auf den Boden vor sich. Nach oben deutlich mehr Weg als nach unten: in den Himmel
+// (und zum Mars-Rover am Horizont) will man wirklich schauen, in den Boden nur ein Stück.
+const EVA_PITCH_MIN   = -0.45; // rad ≈ -26° nach unten
+const EVA_PITCH_MAX   = 1.25;  // rad ≈ +72° hinauf, fast senkrecht in den Himmel
+const EVA_LOOK_AHEAD  = 14;    // m: so weit vor dem Astronauten liegt der Blickpunkt
 let evaOrbit = 0, evaPitch = 0;   // aktueller Schwenk (0 = hinter ihm, wie bisher)
 let eva = null;               // { group, vy, onGround, yaw, planeAt } oder null
 
@@ -1988,13 +1993,28 @@ function evaSolid(x, z){
 // Der Mars-Rover begleitet den Astronauten: steigt man auf dem Mars aus, wird er direkt rechts
 // daneben gesetzt, statt irgendwo in der Landschaft zu stehen. Zusammen wirkt es wie ein
 // Erkundungsteam — und man muss ihn nicht suchen.
-const ROVER_SIDE = 9;              // Abstand rechts neben dem Astronauten (m)
+const ROVER_SIDE  = 8;             // Abstand seitlich neben dem Astronauten (m)
+const ROVER_AHEAD = 7;             // und so weit VOR ihm — sonst läuft er am Bildrand mit
+const ROVER_LIFT  = 1.2;           // Aufschlag über dem gemessenen Boden (siehe unten)
 function roverBesideEva(){
   if(!eva || locale !== 'mars' || !roverObj) return;
   const g = eva.group;
   const right = new THREE.Vector3(Math.cos(eva.yaw), 0, -Math.sin(eva.yaw));
-  const rx = g.position.x + right.x*ROVER_SIDE, rz = g.position.z + right.z*ROVER_SIDE;
-  roverObj.position.set(rx, surfaceY(rx, rz), rz);
+  const fwd   = new THREE.Vector3(-Math.sin(eva.yaw), 0, -Math.cos(eva.yaw));
+  // Schräg vorne rechts statt genau seitlich: so fährt er im Bild mit, statt am Rand zu
+  // verschwinden — bei der Kamera 7 m hinter dem Astronauten sah man ihn sonst kaum.
+  const rx = g.position.x + right.x*ROVER_SIDE + fwd.x*ROVER_AHEAD;
+  const rz = g.position.z + right.z*ROVER_SIDE + fwd.z*ROVER_AHEAD;
+  // Bodenhöhe: der höchste Wert aus einem kleinen Kreuz um den Standplatz, plus Aufschlag. Ein
+  // einzelner surfaceY-Wert ließ ihn einsinken, weil das Mars-Höhenraster nur alle 59 m einen
+  // Stützpunkt hat und dazwischen interpoliert — genau wie beim Flugzeug (GROUND_PROBES) muss also
+  // die Umgebung mitgemessen werden, sonst steckt ein 10 m langes Fahrzeug im Hang.
+  let gy = surfaceY(rx, rz);
+  for(const [dx, dz] of [[5,0],[-5,0],[0,5],[0,-5]]){
+    const y = surfaceY(rx+dx, rz+dz);
+    if(y > gy) gy = y;
+  }
+  roverObj.position.set(rx, gy + ROVER_LIFT, rz);
   roverObj.rotation.y = eva.yaw;      // schaut in dieselbe Richtung
   roverObj.visible = true;
 }
@@ -2034,14 +2054,28 @@ function evaJump(){
   if(!eva || !eva.onGround) return;
   eva.vy = EVA_JUMP_V;                // gleiche Absprungkraft überall — die Schwerkraft macht den Rest
   eva.onGround = false;
+  // Absprungpunkt merken, damit die Weite gemessen werden kann (fürs HUD)
+  evaJumpFrom = eva.group.position.clone();
+  evaJumpDist = 0;
 }
 // B während der EVA: nah am Flieger einsteigen, sonst hüpfen.
 function evaButtonB(){
   if(evaCanBoard()) evaBoard(); else evaJump();
 }
+// Wie schnell läuft der Astronaut gerade (km/h)? updateEva verschiebt ihn direkt, es gibt also
+// keinen Geschwindigkeitsvektor wie beim Flugzeug — die Strecke des letzten Frames ist das Maß.
+// Etwas geglättet, sonst zappelt die Anzeige bei schwankender Bildrate.
+let evaKmh = 0;
+function evaSpeedKmh(){ return evaKmh; }
+// Sprungweite: waagerechte Strecke seit dem Absprung. Während des Sprungs wächst sie mit, nach der
+// Landung bleibt der erreichte Wert stehen — sonst könnte man ihn nicht ablesen. Vom Dach der
+// Mondbasis kommt man damit sichtbar weit, und genau das ist der Reiz.
+let evaJumpFrom = null;   // Absprungpunkt, solange man in der Luft ist
+let evaJumpDist = 0;      // erreichte Weite (m), bleibt nach der Landung stehen
 function updateEva(dt, inp){
   if(!eva) return;
   const g = eva.group;
+  const _wasX = g.position.x, _wasZ = g.position.z;
   roverBesideEva();        // Rover bleibt neben dem Astronauten (placeGroundBase würde ihn versetzen)
   // Drehen und laufen: ←→ dreht, ↕ läuft vor/zurück (wie ein Fahrzeug — für Kinder einfacher als
   // eine kameragebundene Steuerung, weil "vorwärts" immer die Blickrichtung ist).
@@ -2080,11 +2114,22 @@ function updateEva(dt, inp){
     g.position.x = eva.planeAt.x + (g.position.x - eva.planeAt.x)*k;
     g.position.z = eva.planeAt.z + (g.position.z - eva.planeAt.z)*k;
   }
+  // Tempo aus der zurückgelegten Strecke (fürs HUD), geglättet gegen Bildraten-Zappeln.
+  const moved = Math.hypot(g.position.x - _wasX, g.position.z - _wasZ);
+  const kmh = dt > 1e-6 ? moved/dt*3.6 : 0;
+  evaKmh += (kmh - evaKmh) * Math.min(1, 8*dt);
+  // Sprungweite mitzählen, solange man in der Luft ist. Nach der Landung bleibt der Wert stehen —
+  // erst der nächste Absprung setzt ihn zurück (siehe evaJump).
+  if(evaJumpFrom){
+    evaJumpDist = Math.hypot(g.position.x - evaJumpFrom.x, g.position.z - evaJumpFrom.z);
+    if(eva.onGround) evaJumpFrom = null;      // gelandet: Weite festhalten
+  }
   // Der Flieger bleibt stehen, wo er war — planeGroup wird währenddessen nicht bewegt.
   state.pos.copy(eva.planeAt);
 }
 function clearEva(){
   if(eva){ scene.remove(eva.group); eva = null; }
+  evaKmh = 0; evaJumpFrom = null; evaJumpDist = 0;
 }
 
 // ---------- Überschall: Knall + weißer Vapor-Cone (nur Kunstflug-Jets, ab Schallgeschwindigkeit) ----------
@@ -5270,6 +5315,7 @@ function updateCamera(){
   // zurück, damit man die Orientierung nicht verliert.
   if(eva){
     const g = eva.group;
+    // Blickziel: wird unten je nach Schwenk gesetzt (Kopfhöhe, gehoben oder gesenkt).
     const look = new THREE.Vector3(g.position.x, g.position.y + ASTRONAUT_H*0.6, g.position.z);
     camera.up.set(0,1,0);
     // LB/RB gehalten = von links/rechts schauen, genau wie im Flieger. Hat Vorrang vor dem
@@ -5303,14 +5349,24 @@ function updateCamera(){
       if(Math.abs(evaOrbit) < 0.002) evaOrbit = 0;
       if(Math.abs(evaPitch) < 0.002) evaPitch = 0;
     }
-    // Kameraplatz: hinter ihm, um evaOrbit herumgedreht und um evaPitch angehoben.
+    // Kameraplatz und BLICKZIEL zusammen. Entscheidend ist, dass sich das Blickziel mitbewegt:
+    // sonst schaut man immer nur auf den Astronauten, und "nach oben schauen" gibt es nicht.
     const yaw = eva.yaw + evaOrbit;
-    const dist = 7 * Math.cos(evaPitch);
     const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const fwd  = new THREE.Vector3(-back.x, 0, -back.z);           // Blickrichtung waagerecht
+    // Blickziel: vor dem Astronauten, um evaPitch gehoben bzw. gesenkt. Positiv = in den Himmel,
+    // negativ = auf den Boden vor ihm.
+    look.copy(g.position)
+        .addScaledVector(fwd, EVA_LOOK_AHEAD * Math.cos(evaPitch))
+        .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
+    // Kamera: hinter ihm, gegenläufig zum Schwenk — schaut er hinauf, sinkt sie etwas, damit der
+    // Blick über ihn hinweg in den Himmel geht statt auf seinen Helm.
+    const dist = 7 - 1.5 * Math.max(0, Math.sin(evaPitch));
     const desired = g.position.clone().addScaledVector(back, dist);
-    desired.y = g.position.y + 3.4 + 7*Math.sin(evaPitch);
-    // Nicht unter den Boden: sonst schaut man durch das Gelände.
-    const floor = surfaceY(desired.x, desired.z) + 0.8;
+    desired.y = g.position.y + 3.4 - 2.2 * Math.sin(evaPitch);
+    // Nicht unter den Boden: sonst schaut man durch das Gelände. Beim Blick nach oben darf sie
+    // deshalb auch nicht beliebig tief — der Boden gewinnt.
+    const floor = surfaceY(desired.x, desired.z) + 1.2;
     if(desired.y < floor) desired.y = floor;
     // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
     camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
@@ -5402,7 +5458,8 @@ function recycleWorld(){
 // ---------- HUD ----------
 const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd'),
       elThr=document.getElementById('thr'), elStat=document.getElementById('status'),
-      elAltRow=document.getElementById('altrow'), elSpdU=document.getElementById('spdu');
+      elAltRow=document.getElementById('altrow'), elSpdU=document.getElementById('spdu'),
+      elThrLbl=document.getElementById('thrlbl'), elThrU=document.getElementById('thru');
 // Symbolreihe fuer die Ladeanzeige. repeat() wirft bei negativer Anzahl, und ein Wurf in updateHUD
 // haelt den ganzen Frame an — deshalb wird hier immer auf 0..max geklemmt (NaN wird zu 0). Eine
 // Anzeige darf das Spiel nicht anhalten, egal was der Zaehler gerade sagt.
@@ -5415,18 +5472,39 @@ function updateHUD(){
   // Im Weltall gibt es keine sinnvolle Höhe -> Zeile ausblenden. Auf dem Mond zählt die Höhe
   // ÜBER DEM KRATERBODEN (der schwankt um ±60 m).
   // Höhenzeile aus: im Weltall gibt es keine sinnvolle Höhe, und das Boot fährt immer auf 0.
-  if(elAltRow) elAltRow.style.display = (locale === 'space' || isBoat()) ? 'none' : '';
-  const altRef = (GROUNDS[locale] || locale === 'death') ? surfaceY(state.pos.x, state.pos.z) : 0.3;
-  elAlt.textContent=Math.max(0,Math.round(state.pos.y-altRef));
+  // Beim Astronauten bleibt sie AN: beim Hüpfen sieht man dort, wie hoch er kommt — auf dem Mond
+  // sechsmal so hoch wie auf der Erde, und genau das ist der Reiz daran.
+  if(elAltRow) elAltRow.style.display = (locale === 'space' || (isBoat() && !eva)) ? 'none' : '';
+  // Bezugsobjekt: draußen der Astronaut, sonst der Flieger. Vorher stand hier immer state.* — das
+  // gehört aber dem STEHENDEN Flieger, das HUD zeigte also dessen Höhe und Tempo 0, während man lief.
+  const hp = eva ? eva.group.position : state.pos;
+  const altRef = (GROUNDS[locale] || locale === 'death') ? surfaceY(hp.x, hp.z) : 0.3;
+  elAlt.textContent = Math.max(0, Math.round(hp.y - altRef));
   // Im Weltall wird in Warp gerechnet (Warp 1 = 100 % Schub), sonst in km/h.
-  if(locale === 'space'){
-    elSpd.textContent = 'Warp ' + (state.vel.length()/SPACE_C).toFixed(1);
-    if(elSpdU) elSpdU.textContent = '';
-  } else {
-    elSpd.textContent = Math.round(state.vel.length()*3.6);
+  if(eva){
+    // Zu Fuß: das eigene Lauftempo. Statt des Schubs (der Motor ist draußen aus) steht dort die
+    // senkrechte Sprunggeschwindigkeit — beim Hüpfen sieht man sie hochzählen und wieder fallen.
+    // Die Beschriftung wechselt mit, „Schub: 12 %" wäre hier irreführend.
+    elSpd.textContent = Math.round(evaSpeedKmh());
     if(elSpdU) elSpdU.textContent = ' km/h';
+    // Statt des Schubs (der Motor ist draußen aus) die SPRUNGWEITE: während des Sprungs wächst sie
+    // mit, nach der Landung bleibt der erreichte Wert stehen. Vom Dach der Mondbasis wird das
+    // richtig weit, weil dort nur ein Sechstel der Erdanziehung bremst.
+    elThr.textContent = evaJumpDist.toFixed(1);
+    if(elThrLbl) elThrLbl.textContent = 'Sprung';
+    if(elThrU) elThrU.textContent = ' m';
+  } else {
+    if(elThrLbl) elThrLbl.textContent = 'Schub';
+    if(elThrU) elThrU.textContent = ' %';
+    elThr.textContent = Math.round(state.throttle*100);
+    if(locale === 'space'){
+      elSpd.textContent = 'Warp ' + (state.vel.length()/SPACE_C).toFixed(1);
+      if(elSpdU) elSpdU.textContent = '';
+    } else {
+      elSpd.textContent = Math.round(state.vel.length()*3.6);
+      if(elSpdU) elSpdU.textContent = ' km/h';
+    }
   }
-  elThr.textContent=Math.round(state.throttle*100);
   // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
   // 💧-Reihe = Tankfüllung, 🔥 = aktives Feuer.
   let s = '';
