@@ -63,7 +63,8 @@
     <div class="hrow"><span>LT / RT</span><b>Rollen — loslassen richtet wieder auf</b></div>
     <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 %</b></div>
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
-    <div class="hrow"><span>B</span><b>Aktion (Wasser/Kiste/Schleudersitz) · im Weltall Laser</b></div>
+    <div class="hrow"><span>B</span><b>gelandet: <b>aussteigen</b> · Aktion (Wasser/Kiste/Schleudersitz) · im Weltall Laser</b></div>
+    <div class="hrow"><span>B</span><b>draußen: <b>hüpfen</b> · am Flieger: einsteigen</b></div>
     <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>LB / RB (halten)</span><b>Ansicht von links/rechts</b></div>
@@ -102,6 +103,7 @@
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
+    <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -114,6 +116,8 @@
 <script src="airbus_glb.js"></script>
 <script src="transall_glb.js"></script>
 <script src="parachute_glb.js"></script>
+<script src="chute2_glb.js"></script>
+<script src="astronaut_glb.js"></script>
 <script src="boat_glb.js"></script>
 <script src="firetruck_glb.js"></script>
 <script src="mustang_glb.js"></script>
@@ -985,7 +989,12 @@ function isBoat(){ return MODEL_NAMES[currentModel] === 'Boat'; }
 function isFireFighter(){ return isCanadair() || isBoat(); }
 // B-Taste: Canadair -> Wasser, AlphaJet/Mustang -> Schleudersitz, Transall -> Kiste abwerfen
 function buttonB(){
+  // Draußen unterwegs: nah am Flieger einsteigen, sonst hüpfen.
+  if(eva){ evaButtonB(); return; }
   if(locale === 'space'){ fireLaser(); return; }    // im Weltall: Laser (Einzelschuss)
+  // Am Boden gelandet? Dann aussteigen und herumlaufen. Das geht VOR den Modell-Aktionen, aber nur
+  // wo es erlaubt ist (siehe evaAllowed) — in der Luft und auf dem Wasser bleibt B, was es war.
+  if(evaAllowed()){ evaExit(); return; }
   if(isBoat()) boatSpray();
   else if(isCanadair()) dropWater();
   else if(isAlphaJet() || isMustang()) ejectSeat();
@@ -1138,8 +1147,11 @@ function makeCrate(){
   const g = new THREE.Group();
   const box = new THREE.Mesh(new THREE.BoxGeometry(3,3,3), crateMat);
   box.position.y = 1.5; g.add(box);
-  // Fallschirm drüber (echtes GLB, falls geladen; sonst einfacher Kegel)
-  if(parachuteTemplate){
+  // Fallschirm drüber — derselbe wie über dem Piloten (TopNotch Assets), damit es einheitlich
+  // aussieht. Vorher hing hier ein anderes Modell.
+  if(chute2Template){
+    const pc = chute2Template.clone(true); pc.position.y = 3.4; g.add(pc);
+  } else if(parachuteTemplate){
     const pc = parachuteTemplate.clone(true); pc.position.y = 8; g.add(pc);
   } else {
     const pc = new THREE.Mesh(new THREE.SphereGeometry(4,16,10,0,Math.PI*2,0,Math.PI/2),
@@ -1865,20 +1877,29 @@ const chuteMat = new THREE.MeshLambertMaterial({ color:0xff5522, side:THREE.Doub
 const pilotMat = new THREE.MeshLambertMaterial({ color:0x223355 });
 let parachute = null;   // {group, vy}
 function makeParachute(){
-  // Selbstgebauter Schirm (Halbkugel + Pilot + Leinen). Der GLB-Fallschirm ist exklusiv
-  // für die Transall-Kisten reserviert -> hier bewusst NICHT parachuteTemplate nutzen.
+  // Astronaut am Fallschirm: die Figur hängt unter dem Schirm, beide aus echten Modellen
+  // (früher ein Halbkugel-Schirm mit Zylinder-Pilot). Der Ursprung der Gruppe liegt bei den
+  // FÜSSEN des Astronauten — so kann der Aufsetzpunkt direkt auf die Bodenhöhe gesetzt werden.
   const g = new THREE.Group();
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(4, 20, 12, 0, Math.PI*2, 0, Math.PI/2), chuteMat);
-  canopy.position.y = 6; g.add(canopy);
-  const pilot = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.4,1.8,10), pilotMat);
-  g.add(pilot);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5,10,8), pilotMat);
-  head.position.y = 1.2; g.add(head);
-  const lineMatP = new THREE.LineBasicMaterial({ color:0xffffff });
-  for(const [dx,dz] of [[-3,0],[3,0],[0,-3],[0,3]]){
-    const geo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(dx,5,dz), new THREE.Vector3(0,0.8,0)]);
-    g.add(new THREE.Line(geo, lineMatP));
+  const man = makeAstronaut();
+  g.add(man);
+  if(chute2Template){
+    const pc = chute2Template.clone(true);
+    // Schirm über dem Kopf: die Leinen (Unterkante des Modells) beginnen knapp darüber.
+    pc.position.y = ASTRONAUT_H + 0.6;
+    g.add(pc);
+    // Leinen von der Schirmkante zu den Schultern — das Modell selbst hat keine.
+    const lineMatP = new THREE.LineBasicMaterial({ color:0xdddddd });
+    const r = CHUTE2_SPAN*0.42, top = ASTRONAUT_H + 0.9, sh = ASTRONAUT_H*0.8;
+    for(const [dx,dz] of [[-r,0],[r,0],[0,-r],[0,r]]){
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(dx, top, dz), new THREE.Vector3(0, sh, 0)]);
+      g.add(new THREE.Line(geo, lineMatP));
+    }
+  } else {
+    // GLB noch nicht geladen -> einfacher Ersatzschirm, damit der Pilot nie nackt fällt
+    const canopy = new THREE.Mesh(new THREE.SphereGeometry(3.5, 18, 10, 0, Math.PI*2, 0, Math.PI/2), chuteMat);
+    canopy.position.y = ASTRONAUT_H + 3; g.add(canopy);
   }
   return g;
 }
@@ -1902,12 +1923,121 @@ function updateParachute(dt){
   // fällt nicht durch Carrier/Hafen hindurch.
   const px = parachute.group.position.x, pz = parachute.group.position.z;
   const surfY = isOnCarrier(px, pz) ? fordDeckY : (isOnLand(px, pz) ? ISLAND_Y : 0);
-  if(parachute.group.position.y <= surfY + 1){
-    parachute.group.position.y = surfY + 1;      // gelandet -> bleibt stehen
+  // Der Ursprung der Gruppe liegt an den FÜSSEN des Astronauten (siehe makeParachute), er steht
+  // also direkt auf der Fläche — vorher lag dort die Körpermitte und der Pilot schwebte 1 m hoch.
+  if(parachute.group.position.y <= surfY){
+    parachute.group.position.y = surfY;          // gelandet -> bleibt stehen
   }
 }
 function clearParachute(){
   if(parachute){ scene.remove(parachute.group); parachute = null; }
+}
+
+// ================= Aussteigen und herumlaufen (EVA) =================
+// Nach der Landung steigt man mit B aus und läuft als Astronaut umher: linker Stick / Pfeiltasten
+// bewegen, B hüpft. Die Sprunghöhe hängt an der Anziehungskraft des Ortes — auf dem Mond (1,62 m/s²)
+// kommt man rund sechsmal so hoch wie auf der Erde (9,81), auf dem Mars (3,71) etwa 2,6-mal.
+// Genau das macht den Reiz aus, deshalb wird die Sprungkraft NICHT pro Ort ausgeglichen: es ist
+// überall derselbe Absprung, nur die Schwerkraft bremst unterschiedlich.
+// Das Flugzeug bleibt stehen, wo es steht. Kommt man ihm nahe, wird B zum Einsteigen (evaCanBoard).
+const EVA_SPEED    = 6.0;     // Laufgeschwindigkeit (m/s) — flott, aber kein Sprint
+const EVA_TURN     = 2.6;     // wie schnell er sich dreht (rad/s)
+const EVA_JUMP_V   = 4.6;     // Absprunggeschwindigkeit (m/s) — auf der Erde gut 1 m hoch
+const EVA_BOARD_R  = 22;      // so nah am Flieger wird B zum Einsteigen (m)
+const EVA_MAX_DIST = 4000;    // weiter als das kommt man nicht weg (dann zieht es zurück)
+let eva = null;               // { group, vy, onGround, yaw, planeAt } oder null
+
+// Darf man hier aussteigen? Nur am Boden, nicht abgestürzt, und nur auf FESTEM Grund —
+// Wasser ist keine Bühne für einen Astronauten, und das Boot fährt selbst schon "zu Fuß".
+function evaAllowed(){
+  if(eva || state.crashed || state.ejected || state.falling || !state.onGround) return false;
+  if(isBoat()) return false;
+  if(locale === 'space') return false;                 // im All gibt es keinen Boden
+  if(GROUNDS[locale] || locale === 'death') return true;   // Mond, Mars, Hangarboden
+  // Erde: Insel oder Trägerdeck, aber nicht das Wasser
+  return isOnLand(state.pos.x, state.pos.z) || isOnCarrier(state.pos.x, state.pos.z);
+}
+// Fester Grund unter (x,z)? Für den Astronauten ist Wasser eine Wand.
+function evaSolid(x, z){
+  if(GROUNDS[locale] || locale === 'death') return true;
+  return isOnLand(x, z) || isOnCarrier(x, z);
+}
+function evaExit(){
+  if(!evaAllowed()) return;
+  const g = makeAstronaut();
+  // Neben dem Flieger absetzen (rechts daneben), Blick in dieselbe Richtung.
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
+  const eul = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  let x = state.pos.x + right.x*6, z = state.pos.z + right.z*6;
+  if(!evaSolid(x, z)){ x = state.pos.x; z = state.pos.z; }   // kein Platz -> auf der Stelle
+  g.position.set(x, surfaceY(x, z), z);
+  g.rotation.y = eul.y;
+  scene.add(g);
+  eva = { group:g, vy:0, onGround:true, yaw:eul.y,
+          planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
+  state.throttle = 0;                 // Motor aus, während man draußen ist
+  showBig('🧑‍🚀');
+}
+function evaBoard(){
+  if(!eva) return;
+  scene.remove(eva.group);
+  eva = null;
+  showBig('✈️');
+}
+// Steht der Astronaut nahe genug am Flieger, um einzusteigen?
+function evaCanBoard(){
+  if(!eva) return false;
+  return eva.group.position.distanceTo(eva.planeAt) < EVA_BOARD_R;
+}
+function evaJump(){
+  if(!eva || !eva.onGround) return;
+  eva.vy = EVA_JUMP_V;                // gleiche Absprungkraft überall — die Schwerkraft macht den Rest
+  eva.onGround = false;
+}
+// B während der EVA: nah am Flieger einsteigen, sonst hüpfen.
+function evaButtonB(){
+  if(evaCanBoard()) evaBoard(); else evaJump();
+}
+function updateEva(dt, inp){
+  if(!eva) return;
+  const g = eva.group;
+  // Drehen und laufen: ←→ dreht, ↕ läuft vor/zurück (wie ein Fahrzeug — für Kinder einfacher als
+  // eine kameragebundene Steuerung, weil "vorwärts" immer die Blickrichtung ist).
+  eva.yaw -= (inp.yaw || 0) * EVA_TURN * dt;
+  g.rotation.y = eva.yaw;
+  const fx = -Math.sin(eva.yaw), fz = -Math.cos(eva.yaw);      // Blickrichtung (-Z bei yaw 0)
+  const walk = -(inp.pitch || 0);                              // Stick nach vorn = vorwärts
+  if(Math.abs(walk) > 0.01){
+    const nx = g.position.x + fx*walk*EVA_SPEED*dt;
+    const nz = g.position.z + fz*walk*EVA_SPEED*dt;
+    // Fester Grund und keine Wand: erst beides, dann X und Z einzeln (an einer Kante entlanglaufen).
+    const free = (x,z)=> evaSolid(x,z) && !hitsBuilding(x, surfaceY(x,z)+1, z, false);
+    if(free(nx, nz)){ g.position.x = nx; g.position.z = nz; }
+    else if(free(nx, g.position.z)) g.position.x = nx;
+    else if(free(g.position.x, nz)) g.position.z = nz;
+  }
+  // Springen und fallen mit der Schwerkraft DES ORTES — das ist der Witz an Mond und Mars.
+  const grav = GRAV_AT[locale] !== undefined ? GRAV_AT[locale] : 9.81;
+  const gy = surfaceY(g.position.x, g.position.z);
+  if(!eva.onGround || eva.vy > 0){
+    eva.vy -= grav * dt;
+    g.position.y += eva.vy * dt;
+    if(g.position.y <= gy){ g.position.y = gy; eva.vy = 0; eva.onGround = true; }
+  } else {
+    g.position.y = gy;                 // am Boden der Fläche folgen (Mondkrater ist hügelig)
+  }
+  // Nicht endlos weglaufen: sonst verlässt man die geladene Weltzelle und steht im Nichts.
+  const d = Math.hypot(g.position.x - eva.planeAt.x, g.position.z - eva.planeAt.z);
+  if(d > EVA_MAX_DIST){
+    const k = EVA_MAX_DIST / d;
+    g.position.x = eva.planeAt.x + (g.position.x - eva.planeAt.x)*k;
+    g.position.z = eva.planeAt.z + (g.position.z - eva.planeAt.z)*k;
+  }
+  // Der Flieger bleibt stehen, wo er war — planeGroup wird währenddessen nicht bewegt.
+  state.pos.copy(eva.planeAt);
+}
+function clearEva(){
+  if(eva){ scene.remove(eva.group); eva = null; }
 }
 
 // ---------- Überschall: Knall + weißer Vapor-Cone (nur Kunstflug-Jets, ab Schallgeschwindigkeit) ----------
@@ -2090,7 +2220,79 @@ function preloadTruck(){
   }, (err)=>{ console.warn('Auto-GLB Ladefehler:', err); });
 }
 
-// Fallschirm-GLB (by stroodledoodle) laden — für Transall-Kistenabwurf.
+// ---------- Astronaut (by LasquetiSpice) ----------
+// Zwei Rollen: er hängt beim Absturz am Fallschirm (Spieler UND KI), und man kann mit ihm nach der
+// Landung aussteigen und herumlaufen. Höhe wird auf ASTRONAUT_H normiert, die Füße auf y = 0 gesetzt,
+// damit er sauber auf dem Boden steht. Die Vorlage zeigt mit dem Gesicht auf +Z; im Spiel schaut die
+// Nase auf -Z, deshalb dreht makeAstronaut() ihn um 180°.
+const ASTRONAUT_H = 1.9;         // Körperhöhe in Metern (Erwachsener im Raumanzug)
+let astronautTemplate = null;
+function preloadAstronaut(){
+  if(!window.ASTRONAUT_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.ASTRONAUT_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    // Auf Körperhöhe normieren (y ist die Körperachse — ausgemessen: 3,08 roh)
+    obj.scale.setScalar(ASTRONAUT_H / Math.max(0.001, size.y));
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z;    // X/Z zentrieren
+    obj.position.y -= box2.min.y;                    // Füße auf y = 0
+    const wrap = new THREE.Group(); wrap.add(obj);
+    astronautTemplate = wrap;
+  }, (err)=>{ console.warn('Astronaut-GLB Ladefehler:', err); });
+}
+// Baut eine Astronauten-Figur. Ohne geladenes GLB einen schlichten Ersatz, damit nie nichts da ist.
+function makeAstronaut(){
+  const g = new THREE.Group();
+  if(astronautTemplate){
+    const a = astronautTemplate.clone(true);
+    a.rotation.y = Math.PI;      // Gesicht auf -Z drehen (wie die Flugzeugnasen)
+    g.add(a);
+    return g;
+  }
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.26,1.25,10), pilotMat);
+  body.position.y = 0.62; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32,12,10), pilotMat);
+  head.position.y = 1.55; g.add(head);
+  return g;
+}
+
+// ---------- Fallschirm 2 (by TopNotch Assets) ----------
+// Ersetzt den früheren Schirm überall: an den Transall-Kisten UND über dem Piloten. Vorher war das
+// ein GLB für die Kisten und ein selbstgebauter Halbkugel-Schirm für den Piloten — jetzt sieht
+// beides gleich aus. Auf 7 m Durchmesser normiert (Rohmaß 7,14 x 6,36 x 3,54 ausgemessen), Kappe
+// nach oben: der Ursprung liegt UNTEN an den Leinen, damit die Last direkt darunter hängt.
+const CHUTE2_SPAN = 7;
+let chute2Template = null;
+function preloadChute2(){
+  if(!window.CHUTE2_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.CHUTE2_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(CHUTE2_SPAN / Math.max(size.x, size.z));
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z;
+    obj.position.y -= box2.min.y;            // Unterkante (Leinen) auf y = 0
+    const wrap = new THREE.Group(); wrap.add(obj);
+    chute2Template = wrap;
+  }, (err)=>{ console.warn('Chute2-GLB Ladefehler:', err); });
+}
+
+// Fallschirm-GLB (by stroodledoodle) laden — Reserve, seit chute2 beide Rollen übernimmt.
 let parachuteTemplate = null;
 function preloadParachute(){
   if(!window.PARACHUTE_GLB || !THREE.GLTFLoader) return;
@@ -3978,7 +4180,7 @@ function placeAtStart(name){
   state.vel.set(0,0,0); state.throttle=0; state.onGround=true;
   state.crashed=false; state.crashTimer=0; state.ejected=false; state.falling=false; state.stalling=false; boosting=false;
   wasSupersonic=false; if(vaporCone) vaporCone.visible=false; vaporT=0;
-  clearRescue(); clearParachute(); clearBoatSpray();
+  clearRescue(); clearParachute(); clearBoatSpray(); clearEva();
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
   // Kamera HART hinter den Flieger setzen (nicht lerpen) -> hängt nie im Himmel nach Crash/Wechsel.
   if(typeof camera !== 'undefined'){
@@ -4015,10 +4217,67 @@ function decodeSound(dataUrl) {
   });
 }
 function soundUrlFor(name){
-  // Canadair/Boot -> Propellersound (SuperCup; beim Boot ist es die Schiffsschraube),
-  // AlphaJet/X-Wing -> Turbine (Airbus), sonst Propeller
+  // Canadair -> Propellersound (SuperCup), AlphaJet/X-Wing -> Turbine (Airbus), sonst Propeller.
+  // Das Boot hat keinen Eintrag: sein Motor wird synthetisch erzeugt (siehe makeBoatEngineBuffer).
   const turbine = (name==='AlphaJet' || name==='XWing');
   return window.FMS_SND[name] || (turbine ? window.FMS_SND['Airbus'] : window.FMS_SND['SuperCup']);
+}
+// ---- Motorbootgeräusch (synthetisch, kein Sample) ----
+// Zwei Anteile, die zusammen wie ein Außenborder klingen:
+//  1. Auspuffschläge: ein Grundton um 42 Hz mit Obertönen, dazu ein leichtes Flattern in der
+//     Drehzahl (echte Motoren laufen nie exakt rund) — das gibt das typische Blubbern.
+//  2. Wasserrauschen: gefiltertes Rauschen, das den Schaum am Rumpf andeutet.
+// Der Puffer ist so lang, dass der Grundton sauber durchläuft (ganze Perioden), sonst knackt es
+// bei jeder Loop-Wiederholung.
+let boatEngineBuf = null;
+function makeBoatEngineBuffer(){
+  if(!audioCtx) return null;
+  const sr = audioCtx.sampleRate;
+  // Der Puffer muss sich NAHTLOS schließen, sonst knackt es bei jeder Wiederholung — hörbar, weil
+  // der Loop zwei Sekunden kurz ist. Dafür muss jede beteiligte Schwingung am Pufferende genau
+  // dort stehen, wo sie angefangen hat. Also: eine Grundperiode T festlegen und alle Frequenzen
+  // als ganzzahlige Vielfache von 1/T wählen.
+  // (Ein erster Versuch mit "ganzen Perioden der Grundfrequenz" ging schief: die Frequenzmodulation
+  // verschiebt die Phase, gemessen sprang das Signal am Ende von −0,63 auf −0,01.)
+  const T = 2.0;                                  // Looplänge in Sekunden
+  const len = Math.round(sr * T);
+  const hz = (k)=> k / T;                         // k-te Harmonische der Looplänge
+  const F0   = hz(84);                            // 42 Hz Auspuffschlag
+  const WOB1 = hz(6), WOB2 = hz(15);              // 3 und 7,5 Hz Drehzahl-Flattern
+  const buf = audioCtx.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  // Wasserrauschen am Rumpf: tiefpassgefiltertes Rauschen. Zufall schließt sich nicht von allein,
+  // deshalb wird nur die erste HÄLFTE erzeugt und dann gespiegelt fortgesetzt — damit ist der Wert
+  // am Pufferende derselbe wie am Anfang. Rauschen klingt gespiegelt genauso zufällig, das Ohr
+  // erkennt in Rauschen keine Achsensymmetrie.
+  const half = Math.floor(len/2);
+  const noise = new Float32Array(len);
+  let lp = 0;
+  for(let i=0;i<=half;i++){
+    lp += ((Math.random()*2-1) - lp) * 0.06;      // Tiefpass ~ ein paar hundert Hz
+    noise[i] = lp;
+  }
+  for(let i=half+1;i<len;i++) noise[i] = noise[len-i];   // gespiegelt -> noise[len-1] = noise[1]
+  // Phase INTEGRIEREN statt f*t zu rechnen: bei modulierter Frequenz ist nur das Integral stetig,
+  // und weil alle Anteile ganzzahlige Vielfache von 1/T sind, endet es wieder bei 0 (mod 2π) —
+  // nachgemessen schließt es auf 0,0000 Perioden.
+  let ph = 0;
+  const AM1 = 0.035, AM2 = 0.02;
+  for(let i=0;i<len;i++){
+    const t = i / sr;
+    const wob = 1 + AM1*Math.sin(2*Math.PI*WOB1*t) + AM2*Math.sin(2*Math.PI*WOB2*t);
+    ph += 2*Math.PI*F0*wob/sr;
+    // Auspuffschläge: Grundton + Obertöne, abfallend gewichtet
+    let v = Math.sin(ph)*0.55 + Math.sin(2*ph)*0.28 + Math.sin(3*ph)*0.14 + Math.sin(5*ph)*0.06;
+    // Schlagcharakter: Halbwellen anschärfen (Auspufftakt statt reiner Sinus)
+    v = Math.sign(v) * Math.pow(Math.abs(v), 0.72);
+    d[i] = v*0.62 + noise[i]*0.5;
+  }
+  // Normieren, damit die Lautstärke-Regelung dieselbe Skala hat wie bei den Samples
+  let peak = 0;
+  for(let i=0;i<len;i++) peak = Math.max(peak, Math.abs(d[i]));
+  if(peak > 0) for(let i=0;i<len;i++) d[i] /= peak;
+  return buf;
 }
 function startEngineLoop(buf) {
   if (!audioCtx || !buf) return;
@@ -4042,8 +4301,13 @@ function updateEngineSound() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const running = audioCtx.state === 'running';
   const model = MODEL_NAMES[currentModel];
+  // Boot: eigener, synthetisch erzeugter Motorloop (kein Sample zum Dekodieren).
+  if (model === 'Boat') {
+    if (!boatEngineBuf) boatEngineBuf = makeBoatEngineBuffer();
+    if (boatEngineBuf && engineFor !== 'Boat') { engineBufCurrent = boatEngineBuf; engineFor = 'Boat'; }
+  }
   // Puffer fürs aktuelle Modell laden (nur einmal pro Modell)
-  if (engineFor !== model && enginePending !== model) {
+  else if (engineFor !== model && enginePending !== model) {
     enginePending = model;
     decodeSound(soundUrlFor(model)).then(buf => {
       if (MODEL_NAMES[currentModel] === model) { engineBufCurrent = buf; engineFor = model; }
@@ -4056,9 +4320,19 @@ function updateEngineSound() {
     startEngineLoop(engineBufCurrent);
   }
   if (!engineGain || !engineSrc) return;
-  // Während des Crash-Einsatzes: Motor stumm (nur Sirene)
-  if (!soundOn || state.crashed) { engineGain.gain.value = 0; return; }   // Ton aus -> Motor stumm
+  // Während des Crash-Einsatzes: Motor stumm (nur Sirene). Ebenso, während man ausgestiegen ist —
+  // der Flieger steht mit abgeschaltetem Motor.
+  if (!soundOn || state.crashed || eva) { engineGain.gain.value = 0; return; }
   const t = state.throttle;
+  if (isBoat()) {
+    // Boot: der Motor bollert auch im Leerlauf deutlich hörbar (ein Außenborder läuft ja weiter),
+    // und die Drehzahl steigt weniger steil als bei einem Flugzeug. Umkehrschub (negativer Wert)
+    // klingt genauso wie Vorwärtsfahrt — die Schraube dreht ja nur andersherum.
+    const a = Math.abs(t);
+    engineGain.gain.value = 0.09 + a * 0.16;
+    engineSrc.playbackRate.value = 0.72 + a * 0.55;
+    return;
+  }
   // Lautstärke steigt MONOTON (Vollgas bleibt am lautesten), aber deutlich FLACHER als früher,
   // damit es insgesamt nicht zu laut wird: 0 % -> 0.05, 100 % -> 0.23.
   const vol = 0.05 + t * 0.18;
@@ -4816,8 +5090,22 @@ function stepPhysics(dt, inp){
 }
 
 // ---------- Kamera ----------
+// updateCamera() bekommt kein dt übergeben (historisch), die EVA-Kamera braucht aber eines für ein
+// bildratenunabhängiges Nachziehen. Der Loop schreibt es hier hinein, bevor er updateCamera ruft.
+let dtCam = 1/60;
 const _camOff = new THREE.Vector3(), _camDes = new THREE.Vector3();
 function updateCamera(){
+  // Draußen unterwegs: Kamera hinter dem Astronauten, leicht von oben. Bewusst nur diese eine
+  // Ansicht — von hinten reicht, und eine Figur von vorn zu filmen hilft beim Laufen nicht.
+  if(eva){
+    const g = eva.group;
+    const back = new THREE.Vector3(Math.sin(eva.yaw), 0, Math.cos(eva.yaw));   // hinter ihm
+    const desired = g.position.clone().addScaledVector(back, 7).setY(g.position.y + 3.4);
+    camera.up.set(0,1,0);
+    camera.position.lerp(desired, Math.min(1, 6*dtCam));
+    camera.lookAt(g.position.x, g.position.y + ASTRONAUT_H*0.6, g.position.z);
+    return;
+  }
   // Schleudersitz-Phasen: 1) Jet trudelt -> Fallschirm im Blick.
   // 2) Jet aufgeschlagen (crashed) -> Blick auf Wrack/Feuerwehr, Fallschirm oben im Bild.
   if(parachute){
@@ -4928,7 +5216,11 @@ function updateHUD(){
   // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
   // 💧-Reihe = Tankfüllung, 🔥 = aktives Feuer.
   let s = '';
-  if(state.ejected || parachute) s = '🪂';
+  if(eva){
+    // Draußen: Symbol zeigt, was B jetzt tut — einsteigen (nah am Flieger) oder hüpfen.
+    s = '🧑‍🚀 ' + (evaCanBoard() ? '✈️' : '⤒');
+  }
+  else if(state.ejected || parachute) s = '🪂';
   else if(state.crashed) s = '🚒';
   else {
     // Der Verkehr laeuft immer und die Aufgaben-Umschaltung ist ausgebaut -> keine Schalter-Symbole
@@ -5875,7 +6167,8 @@ function loop(now){
     requestAnimationFrame(loop);
     return;
   }
-  stepPhysics(dt,inp);
+  if(eva) updateEva(dt, inp);   // draußen unterwegs: der Flieger steht, der Astronaut läuft
+  else stepPhysics(dt,inp);
   updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
   updateEngineSound();
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
@@ -5918,6 +6211,7 @@ function loop(now){
   updateSpaceBlend(dt);      // Himmel/Sterne/Licht überblenden
   if(locale === 'earth') recycleWorld();
   else if(GROUNDS[locale]) updateGroundTiles();
+  dtCam = dt;                // für die EVA-Kamera (updateCamera nimmt kein dt)
   updateCamera();
   updateHUD();
   renderer.render(scene,camera);
@@ -5927,7 +6221,9 @@ updateIslands();
 preloadAllGLB();       // echte GLB-Modelle laden (ersetzen Fallback, sobald fertig)
 preloadBoat();         // Feuerwehrboot-GLB laden
 preloadTruck();        // Feuerwehrauto-GLB laden
-preloadParachute();    // Fallschirm-GLB laden (Transall-Kisten & AlphaJet/Mustang-Schleudersitz)
+preloadParachute();    // Fallschirm-GLB laden (Reserve)
+preloadChute2();       // Fallschirm 2 (TopNotch Assets) — Kisten UND Pilot
+preloadAstronaut();    // Astronaut — am Fallschirm und zum Aussteigen
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
 preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft

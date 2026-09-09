@@ -25,6 +25,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | **Boost** (halten): 100 % + extra Schub | X | Shift |
 | **Bremse / Umkehrschub** (halten) | A | C |
 | Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
+| **Aussteigen** (nach der Landung) · draußen: **hüpfen** / einsteigen | B | B |
 | Modell wechseln | Y | M |
 | Kamera wechseln | — | V |
 | Ansicht von links/rechts (halten) | LB / RB | — |
@@ -91,6 +92,9 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
   **B = Wasserstrahl** nach vorn (2,5 s), der alles Brennende um den Zielpunkt des Strahls löscht:
   einen **Waldbrand am Ufer** genauso wie die **brennenden Wracks** abgestürzter KI-Flieger und die
   Brände der KI-Canadairs. Zusammen reicht das rund **160 m** weit — nach **hinten** löscht es nicht.
+  Es klingt nach **Motorboot**: ein tiefes Bollern, das synthetisch erzeugt wird (die sechs Sounds im
+  Spiel sind alle Flugzeugmotoren, und ein Bootssample hätte die Datei vergrößert). Rückwärts klingt
+  es genauso — die Schraube dreht ja nur andersherum.
   Einen **Tank braucht es nicht**: das Boot schöpft aus dem Meer, unter dem es fährt. Höhenanzeige,
   Gyro und Flugschatten sind beim Boot ausgeblendet, weil sie dort nichts zu sagen haben, und die
   Kamera sitzt weiter hinten und höher (55 m / 14 m) als bei den Fliegern — aus der Flieger-Ansicht
@@ -123,11 +127,36 @@ weil sein Strahl nicht weit reicht und es nicht an Land kann; für die Canadair 
 Wiese offen (35–75 %). Das **Radar** zeigt die nächste brennende Stelle. Auch die **KI-Canadairs**
 legen eigene Brände, und die kann man mit beiden Löschfahrzeugen selbst ausmachen.
 
+**Am Fallschirm** hängt beim Schleudersitz ein **Astronaut** — dasselbe Modell, mit dem man auch
+aussteigen kann, unter einem echten Fallschirm. Das gilt für den Spieler **und** für die
+KI-Flieger; vorher waren das ein Zylinder mit Kugelkopf und eine Halbkugel. Denselben Schirm tragen
+jetzt auch die **Transall-Kisten**, damit alles zusammenpasst.
+
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
 Im Strömungsabriss kippt die Nase nach unten und der Flieger **fällt wirklich** (aus 300 m ist er in
 7–10 s unten): kein Auftrieb, keine Ruderwirksamkeit, und der Leerlauf bremst den Sturz nicht ab.
 Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
+
+## 🧑‍🚀 Aussteigen und herumlaufen
+
+Wer **gelandet** ist, steigt mit **B** aus und läuft als Astronaut umher. Das geht auf **Insel,
+Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, wo fester Boden ist.
+**Nicht** in der Luft, nicht über Wasser und nicht mit dem Feuerwehrboot.
+
+- Der **linke Stick** (bzw. die Pfeiltasten) steuert wie ein Fahrzeug: ←→ dreht, ↕ läuft vor und
+  zurück. „Vorwärts" ist also immer die Blickrichtung — für Kinder einfacher als eine Steuerung, die
+  sich nach der Kamera richtet.
+- **B hüpft**, und zwar mit derselben Absprungkraft überall — nur die **Anziehungskraft** ist
+  verschieden. Auf der Erde kommt man gut **1 m** hoch, auf dem **Mars 2,8 m** und auf dem **Mond
+  6,5 m**: genau das Sechsfache, weil der Mond ein Sechstel der Erdanziehung hat. Das ist der Reiz
+  daran, deshalb wird es bewusst nicht ausgeglichen.
+- **Wasser ist eine Wand** — der Astronaut läuft nicht hinein und fällt nicht vom Trägerdeck.
+  Häuser und Berge sind ebenfalls fest; an einer Kante läuft man entlang.
+- Das **Flugzeug bleibt stehen**, wo man gelandet ist, mit abgeschaltetem Motor. Kommt man ihm
+  wieder näher als 22 m, wird **B zum Einsteigen** — das HUD zeigt mit ✈️ bzw. ⤒ an, was B gerade tut.
+  Weiter als 4 km kommt man nicht weg, sonst verlässt man die geladene Welt.
+- Die Kamera folgt von **hinten**, leicht von oben.
 
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
@@ -280,6 +309,8 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Star Destroyer (Star Wars) | **rubaun** |
 | USS Voyager (Star Trek) | **CGI Tutorials** |
 | USS Enterprise-D (Star Trek) | **LoganRolphh** |
+| Astronaut im Raumanzug | **LasquetiSpice** |
+| Parachute Simple | **TopNotch Assets** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
@@ -294,6 +325,11 @@ Weitere verwendete Technik:
   komplett und lädt sie bei einem Update erneut. Sechs schwere Modelle (Hangar, Serenity, Voyager,
   Rover, Enterprise, Razor Crest) wurden dafür **vereinfacht** — zusammen rund 100 MB und
   1,1 Mio. Dreiecke gespart, bei gleichen Außenmaßen.
+- Der **Astronaut** wurde von **19,3 MB auf 1,0 MB** gebracht (5 %). Texturen allein hätten wenig
+  gebracht: sie waren nur ein Drittel der Datei, während **10,8 MB reine Vertex-Attribute** waren
+  (Texturkoordinaten, Tangenten, Normalen) — und die hängen an der Dreieckszahl. Also 58.312 → 14.288
+  Dreiecke (die Silhouette stimmt gemessen noch zu **99 %**), Texturen auf ein Viertel der
+  Kantenlänge, und die **Animation** samt Skinning-Daten heraus, weil die Figur nicht animiert wird.
 - Alle **181 Texturen** wurden zusätzlich auf die **halbe Kantenlänge** gebracht (meist 1024 → 512).
   Entscheidend ist dabei nicht die Dateigröße, sondern der Grafikspeicher: dort liegen Texturen
   unkomprimiert, und aus **735 MB wurden 184 MB** (145 → 36 Megapixel). Auf einem Tablet passte das
