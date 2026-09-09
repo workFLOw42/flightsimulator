@@ -64,7 +64,7 @@
     <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 % · zu Fuß: <b>umsehen</b> (↕ hoch/runter, ←→ herum)</b></div>
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
     <div class="hrow"><span>B</span><b>gelandet: <b>aussteigen</b> · Aktion (Wasser/Kiste/Schleudersitz) · im Weltall Laser</b></div>
-    <div class="hrow"><span>B</span><b>draußen: <b>hüpfen</b> · am Flieger: einsteigen</b></div>
+    <div class="hrow"><span>B</span><b>draußen: <b>hüpfen</b> · am Flieger: einsteigen · im Schlauchboot: nichts (dort wird gefahren)</b></div>
     <div class="hrow"><span>Y</span><b>Modell wechseln</b></div>
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>LB / RB (halten)</span><b>Ansicht von links/rechts</b></div>
@@ -105,6 +105,9 @@
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
+    <div class="hrow"><span>🛟 ins Wasser</span><b>zu Fuß ins Meer laufen oder vom Flugzeugträger springen: du landest im <b>Schlauchboot</b> und fährst wie mit dem Feuerwehrboot (linker Stick) · fährst du an Land, steigst du von allein aus · gehüpft wird im Boot nicht — es ist ein Fahrzeug</b></div>
+    <div class="hrow"><span>🪂 Wasserlandung</span><b>jeder Fallschirmspringer, der aufs Meer herunterkommt, wird auf einem Schlauchboot gerettet — der Schirm ist dann weg. Gilt auch für die KI-Piloten</b></div>
+    <div class="hrow"><span>🏖️ Strand</span><b>zu Fuß kann man auch über den Sand laufen, bis ins Wasser hinein</b></div>
     <div class="hrow"><span>👀 umsehen</span><b>zu Fuß schwenkt der <b>rechte Stick</b> den Blick: ←→ herum, ↕ in den Himmel hinauf oder auf den Boden hinunter · loslassen = alles gleitet von allein zurück · Tastatur: <b>I J K L</b></b></div>
     <div class="hrow"><span>📊 zu Fuß</span><b>oben links stehen deine <b>Höhe</b>, dein <b>Lauftempo</b> und die <b>Sprungweite</b> — vom Dach der Mondbasis kommt man richtig weit</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
@@ -123,6 +126,7 @@
 <script src="falcon_glb.js"></script>
 <script src="astronaut_glb.js"></script>
 <script src="boat_glb.js"></script>
+<script src="dinghy_glb.js"></script>
 <script src="firetruck_glb.js"></script>
 <script src="mustang_glb.js"></script>
 <script src="ford_glb.js"></script>
@@ -223,6 +227,10 @@ function waveY(x, z, tOff){
 // Bordwand des Boots. Deshalb diese Funktion für alles, was auf dem sichtbaren Wasser liegen soll:
 // dx/dz sind der Abstand zur Gittermitte, also zum Flieger.
 function seaSurfaceY(dx, dz, tOff){ return waveY(dx || 0, dz || 0, tOff); }
+// Dasselbe fuer eine WELTposition: rechnet sie erst in Gitter-Koordinaten um. Alles, was auf dem
+// Wasser liegt und nicht der Flieger selbst ist (Schlauchboote, treibende Wracks), braucht das —
+// sonst rechnet man versehentlich in Weltkoordinaten und liegt bis zu 3,18 m daneben.
+function seaYAt(x, z, tOff){ return waveY(x - ground.position.x, z - ground.position.z, tOff); }
 let seaTime = 0;
 const _c = new THREE.Color();
 // Inseln, die das Meeresgitter gerade überdecken — EINMAL pro Frame gesammelt statt für jeden der
@@ -414,6 +422,14 @@ function isOnBeach(x, z) {
     if (info && Math.hypot(x - info.wx, z - info.wz) < info.radius * BEACH_FACTOR) return true;
   }
   return false;
+}
+
+// Offenes Wasser? Kein Land, kein Strand, kein Traegerdeck, kein Bauwerk. Das ist die Flaeche, auf
+// der Boote fahren duerfen — Feuerwehrboot und Schlauchboot benutzen dieselbe Pruefung, damit
+// beide dieselbe Kuestenlinie sehen.
+function isOpenWater(x, z){
+  return !isOnLand(x, z) && !isOnBeach(x, z) && !isOnCarrier(x, z)
+         && !hitsBuilding(x, ISLAND_Y+2, z, false);
 }
 
 // Liegt (x,z) auf der Landebahn einer Insel? (Bahn: 24 breit in X, rwLen lang in Z,
@@ -1918,6 +1934,41 @@ function makeParachute(){
   }
   return g;
 }
+// Wasserlandung eines Fallschirmspringers: er wird auf einem Schlauchboot gerettet, und der SCHIRM
+// IST DANN WEG — im Wasser wird er als erstes abgeworfen, und ein Schirm ueber einem Boot sah aus,
+// als haenge der Springer noch in der Luft. Gilt fuer den Spieler genauso wie fuer KI und Vorbeiflug.
+// Erwartet ein Objekt {group, vy, ...}; setzt group auf den Innenboden des Boots und merkt es in
+// .boat, damit es mitschwimmt und beim Aufraeumen wieder verschwindet.
+// Rueckgabe: true, sobald der Springer im Boot steht (dann ist nichts mehr zu tun).
+function chuteSeaRescue(ch, dt){
+  if(ch.boat){
+    // Gerettet: Boot auf der Duenung, Figur auf dem Innenboden. Es treibt langsam mit den Wellen —
+    // gefahren wird es nicht (das kann nur der Spieler zu Fuss, siehe updateDinghy).
+    ch.boat.position.y = seaYAt(ch.boat.position.x, ch.boat.position.z, dt) - DINGHY_DRAFT;
+    ch.group.position.set(ch.boat.position.x,
+                          ch.boat.position.y + (ch.boat.userData.floorY || 0),
+                          ch.boat.position.z);
+    return true;
+  }
+  const x = ch.group.position.x, z = ch.group.position.z;
+  if(!isOpenWater(x, z)) return false;                 // kein Wasser -> normal weiter
+  const wl = seaYAt(x, z, dt) - DINGHY_DRAFT + (dinghyFloorY || 0);
+  if(ch.group.position.y > wl) return false;           // noch in der Luft
+  const b = makeDinghy();
+  b.position.set(x, seaYAt(x, z, dt) - DINGHY_DRAFT, z);
+  b.rotation.y = Math.random()*Math.PI*2;              // beliebig ausgerichtet, es treibt ja nur
+  scene.add(b);
+  ch.boat = b;
+  // Schirm weg: alles ausser dem Astronauten selbst aus der Gruppe nehmen. Der Astronaut ist das
+  // ERSTE Kind (siehe makeParachute), der Schirm kommt danach — so bleibt die Figur stehen, ohne
+  // dass hier ein Modellname geraten werden muesste.
+  while(ch.group.children.length > 1) ch.group.remove(ch.group.children[ch.group.children.length-1]);
+  ch.group.position.set(b.position.x, b.position.y + (b.userData.floorY || 0), b.position.z);
+  ch.group.rotation.set(0, 0, 0);                      // Pendeln beenden — er steht jetzt
+  return true;
+}
+// Ein gerettetes Boot mit abraeumen (wird ueberall dort aufgerufen, wo der Fallschirm entfernt wird).
+function clearChuteBoat(ch){ if(ch && ch.boat){ scene.remove(ch.boat); ch.boat = null; } }
 function ejectSeat(){
   if((!isAlphaJet() && !isMustang()) || state.onGround || state.ejected || state.crashed) return;
   state.ejected = true;
@@ -1930,6 +1981,9 @@ function ejectSeat(){
 }
 function updateParachute(dt){
   if(!parachute) return;
+  // Ueber Wasser: auf dem Schlauchboot gerettet (Schirm weg). Steht das schon, ist hier Schluss —
+  // das Boot treibt mit den Wellen, Sinken und Pendeln gibt es nicht mehr.
+  if(chuteSeaRescue(parachute, dt)) return;
   // sanft sinken + leichtes Pendeln
   parachute.group.position.y += parachute.vy * dt;
   parachute.group.position.x += Math.sin(parachute.group.position.y*0.1) * 2 * dt;
@@ -1945,7 +1999,7 @@ function updateParachute(dt){
   }
 }
 function clearParachute(){
-  if(parachute){ scene.remove(parachute.group); parachute = null; }
+  if(parachute){ clearChuteBoat(parachute); scene.remove(parachute.group); parachute = null; }
 }
 
 // ================= Aussteigen und herumlaufen (EVA) =================
@@ -1972,8 +2026,23 @@ const EVA_LOOK_RETURN = 3.0;  // wie schnell sie ohne Eingabe zurückgleitet
 const EVA_PITCH_MIN   = -0.45; // rad ≈ -26° nach unten
 const EVA_PITCH_MAX   = 1.25;  // rad ≈ +72° hinauf, fast senkrecht in den Himmel
 const EVA_LOOK_AHEAD  = 14;    // m: so weit vor dem Astronauten liegt der Blickpunkt
+// Wasser: statt einer harten Wand steigt der Astronaut in ein Schlauchboot. Die Wand am
+// Traegerdeck wirkte befremdlich — man stand am Rand und kam nicht weiter, obwohl das Meer da war.
+// Jetzt taucht das Boot genau dort auf, wo er sonst ins Wasser gefallen waere, und faehrt wie das
+// Feuerwehrboot. Beruehrt es Land, steigt er von allein aus und das Boot verschwindet.
+const DINGHY_VMAX  = 11;      // Hoechstfahrt (m/s ~ 40 km/h) — flotter als Laufen, weit unter dem Feuerwehrboot
+const DINGHY_ACCEL = 7;       // wie schnell es die Zielfahrt erreicht (m/s^2)
+const DINGHY_YAW   = 1.4;     // Ruderwirkung (rad/s) — wendiger als das 16-m-Feuerwehrboot
+const DINGHY_ROLL  = 0.18;    // Kraengung in der Kurve (rein optisch)
+const DINGHY_BOB   = 0.6;     // wie stark es mit der Duenung nickt
+const DINGHY_LAND_R = 3.0;    // so weit vor dem Bug wird auf Land geprueft -> dort steigt er aus
+// So weit voraus wird nach Wasser gesucht, wenn er zu Fuss festsitzt. Muss ueber die BORDWAND des
+// Traegers reichen: der Rumpf ist 4 m breiter als das Deck, von der Deckkante bis zum freien Wasser
+// sind es 6,75 m (beides ausgemessen). 9 m gibt Luft, ohne dass er an einer Insel ueber den halben
+// Strand ins Boot springt.
+const EVA_WATER_REACH = 9;
 let evaOrbit = 0, evaPitch = 0;   // aktueller Schwenk (0 = hinter ihm, wie bisher)
-let eva = null;               // { group, vy, onGround, yaw, planeAt } oder null
+let eva = null;               // { group, vy, onGround, yaw, planeAt, boat, boatVel } oder null
 
 // Darf man hier aussteigen? Nur am Boden, nicht abgestürzt, und nur auf FESTEM Grund —
 // Wasser ist keine Bühne für einen Astronauten, und das Boot fährt selbst schon "zu Fuß".
@@ -1985,10 +2054,55 @@ function evaAllowed(){
   // Erde: Insel oder Trägerdeck, aber nicht das Wasser
   return isOnLand(state.pos.x, state.pos.z) || isOnCarrier(state.pos.x, state.pos.z);
 }
-// Fester Grund unter (x,z)? Für den Astronauten ist Wasser eine Wand.
+// Fester Grund unter (x,z)? Ausserhalb der Erde ist alles Boden, in der Erdwelt nur Insel und
+// Traegerdeck. Ins Wasser DARF er inzwischen — dort steigt er ins Schlauchboot (siehe updateEva),
+// diese Funktion sagt nur, wo er zu FUSS stehen kann.
 function evaSolid(x, z){
   if(GROUNDS[locale] || locale === 'death') return true;
-  return isOnLand(x, z) || isOnCarrier(x, z);
+  // Der SANDRAND zaehlt mit: er ist gezeichnet (buildIsland, bis radius*1.12) und laeuft flach ins
+  // Meer. Ohne ihn endete der feste Grund an der Grasflaeche und der Astronaut blieb 31 m vor der
+  // Wasserlinie stehen (gemessen) — mitten auf dem sichtbaren Strand. Fuer FLUGZEUGE bleibt der
+  // Strand weiterhin Wasser (canLandHere/surfaceY sind bewusst nicht angetastet).
+  return isOnLand(x, z) || isOnBeach(x, z) || isOnCarrier(x, z);
+}
+// Bodenhoehe unter den FUESSEN. Wie surfaceY, aber der Strand liegt auf Inselhoehe statt auf 0:
+// surfaceY kennt nur die Grasflaeche, und auf dem Sand waere der Astronaut sonst 30 cm eingesunken.
+// surfaceY selbst bleibt unveraendert — daran haengt die Landelogik der Flugzeuge.
+function evaFootY(x, z){
+  if(locale === 'earth' && !isOnLand(x, z) && !isOnCarrier(x, z) && isOnBeach(x, z)) return ISLAND_Y;
+  return surfaceY(x, z);
+}
+// Steht der Astronaut gerade im Schlauchboot?
+function evaAfloat(){ return !!(eva && eva.boat); }
+// Ins Schlauchboot steigen. Es taucht genau dort auf, wo er ins Wasser geraten waere, und liegt
+// still: es uebernimmt NICHT den Schwung, mit dem er hineingelaufen (oder gesprungen) ist —
+// sonst treibt es beim Einstieg unkontrolliert los, und ein Kind muesste erst gegensteuern.
+function evaEnterDinghy(x, z){
+  if(!eva || eva.boat) return;
+  const b = makeDinghy();
+  b.position.set(x, seaYAt(x, z) - DINGHY_DRAFT, z);
+  b.rotation.y = eva.yaw;
+  scene.add(b);
+  eva.boat = b;
+  eva.boatVel = new THREE.Vector3(0, 0, 0);
+  eva.boatThr = 0;
+  // Ihn GLEICH auf den Innenboden setzen, nicht erst im naechsten Frame: sonst steht er ein Bild
+  // lang noch auf der alten Hoehe (gemessen 19 cm daneben) und zuckt sichtbar.
+  eva.group.position.set(x, b.position.y + (b.userData.floorY || 0), z);
+  eva.group.rotation.y = eva.yaw;
+  eva.vy = 0; eva.onGround = true;      // er steht im Boot, faellt nicht weiter
+  evaJumpFrom = null;                   // ein laufender Sprung endet hier
+  showBig('🛟'); bigTimer = 1.2;
+}
+// Aus dem Schlauchboot aussteigen — an Land, automatisch. Das Boot verschwindet: ein leeres Boot am
+// Strand liegen zu lassen sieht aus wie ein Fehler, und wieder einsteigen kann man ueberall.
+function evaLeaveDinghy(x, z){
+  if(!eva || !eva.boat) return;
+  scene.remove(eva.boat);
+  eva.boat = null; eva.boatVel = null;
+  eva.group.position.set(x, evaFootY(x, z), z);
+  eva.vy = 0; eva.onGround = true;
+  showBig('🧑‍🚀'); bigTimer = 1.2;
 }
 // Der Mars-Rover begleitet den Astronauten: steigt man auf dem Mars aus, wird er direkt rechts
 // daneben gesetzt, statt irgendwo in der Landschaft zu stehen. Zusammen wirkt es wie ein
@@ -2029,7 +2143,7 @@ function evaExit(){
   // sie gilt nur für die Erdwelt (siehe updateEva), und 6 m neben dem gelandeten Flieger steht
   // ohnehin kein Haus — sonst wäre man beim Landen dagegen geflogen.
   if(!evaSolid(x, z)){ x = state.pos.x; z = state.pos.z; }
-  g.position.set(x, surfaceY(x, z), z);
+  g.position.set(x, evaFootY(x, z), z);
   g.rotation.y = eul.y;
   scene.add(g);
   eva = { group:g, vy:0, onGround:true, yaw:eul.y,
@@ -2041,6 +2155,7 @@ function evaExit(){
 }
 function evaBoard(){
   if(!eva) return;
+  if(eva.boat) scene.remove(eva.boat);   // sonst treibt ein leeres Boot fuer immer im Meer
   scene.remove(eva.group);
   eva = null;
   showBig('✈️'); bigTimer = 1.2;
@@ -2052,6 +2167,9 @@ function evaCanBoard(){
 }
 function evaJump(){
   if(!eva || !eva.onGround) return;
+  // Im Schlauchboot wird nicht gehuepft: er landete sofort wieder im Wasser, das Boot wuerde neu
+  // "eingestiegen" und das Symbol blitzte endlos. An Land steigt er ohnehin von allein aus.
+  if(eva.boat) return;
   eva.vy = EVA_JUMP_V;                // gleiche Absprungkraft überall — die Schwerkraft macht den Rest
   eva.onGround = false;
   // Absprungpunkt merken, damit die Weite gemessen werden kann (fürs HUD)
@@ -2072,10 +2190,82 @@ function evaSpeedKmh(){ return evaKmh; }
 // Mondbasis kommt man damit sichtbar weit, und genau das ist der Reiz.
 let evaJumpFrom = null;   // Absprungpunkt, solange man in der Luft ist
 let evaJumpDist = 0;      // erreichte Weite (m), bleibt nach der Landung stehen
+// Fahrt im Schlauchboot. Steuerung genau wie beim Feuerwehrboot (linker Stick: <-> lenkt, hoch/runter
+// gibt Gas), nur kleiner und wendiger. Der Astronaut steht mit im Boot und wird jeden Frame darauf
+// gesetzt — deshalb braucht er hier keine eigene Physik.
+function updateDinghy(dt, inp){
+  const b = eva.boat, v = eva.boatVel;
+  // Lenken: ein Aussenborder gibt auch im Stand Ruderdruck, deshalb dieselbe authority-Formel wie
+  // beim Feuerwehrboot — sonst kaeme man aus einer Bucht nicht mehr heraus.
+  const spd = Math.hypot(v.x, v.z);
+  const authority = Math.min(1, 0.3 + Math.abs(eva.boatThr || 0) * 0.5 + spd / DINGHY_VMAX);
+  eva.yaw -= (inp.yaw || 0) * DINGHY_YAW * authority * dt;
+  // Gas: der Stick gibt direkt die Zielfahrt (nach vorn = vorwaerts, nach hinten = rueckwaerts).
+  // Anders als beim Flugzeug gibt es keine Schubstufen — zu Fuss unterwegs waere das eine Huerde,
+  // und der Stick liegt ja schon in der Hand.
+  const want = -(inp.pitch || 0);
+  eva.boatThr = want;
+  const fwd = new THREE.Vector3(-Math.sin(eva.yaw), 0, -Math.cos(eva.yaw));
+  const targetV = DINGHY_VMAX * want;
+  const fwdSpeed = v.x*fwd.x + v.z*fwd.z;
+  const dv = targetV - fwdSpeed;
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), DINGHY_ACCEL);
+  v.x += fwd.x * push * dt; v.z += fwd.z * push * dt;
+  // Querwiderstand: es rutscht nicht seitlich weg (wie beim Feuerwehrboot).
+  const side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const sideSpd = v.x*side.x + v.z*side.z;
+  const damp = Math.min(1, 4*dt);
+  v.x -= side.x * sideSpd * damp; v.z -= side.z * sideSpd * damp;
+  // Fahren, solange das Ziel offenes Wasser ist. Land haelt es nicht auf wie beim Feuerwehrboot —
+  // dort steigt der Astronaut AUS. Geprueft wird ein Stueck VOR dem Bug (DINGHY_LAND_R), sonst
+  // stiege er erst aus, wenn das halbe Boot schon im Sand steckt.
+  const nx = b.position.x + v.x*dt, nz = b.position.z + v.z*dt;
+  const ax = nx + fwd.x*DINGHY_LAND_R, az = nz + fwd.z*DINGHY_LAND_R;
+  // Land voraus? Aussteigen — aber nur auf begehbarem Grund. Ein Bauwerk oder die Bordwand des
+  // Traegers ist kein Ufer: dort gleitet es ab wie das Feuerwehrboot, sonst stuende der Astronaut
+  // ploetzlich in einer Hauswand.
+  if(isOnLand(ax, az) || isOnBeach(ax, az) || isOnCarrier(ax, az)){
+    // Aussteigepunkt: der erste feste Grund vom Bug aus. Nicht einfach (ax,az) nehmen — der liegt
+    // bei Strand womoeglich noch im Sand unter der Wasserlinie.
+    let ex = ax, ez = az;
+    for(let s = 0; s <= 8; s += 1){
+      const px = nx + fwd.x*(DINGHY_LAND_R + s), pz = nz + fwd.z*(DINGHY_LAND_R + s);
+      if(evaSolid(px, pz)){ ex = px; ez = pz; break; }
+    }
+    if(evaSolid(ex, ez)){ evaLeaveDinghy(ex, ez); return; }
+    // Land voraus, aber nichts Begehbares (Bauwerk/Bordwand) -> abgleiten statt aussteigen.
+    coastSlide(b.position, v, fwd, dt);
+  } else if(isOpenWater(nx, nz)){
+    b.position.x = nx; b.position.z = nz;
+  } else {
+    coastSlide(b.position, v, fwd, dt);
+  }
+  // Auf der Duenung liegen und mit ihr nicken. Bezug ist die WELTposition -> seaYAt (das Boot ist
+  // nicht der Flieger, der in der Gittermitte sitzt).
+  b.position.y = seaYAt(b.position.x, b.position.z, dt) - DINGHY_DRAFT;
+  const bowY   = seaYAt(b.position.x + fwd.x*DINGHY_LEN*0.5, b.position.z + fwd.z*DINGHY_LEN*0.5, dt);
+  const sternY = seaYAt(b.position.x - fwd.x*DINGHY_LEN*0.5, b.position.z - fwd.z*DINGHY_LEN*0.5, dt);
+  const pitchT = Math.atan2(bowY - sternY, DINGHY_LEN) * DINGHY_BOB;
+  b.rotation.set(pitchT, eva.yaw, -(inp.yaw || 0) * DINGHY_ROLL);
+  // Der Astronaut steht auf dem Innenboden und dreht sich mit dem Boot.
+  const g = eva.group;
+  g.position.set(b.position.x, b.position.y + (b.userData.floorY || 0), b.position.z);
+  g.rotation.y = eva.yaw;
+  eva.vy = 0; eva.onGround = true;
+}
 function updateEva(dt, inp){
   if(!eva) return;
   const g = eva.group;
   const _wasX = g.position.x, _wasZ = g.position.z;
+  // Im Schlauchboot laeuft eine eigene Physik — Laufen, Springen und Bodenhoehe gelten dort nicht.
+  // Tempo und Sprungweite werden trotzdem gefuehrt (dafuer der gemeinsame Schluss unten).
+  if(eva.boat){
+    updateDinghy(dt, inp);
+    const movedB = Math.hypot(g.position.x - _wasX, g.position.z - _wasZ);
+    evaKmh += ((dt > 1e-6 ? movedB/dt*3.6 : 0) - evaKmh) * Math.min(1, 8*dt);
+    state.pos.copy(eva.planeAt);
+    return;
+  }
   roverBesideEva();        // Rover bleibt neben dem Astronauten (placeGroundBase würde ihn versetzen)
   // Drehen und laufen: ←→ dreht, ↕ läuft vor/zurück (wie ein Fahrzeug — für Kinder einfacher als
   // eine kameragebundene Steuerung, weil "vorwärts" immer die Blickrichtung ist).
@@ -2092,14 +2282,72 @@ function updateEva(dt, inp){
     // Häuser, die es gar nicht gibt. Auf dem Mars landet man um (0,0), und Zelle (0,0) ist immer
     // die Startinsel mit acht Gebäuden: jeder Schritt war blockiert.
     const free = (x,z)=> evaSolid(x,z) &&
-      (locale !== 'earth' || !hitsBuilding(x, surfaceY(x,z)+1, z, false));
+      (locale !== 'earth' || !hitsBuilding(x, evaFootY(x,z)+1, z, false));
     if(free(nx, nz)){ g.position.x = nx; g.position.z = nz; }
     else if(free(nx, g.position.z)) g.position.x = nx;
     else if(free(g.position.x, nz)) g.position.z = nz;
+    // Steckt er WIRKLICH fest und davor liegt WASSER (kein Haus)? Dann steigt er dort ins
+    // Schlauchboot, statt an einer unsichtbaren Wand stehen zu bleiben — genau das fuehlte sich am
+    // Traegerdeck befremdlich an. Nur in der Erdwelt: Mond und Mars haben kein Wasser.
+    //
+    // Geprueft wird die tatsaechlich zurueckgelegte STRECKE, und zwar mit Schwelle. Zwei Fallen,
+    // beide gemessen:
+    //  1. Ein `else if` am Kettenende greift nie: laeuft er senkrecht aufs Wasser zu, liegt nz auf
+    //     seinem eigenen z, und `free(g.position.x, nz)` ist trivial wahr (er steht ja dort).
+    //     Gemessen: 60 Frames bewegungslos am Ufer.
+    //  2. Ein exakter Vergleich auf "nichts bewegt" greift auch nicht. Bei yaw = -90 Grad ist fz
+    //     nicht 0, sondern -6e-17 — er rutscht pro Frame um 1e-18 m zur Seite, und das zaehlte als
+    //     Bewegung. Daher die Schwelle: weniger als ein Zehntel des gewollten Schritts heisst fest.
+    // Bewegt er sich wirklich, laeuft er an der Kueste ENTLANG — das soll so bleiben, statt ihn beim
+    // seitlichen Streifen sofort ins Boot zu setzen.
+    const want = Math.abs(walk) * EVA_SPEED * dt;
+    const got  = Math.hypot(g.position.x - _wasX, g.position.z - _wasZ);
+    if(locale === 'earth' && eva.onGround && got < want*0.1){
+      // Wasser suchen, und zwar ein STUECK weit voraus: direkt neben einer Deckkante liegt die
+      // BORDWAND (der Rumpf ist 4 m breiter als das Deck, bis zum freien Wasser sind es von der
+      // Kante 6,75 m — beides ausgemessen). Nur den naechsten Schritt zu pruefen fand dort niemals
+      // Wasser, und der Astronaut stand an der Kante fest: genau die harte Grenze, die weg sollte.
+      // Er springt also ueber die Bordwand hinweg ins freie Wasser daneben.
+      const wx = -Math.sin(eva.yaw), wz = -Math.cos(eva.yaw);
+      for(let s = 0; s <= EVA_WATER_REACH; s += 0.5){
+        const px = g.position.x + wx*s, pz = g.position.z + wz*s;
+        if(evaSolid(px, pz)) continue;          // noch Deck/Land davor -> weitersuchen
+        if(!isOpenWater(px, pz)) continue;      // Bordwand oder Bauwerk -> daran vorbei
+        // Steht er HOCH ueber dem Wasser (Flugdeck: 12 m), soll er sichtbar hinunterfallen statt
+        // sofort im Boot zu stehen — genau dieser Sprung macht die Szene aus. Also nur ueber die
+        // Kante SETZEN und der Schwerkraft ueberlassen (der Fall-Zweig unten faengt ihn im Boot auf).
+        const wl = seaYAt(px, pz, dt);
+        if(g.position.y > wl + 2.5){
+          g.position.x = px; g.position.z = pz;
+          eva.onGround = false;
+          if(eva.vy > 0) eva.vy = 0;           // kein Restschwung nach oben
+          evaJumpFrom = g.position.clone();    // die Sprungweite mitzaehlen (fuers HUD)
+          evaJumpDist = 0;
+          return;
+        }
+        evaEnterDinghy(px, pz); return;        // fast auf Wasserhoehe -> direkt einsteigen
+      }
+    }
   }
   // Springen und fallen mit der Schwerkraft DES ORTES — das ist der Witz an Mond und Mars.
   const grav = GRAV_AT[locale] !== undefined ? GRAV_AT[locale] : 9.81;
-  const gy = surfaceY(g.position.x, g.position.z);
+  // Ueber Wasser abwaerts unterwegs (vom Traegerdeck gesprungen, ueber die Kaikante gelaufen):
+  // sobald er die Wasserlinie erreicht, faengt ihn das Schlauchboot auf. Es taucht unter ihm auf,
+  // statt ihn durchzuschlagen — vom 12 m hohen Flugdeck ist das ein ordentlicher Sprung, und
+  // "landet im Boot" soll genau so aussehen.
+  if(locale === 'earth' && !evaSolid(g.position.x, g.position.z)
+     && isOpenWater(g.position.x, g.position.z)){
+    const wl = seaYAt(g.position.x, g.position.z, dt) - DINGHY_DRAFT + (dinghyFloorY || 0);
+    if(g.position.y <= wl){ evaEnterDinghy(g.position.x, g.position.z); return; }
+    // noch in der Luft ueber dem Wasser: weiterfallen
+    eva.vy -= grav * dt;
+    g.position.y += eva.vy * dt;
+    eva.onGround = false;
+    if(evaJumpFrom) evaJumpDist = Math.hypot(g.position.x - evaJumpFrom.x, g.position.z - evaJumpFrom.z);
+    state.pos.copy(eva.planeAt);
+    return;
+  }
+  const gy = evaFootY(g.position.x, g.position.z);
   if(!eva.onGround || eva.vy > 0){
     eva.vy -= grav * dt;
     g.position.y += eva.vy * dt;
@@ -2128,6 +2376,8 @@ function updateEva(dt, inp){
   state.pos.copy(eva.planeAt);
 }
 function clearEva(){
+  // Das Schlauchboot mit abraeumen — sonst bleibt es beim Modellwechsel oder Reset im Meer liegen.
+  if(eva && eva.boat) scene.remove(eva.boat);
   if(eva){ scene.remove(eva.group); eva = null; }
   evaKmh = 0; evaJumpFrom = null; evaJumpDist = 0;
 }
@@ -2353,6 +2603,68 @@ function makeAstronaut(){
   body.position.y = 0.62; g.add(body);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.32,12,10), pilotMat);
   head.position.y = 1.55; g.add(head);
+  return g;
+}
+
+// ---------- Schlauchboot (by Mike0916) ----------
+// Rettungsboot fuer alles, was sonst im Wasser landen wuerde: der Astronaut zu Fuss und jeder
+// Fallschirmspringer. Der Astronaut STEHT darin — sitzen kann er nicht, seine Pose ist beim
+// Verkleinern fest in die Geometrie gebacken (skins: 0). Stehend passt es auch besser: das Boot ist
+// nur 2,35 m lang und er 1,9 m hoch, sitzend verschwaende er hinter dem Wulst.
+// Ausgemessen am Rohmodell: 2,35 lang (Z), 1,39 breit, 1,08 hoch. Bug auf +Z (die Breite laeuft
+// dorthin auf 0,90 zusammen), Motor/Heck auf -Z (dort sitzt der hoechste Punkt, y=1,52).
+// Der Innenboden liegt bei 24 % der Modellhoehe ueber dem Kiel — dort stehen die Figuren.
+const DINGHY_LEN   = 4.2;    // Laenge im Spiel (m). Deutlich groesser als das reale 2,35-m-Modell:
+                             // ein 1,9 m hoher Astronaut in einem 2,35-m-Boot sieht aus wie ein
+                             // Riese in einer Badewanne. 4,2 m ist ein glaubwuerdiges Beiboot.
+const DINGHY_FLOOR = 0.24;   // Anteil der Modellhoehe, auf dem der Innenboden liegt (ausgemessen)
+const DINGHY_DRAFT = 0.18;   // so tief liegt der Kiel unter der Wasserlinie (Schlauchboot: flach)
+let dinghyTemplate = null, dinghyFloorY = 0;
+function preloadDinghy(){
+  if(!window.DINGHY_GLB || !THREE.GLTFLoader) return;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.DINGHY_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    // Auf DINGHY_LEN normieren. Die Laenge liegt auf Z (ausgemessen), aber sicherheitshalber die
+    // groessere der beiden waagerechten Achsen nehmen — so bricht es nicht, wenn das Modell
+    // einmal getauscht wird.
+    const longest = Math.max(size.x, size.z);
+    obj.scale.setScalar(DINGHY_LEN / Math.max(0.001, longest));
+    const box2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); box2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z;     // X/Z zentrieren
+    obj.position.y -= box2.min.y;                     // Kiel auf y = 0
+    const box3 = new THREE.Box3().setFromObject(obj);
+    dinghyFloorY = box3.max.y * DINGHY_FLOOR;         // Innenboden ueber dem Kiel
+    const wrap = new THREE.Group(); wrap.add(obj);
+    dinghyTemplate = wrap;
+  }, (err)=>{ console.warn('Schlauchboot-GLB Ladefehler:', err); });
+}
+// Baut ein Schlauchboot. Der Ursprung liegt am KIEL, damit es wie das Feuerwehrboot auf die
+// Wasserlinie gesetzt werden kann. Ohne geladenes GLB ein schlichter Ersatz — es darf nie passieren,
+// dass jemand im Wasser steht, weil ein Modell fehlt.
+const dinghyMat = new THREE.MeshLambertMaterial({ color:0x2a2a30 });
+function makeDinghy(){
+  const g = new THREE.Group();
+  if(dinghyTemplate){
+    // Das Modell zeigt mit dem Bug auf +Z, im Spiel zeigen alle Nasen auf -Z -> 180 Grad drehen.
+    const d = dinghyTemplate.clone(true);
+    d.rotation.y = Math.PI;
+    g.add(d);
+    g.userData.floorY = dinghyFloorY;
+    return g;
+  }
+  const hull = new THREE.Mesh(new THREE.TorusGeometry(DINGHY_LEN*0.42, 0.22, 8, 16), dinghyMat);
+  hull.rotation.x = -Math.PI/2; hull.position.y = 0.25; g.add(hull);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(DINGHY_LEN*0.36, 14), dinghyMat);
+  floor.rotation.x = -Math.PI/2; floor.position.y = 0.18; g.add(floor);
+  g.userData.floorY = 0.2;
   return g;
 }
 
@@ -4499,7 +4811,9 @@ function updateEngineSound() {
   // AudioContext jeden Frame aufwecken, falls (noch) suspendiert (Browser-Autoplay-Sperre).
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const running = audioCtx.state === 'running';
-  const model = MODEL_NAMES[currentModel];
+  // Im Schlauchboot laeuft derselbe synthetische Aussenborder wie beim Feuerwehrboot — es ist ja
+  // auch einer. Das schlaegt das Modell des abgestellten Fliegers, denn zu hoeren ist das Boot.
+  const model = (eva && eva.boat) ? 'Boat' : MODEL_NAMES[currentModel];
   // Boot: eigener, synthetisch erzeugter Motorloop (kein Sample zum Dekodieren).
   if (model === 'Boat') {
     if (!boatEngineBuf) boatEngineBuf = makeBoatEngineBuffer();
@@ -4521,9 +4835,11 @@ function updateEngineSound() {
   if (!engineGain || !engineSrc) return;
   // Während des Crash-Einsatzes: Motor stumm (nur Sirene). Ebenso, während man ausgestiegen ist —
   // der Flieger steht mit abgeschaltetem Motor.
-  if (!soundOn || state.crashed || eva) { engineGain.gain.value = 0; return; }
-  const t = state.throttle;
-  if (isBoat()) {
+  // Draussen ist der Flugzeugmotor aus — AUSSER im Schlauchboot, dort laeuft dessen eigener.
+  if (!soundOn || state.crashed || (eva && !eva.boat)) { engineGain.gain.value = 0; return; }
+  // Im Schlauchboot bestimmt sein Gas die Drehzahl, nicht der Schub des abgestellten Fliegers.
+  const t = (eva && eva.boat) ? (eva.boatThr || 0) : state.throttle;
+  if (isBoat() || (eva && eva.boat)) {
     // Boot: der Motor bollert auch im Leerlauf deutlich hörbar (ein Außenborder läuft ja weiter),
     // und die Drehzahl steigt weniger steil als bei einem Flugzeug. Umkehrschub (negativer Wert)
     // klingt genauso wie Vorwärtsfahrt — die Schraube dreht ja nur andersherum.
@@ -4857,6 +5173,46 @@ const BOAT_BOB = 0.5;        // wie stark es mit der Dünung nickt
 // Schrauben sitzen bei 0,14–1,31 m (ausgemessen). 1,5 m versenken sie sauber, ohne dass das Deck
 // (ab ~2,7 m) nass wird.
 const BOAT_DRAFT = 1.5;
+// An der Küste ABGLEITEN statt anzuhalten: von der Fahrtrichtung aus schrittweise zur Seite drehen
+// (abwechselnd links/rechts), bis ein Schritt im Wasser landet, und die Fahrt dorthin umlenken. So
+// gleitet ein Boot an jedem Ufer ab, in jedem Anfahrtwinkel. Beide Boote nutzen das.
+//
+// Drei Fallen, die hier vorher zugeschlagen haben — alle ausgemessen:
+//  1. Erst X und Z EINZELN zu probieren half nicht: bei senkrechter Anfahrt ist die eine
+//     Komponente ohnehin null, und die Zweige setzten dabei die Fahrt auf null.
+//  2. Nur ±90° zu prüfen genügt nicht — bei senkrechter Anfahrt auf eine runde Küste liegt auch
+//     der Querschritt noch in der Sperrzone.
+//  3. Die Schrittweite darf NICHT allein an der Fahrt hängen. War die Fahrt erst genullt, war
+//     der Schritt (spd*dt) null, das Ausweichen konnte nichts verschieben, die Fahrt baute sich
+//     auf und wurde erneut genullt: eine Endlosschleife. Gemessen 561 Frames bewegungslos,
+//     obwohl 13 von 24 Richtungen frei waren. Daher eine Mindestschrittweite und die
+//     Nasenrichtung als Rückfall, wenn das Boot steht.
+// pos/vel werden IN PLACE verändert; fwd ist die Nasenrichtung (Rückfall, wenn das Boot steht).
+function coastSlide(pos, vel, fwd, dt){
+  const spd0 = Math.hypot(vel.x, vel.z);
+  const sp = Math.max(spd0 * dt, 0.05);                  // mind. 5 cm pro Frame -> klemmt nie
+  let ux, uz;
+  if(spd0 > 1e-6){ ux = vel.x/spd0; uz = vel.z/spd0; }                   // Fahrtrichtung
+  else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                       // steht: Nasenrichtung
+         ux = fwd.x/fl; uz = fwd.z/fl; }
+  for(const deg of [20, 40, 60, 80, 100, 120]){
+    const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
+    for(const sgn of [1, -1]){
+      const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
+      if(!isOpenWater(pos.x + dx*sp, pos.z + dz*sp)) continue;
+      pos.x += dx*sp; pos.z += dz*sp;
+      // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
+      // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
+      const keep = Math.max(spd0*0.85, 2);
+      vel.x = dx*keep; vel.z = dz*keep;
+      return true;
+    }
+  }
+  // Selbst 120° Abweichung blockiert (echte Sackgasse, etwa eine enge Bucht): Fahrt abbauen, aber
+  // nicht ganz — die Schraube gibt weiter Ruderdruck (siehe authority), man dreht also heraus.
+  vel.x *= 0.3; vel.z *= 0.3;
+  return false;
+}
 function stepBoat(dt, inp){
   const eB = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
   // Ruderwirkung hängt an der Fahrt — aber nicht nur: eine laufende Schraube drückt auch im Stand
@@ -4901,48 +5257,10 @@ function stepBoat(dt, inp){
   // (siehe buildIsland). Ohne isOnBeach fuhr das Boot gut 30 m weit über den Strand, was aussah,
   // als führe es an Land.
   const nx = state.pos.x + state.vel.x*dt, nz = state.pos.z + state.vel.z*dt;
-  const water = (x,z)=> !isOnLand(x,z) && !isOnBeach(x,z) && !isOnCarrier(x,z)
-                        && !hitsBuilding(x, ISLAND_Y+2, z, false);
-  if(water(nx, nz)){ state.pos.x = nx; state.pos.z = nz; }
+  if(isOpenWater(nx, nz)){ state.pos.x = nx; state.pos.z = nz; }
   else {
-    // Blockiert. Statt anzuhalten wird ENTLANG der Küste ausgewichen: von der Fahrtrichtung aus
-    // schrittweise zur Seite drehen (abwechselnd links/rechts), bis ein Schritt im Wasser landet,
-    // und die Fahrt dorthin umlenken. So gleitet das Boot an jedem Ufer ab, in jedem Anfahrtwinkel.
-    //
-    // Drei Fallen, die hier vorher zugeschlagen haben — alle ausgemessen:
-    //  1. Erst X und Z EINZELN zu probieren half nicht: bei senkrechter Anfahrt ist die eine
-    //     Komponente ohnehin null, und die Zweige setzten dabei die Fahrt auf null.
-    //  2. Nur ±90° zu prüfen genügt nicht — bei senkrechter Anfahrt auf eine runde Küste liegt auch
-    //     der Querschritt noch in der Sperrzone.
-    //  3. Die Schrittweite darf NICHT allein an der Fahrt hängen. War die Fahrt erst genullt, war
-    //     der Schritt (spd*dt) null, das Ausweichen konnte nichts verschieben, die Fahrt baute sich
-    //     auf und wurde erneut genullt: eine Endlosschleife. Gemessen 561 Frames bewegungslos,
-    //     obwohl 13 von 24 Richtungen frei waren. Daher eine Mindestschrittweite und die
-    //     Nasenrichtung als Rückfall, wenn das Boot steht.
-    const spd0 = Math.hypot(state.vel.x, state.vel.z);
-    const sp = Math.max(spd0 * dt, 0.05);                  // mind. 5 cm pro Frame -> klemmt nie
-    let ux, uz;
-    if(spd0 > 1e-6){ ux = state.vel.x/spd0; uz = state.vel.z/spd0; }        // Fahrtrichtung
-    else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                        // steht: Nasenrichtung
-           ux = fwd.x/fl; uz = fwd.z/fl; }
-    let freed = false;
-    for(const deg of [20, 40, 60, 80, 100, 120]){
-      const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
-      for(const sgn of [1, -1]){
-        const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
-        if(!water(state.pos.x + dx*sp, state.pos.z + dz*sp)) continue;
-        state.pos.x += dx*sp; state.pos.z += dz*sp;
-        // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
-        // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
-        const keep = Math.max(spd0*0.85, 2);
-        state.vel.x = dx*keep; state.vel.z = dz*keep;
-        freed = true; break;
-      }
-      if(freed) break;
-    }
-    // Selbst 120° Abweichung blockiert (echte Sackgasse, etwa eine enge Bucht): Fahrt abbauen, aber
-    // nicht ganz — die Schraube gibt weiter Ruderdruck (siehe authority), man dreht also heraus.
-    if(!freed){ state.vel.x *= 0.3; state.vel.z *= 0.3; }
+    // Blockiert -> an der Kueste abgleiten (dieselbe Logik nutzt das Schlauchboot, siehe coastSlide).
+    coastSlide(state.pos, state.vel, fwd, dt);
   }
 
   // Auf der Wasseroberfläche liegen, aber mit TIEFGANG: vorher sass der Kiel genau auf der
@@ -5361,12 +5679,17 @@ function updateCamera(){
         .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
     // Kamera: hinter ihm, gegenläufig zum Schwenk — schaut er hinauf, sinkt sie etwas, damit der
     // Blick über ihn hinweg in den Himmel geht statt auf seinen Helm.
-    const dist = 7 - 1.5 * Math.max(0, Math.sin(evaPitch));
+    // Im Schlauchboot weiter weg und hoeher: bei 40 km/h ueber die Duenung braucht man Vorausblick
+    // aufs Wasser und die Kueste, genau wie beim Feuerwehrboot. Zu Fuss bleibt es dicht dran.
+    const bt = eva.boat ? 1.7 : 1;
+    const dist = 7*bt - 1.5 * Math.max(0, Math.sin(evaPitch));
     const desired = g.position.clone().addScaledVector(back, dist);
-    desired.y = g.position.y + 3.4 - 2.2 * Math.sin(evaPitch);
+    desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
     // Nicht unter den Boden: sonst schaut man durch das Gelände. Beim Blick nach oben darf sie
     // deshalb auch nicht beliebig tief — der Boden gewinnt.
-    const floor = surfaceY(desired.x, desired.z) + 1.2;
+    // Ueber Wasser zaehlt die WELLENhoehe: surfaceY gibt dort 0 zurueck, die Duenung reicht aber bis
+    // 1,6 m — ohne das taucht die Kamera in einen Wellenberg und man sieht kurz nur Blau.
+    const floor = (eva.boat ? seaYAt(desired.x, desired.z) : evaFootY(desired.x, desired.z)) + 1.2;
     if(desired.y < floor) desired.y = floor;
     // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
     camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
@@ -5474,7 +5797,9 @@ function updateHUD(){
   // Höhenzeile aus: im Weltall gibt es keine sinnvolle Höhe, und das Boot fährt immer auf 0.
   // Beim Astronauten bleibt sie AN: beim Hüpfen sieht man dort, wie hoch er kommt — auf dem Mond
   // sechsmal so hoch wie auf der Erde, und genau das ist der Reiz daran.
-  if(elAltRow) elAltRow.style.display = (locale === 'space' || (isBoat() && !eva)) ? 'none' : '';
+  // Im Schlauchboot faehrt er wie das Feuerwehrboot immer auf der Wasserlinie -> Zeile aus.
+  if(elAltRow) elAltRow.style.display =
+      (locale === 'space' || (isBoat() && !eva) || (eva && eva.boat)) ? 'none' : '';
   // Bezugsobjekt: draußen der Astronaut, sonst der Flieger. Vorher stand hier immer state.* — das
   // gehört aber dem STEHENDEN Flieger, das HUD zeigte also dessen Höhe und Tempo 0, während man lief.
   const hp = eva ? eva.group.position : state.pos;
@@ -5490,9 +5815,17 @@ function updateHUD(){
     // Statt des Schubs (der Motor ist draußen aus) die SPRUNGWEITE: während des Sprungs wächst sie
     // mit, nach der Landung bleibt der erreichte Wert stehen. Vom Dach der Mondbasis wird das
     // richtig weit, weil dort nur ein Sechstel der Erdanziehung bremst.
-    elThr.textContent = evaJumpDist.toFixed(1);
-    if(elThrLbl) elThrLbl.textContent = 'Sprung';
-    if(elThrU) elThrU.textContent = ' m';
+    // Im Schlauchboot wird nicht gehuepft (siehe evaJump) — dort ist er ein Fahrzeug wie das
+    // Feuerwehrboot, also steht dort auch dessen Anzeige: Gas in Prozent statt Sprungweite.
+    if(eva.boat){
+      elThr.textContent = Math.round(Math.abs(eva.boatThr || 0) * 100);
+      if(elThrLbl) elThrLbl.textContent = 'Schub';
+      if(elThrU) elThrU.textContent = ' %';
+    } else {
+      elThr.textContent = evaJumpDist.toFixed(1);
+      if(elThrLbl) elThrLbl.textContent = 'Sprung';
+      if(elThrU) elThrU.textContent = ' m';
+    }
   } else {
     if(elThrLbl) elThrLbl.textContent = 'Schub';
     if(elThrU) elThrU.textContent = ' %';
@@ -5510,7 +5843,9 @@ function updateHUD(){
   let s = '';
   if(eva){
     // Draußen: Symbol zeigt, was B jetzt tut — einsteigen (nah am Flieger) oder hüpfen.
-    s = '🧑‍🚀 ' + (evaCanBoard() ? '✈️' : '⤒');
+    // Im Schlauchboot gilt keins von beidem: dort faehrt man, bis Land kommt (dann steigt er von
+    // allein aus), also steht dort das Boot selbst.
+    s = eva.boat ? '🛟' : ('🧑‍🚀 ' + (evaCanBoard() ? '✈️' : '⤒'));
   }
   else if(state.ejected || parachute) s = '🪂';
   else if(state.crashed) s = '🚒';
@@ -5886,7 +6221,7 @@ function removePlane(e){
   scene.remove(e.group);
   if(e.trail) scene.remove(e.trail.line);
   clearAiFire(e);
-  if(e.chute){ scene.remove(e.chute.group); e.chute=null; }
+  if(e.chute){ clearChuteBoat(e.chute); scene.remove(e.chute.group); e.chute=null; }
   if(e.crashFire){ scene.remove(e.crashFire); e.crashFire=null; }
   if(e.rescue){ for(const r of e.rescue){ scene.remove(r.group); scene.remove(r.jet); } e.rescue=null; }
 }
@@ -6301,7 +6636,7 @@ function aiCrash(e, hitTop){
 function aiStepCrash(e, dt){
   e.crashT+=dt;
   // Fallschirm sinkt + pendelt
-  if(e.chute){
+  if(e.chute && !chuteSeaRescue(e.chute, dt)){
     e.chute.group.position.y += e.chute.vy*dt;
     e.chute.group.position.x += Math.sin(e.chute.group.position.y*0.1)*2*dt;
     const cs=isOnCarrier(e.chute.group.position.x,e.chute.group.position.z)?fordDeckY:(isOnLand(e.chute.group.position.x,e.chute.group.position.z)?ISLAND_Y:0);
@@ -6342,7 +6677,7 @@ function aiStepCrash(e, dt){
   const linger = mineToPut ? (e.crashFire ? 75 : 3) : 8;
   if(e.crashT > linger){                                       // aufräumen + Flieger respawnen
     if(e.crashFire){ scene.remove(e.crashFire); e.crashFire=null; }
-    if(e.chute){ scene.remove(e.chute.group); e.chute=null; }
+    if(e.chute){ clearChuteBoat(e.chute); scene.remove(e.chute.group); e.chute=null; }
     if(e.rescue){ for(const r of e.rescue){ scene.remove(r.group); scene.remove(r.jet); } e.rescue=null; }
     const p=spawnAroundPlayer(0.9,1.3);
     e.group.position.set(p.x, Math.max(70, state.pos.y+e.altOff), p.z);
@@ -6439,7 +6774,7 @@ function flybyCrash(){
 }
 function flybyStepCrash(dt){
   const f=flyby; f.crashT+=dt;
-  if(f.chute){
+  if(f.chute && !chuteSeaRescue(f.chute, dt)){
     f.chute.group.position.y += f.chute.vy*dt;
     f.chute.group.position.x += Math.sin(f.chute.group.position.y*0.1)*2*dt;
     const cs=isOnCarrier(f.chute.group.position.x,f.chute.group.position.z)?fordDeckY:(isOnLand(f.chute.group.position.x,f.chute.group.position.z)?ISLAND_Y:0);
@@ -6466,7 +6801,7 @@ function flybyStepCrash(dt){
 function clearFlyby(){
   if(!flyby) return;
   scene.remove(flyby.group); scene.remove(flyby.cone);
-  if(flyby.chute){ scene.remove(flyby.chute.group); }
+  if(flyby.chute){ clearChuteBoat(flyby.chute); scene.remove(flyby.chute.group); }
   if(flyby.crashFire){ scene.remove(flyby.crashFire); }
   if(flyby.rescue){ for(const r of flyby.rescue){ scene.remove(r.group); scene.remove(r.jet); } }
   flyby=null;
@@ -6558,6 +6893,7 @@ preloadTruck();        // Feuerwehrauto-GLB laden
 preloadParachute();    // Fallschirm-GLB laden (Reserve)
 preloadChute2();       // Fallschirm 2 (TopNotch Assets) — Kisten UND Pilot
 preloadAstronaut();    // Astronaut — am Fallschirm und zum Aussteigen
+preloadDinghy();       // Schlauchboot — Rettung fuer alles, was sonst im Wasser landet
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
 preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft

@@ -27,6 +27,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | **Bremse / Umkehrschub** (halten) | A | C |
 | Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
 | **Aussteigen** (nach der Landung) · draußen: **hüpfen** / einsteigen | B | B |
+| Im **Schlauchboot** fahren (lenken/Gas) | L-Stick | ← → ↑ ↓ |
 | Modell wechseln | Y | M |
 | Kamera wechseln | — | V |
 | Ansicht von links/rechts (halten) | LB / RB | — |
@@ -133,7 +134,9 @@ legen eigene Brände, und die kann man mit beiden Löschfahrzeugen selbst ausmac
 **Am Fallschirm** hängt beim Schleudersitz ein **Astronaut** — dasselbe Modell, mit dem man auch
 aussteigen kann, unter einem echten Fallschirm. Das gilt für den Spieler **und** für die
 KI-Flieger; vorher waren das ein Zylinder mit Kugelkopf und eine Halbkugel. Denselben Schirm tragen
-jetzt auch die **Transall-Kisten**, damit alles zusammenpasst.
+jetzt auch die **Transall-Kisten**, damit alles zusammenpasst. Kommt ein Springer **aufs Meer**
+herunter, wird er auf einem **Schlauchboot** gerettet und der Schirm verschwindet — siehe
+[Ins Wasser](#-ins-wasser-das-schlauchboot).
 
 **Absturz**: Wer zu langsam wird (Strömungsabriss), gegen Berg/Haus/Hafen/Trägerwand fliegt oder falsch
 aufsetzt, stürzt ab — dann rückt die **Feuerwehr** an (Löschauto an Land, Boot auf dem Wasser).
@@ -145,7 +148,8 @@ Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
 
 Wer **gelandet** ist, steigt mit **B** aus und läuft als Astronaut umher. Das geht auf **Insel,
 Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, wo fester Boden ist.
-**Nicht** in der Luft, nicht über Wasser und nicht mit dem Feuerwehrboot.
+**Aussteigen** geht **nicht** in der Luft, nicht über Wasser und nicht mit dem Feuerwehrboot. Ins
+Wasser kann man aber zu Fuß hinein — dort steht man dann im **Schlauchboot** (siehe unten).
 
 - Der **linke Stick** (bzw. die Pfeiltasten) steuert wie ein Fahrzeug: ←→ dreht, ↕ läuft vor und
   zurück. „Vorwärts" ist also immer die Blickrichtung — für Kinder einfacher als eine Steuerung, die
@@ -154,8 +158,11 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
   verschieden. Auf der Erde kommt man gut **1 m** hoch, auf dem **Mars 2,8 m** und auf dem **Mond
   6,5 m**: genau das Sechsfache, weil der Mond ein Sechstel der Erdanziehung hat. Das ist der Reiz
   daran, deshalb wird es bewusst nicht ausgeglichen.
-- **Wasser ist eine Wand** — der Astronaut läuft nicht hinein und fällt nicht vom Trägerdeck.
-  Häuser und Berge sind ebenfalls fest; an einer Kante läuft man entlang.
+- **Über den Strand** darf man laufen, bis ins Wasser hinein. Vorher endete der feste Grund an der
+  Grasfläche, während der **Sandrand 12 % weiter** reicht — man blieb also **31 m vor der Wasserlinie**
+  mitten auf dem sichtbaren Strand stehen (gemessen). Für **Flugzeuge** ist der Strand weiterhin Wasser:
+  daran hängt, wo gelandet werden darf.
+- Häuser und Berge sind fest; an einer Kante läuft man entlang.
 - Das **Flugzeug bleibt stehen**, wo man gelandet ist, mit abgeschaltetem Motor. Kommt man ihm
   wieder näher als **8 m**, wird **B zum Einsteigen** — das HUD zeigt mit ✈️ bzw. ⤒ an, was B gerade
   tut. Der Radius ist bewusst kleiner als die Spannweite eines X-Wing (11 m), damit man direkt neben
@@ -195,6 +202,48 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
 - Auf der **Mondbasis** zählt beim Laufen die Höhe **ihrer Fläche**, nicht der Kraterboden darunter.
   Die Basis wird über das Relief angehoben (bis über 20 m), sonst steckte sie im Hang — wer das nicht
   mitrechnet, sackt genau um diese Anhebung durch.
+
+## 🛟 Ins Wasser: das Schlauchboot
+
+Früher war das Meer für den Astronauten eine unsichtbare Wand — man stand am Rand des
+Flugzeugträgers und kam nicht weiter, obwohl das Wasser direkt davor lag. Jetzt gibt es dort ein
+**Schlauchboot** (Modell von **Mike0916**), und zwar in drei Situationen:
+
+- **Zu Fuß ins Wasser laufen.** Wer über den Strand hinaus oder über eine Kaikante läuft, steht im
+  Schlauchboot statt an einer Wand. Es taucht genau dort auf, wo er ins Wasser geraten wäre.
+- **Vom Flugzeugträger springen.** Läuft man über die Deckkante, **fällt** man die 12 m sichtbar
+  hinunter (rund 1,6 s) und landet im Boot, das unter einem auftaucht.
+- **Fallschirmspringer, die aufs Meer herunterkommen** — der Spieler nach dem Schleudersitz genauso
+  wie die **KI-Piloten** und die Vorbeiflug-Maschine. Der **Schirm ist dann weg**: im Wasser wird er
+  als erstes abgeworfen, und ein Schirm über einem Boot sah aus, als hinge der Springer noch in der
+  Luft. Diese Boote **treiben** nur mit der Dünung, gefahren wird ausschließlich das eigene.
+
+**Gefahren wird wie mit dem Feuerwehrboot:** linker Stick ←→ lenkt, ↕ gibt Gas (rückwärts geht auch).
+Bis **40 km/h**, wendiger als das 16 m lange Feuerwehrboot. Der Außenborder ist derselbe synthetische
+Motor-Loop — es ist ja auch einer.
+
+- **Im Boot wird nicht gehüpft.** Dort ist man ein **Fahrzeug**, kein Mensch: B tut nichts, und das
+  HUD zeigt statt der Sprungweite wieder **Schub in Prozent** — genau wie beim Feuerwehrboot. Die
+  Höhenzeile verschwindet, weil man immer auf der Wasserlinie fährt.
+- **An Land steigt man von allein aus**, und das Boot verschwindet. Geprüft wird **3 m vor dem Bug**,
+  sonst stiege man erst aus, wenn das halbe Boot im Sand steckt. Ein leeres Boot am Strand liegen zu
+  lassen sähe aus wie ein Fehler — und wieder einsteigen kann man überall.
+- **Land ist nicht gleich Ufer.** Vor einem Bauwerk oder der **Bordwand** des Trägers steigt man
+  nicht aus, sondern **gleitet daran ab** (dieselbe Küstenlogik wie beim Feuerwehrboot, jetzt für
+  beide Boote gemeinsam) — sonst stünde der Astronaut plötzlich in einer Hauswand.
+- Der Astronaut **steht** im Boot. Sitzen kann er nicht: seine Pose ist beim Verkleinern des Modells
+  fest in die Geometrie gebacken, es gibt keine Knochen mehr. Stehend passt es aber besser — er ist
+  auf **4,2 m** Bootslänge gut zu sehen, sitzend verschwände er hinter dem Wulst.
+
+### Zwei Fallen beim Einbau (beide ausgemessen)
+- **Der Trägerrumpf ist 4 m breiter als das Deck.** Direkt neben der Deckkante ist also Bordwand,
+  nicht Wasser — bis zum freien Wasser sind es von der Kante **6,75 m**. Wer nur den nächsten Schritt
+  prüft, findet dort nie Wasser, und der Astronaut bleibt stehen: genau die harte Grenze, die weg
+  sollte. Er sucht deshalb bis **9 m voraus** und springt über die Bordwand hinweg.
+- **„Steht er fest?" braucht eine Schwelle.** Bei einem Kurs von genau -90° ist die Z-Komponente der
+  Blickrichtung nicht 0, sondern -6·10⁻¹⁷ — der Astronaut rutschte pro Bild um 10⁻¹⁸ m zur Seite, und
+  ein exakter Vergleich zählte das als Bewegung. Gemessen: 60 Bilder bewegungslos am Ufer. Jetzt gilt
+  „fest", wenn weniger als ein Zehntel des gewollten Schritts herauskommt.
 
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
@@ -369,6 +418,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Astronaut im Raumanzug | **LasquetiSpice** |
 | Millennium Falcon (Star Wars) | **jay2307** |
 | Parachute Simple | **TopNotch Assets** |
+| Schlauchboot | **Mike0916** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
@@ -391,6 +441,10 @@ Weitere verwendete Technik:
 - Der **Millennium Falcon** ging von **3,78 MB auf 0,58 MB** (15 %) — hier lag es umgekehrt zum
   Astronauten: nur 3.703 Dreiecke, aber **94 % der Datei waren Texturen**. Also nur die Texturen
   halbiert (1024 → 512) und die zweiten UV-Sätze entfernt, die three.js ohnehin nicht nutzt.
+- Das **Schlauchboot** ging von **1,47 MB auf 0,67 MB** (45 %) — wie beim Falcon steckte der
+  Großteil in den Texturen (0,89 MB = 60 % der Binärdaten bei nur 17.233 Dreiecken). Also nur die
+  eine Textur halbiert (1024 → 512); die Geometrie blieb unangetastet, weil das Boot aus der Nähe
+  zu sehen ist.
 - Alle **181 Texturen** wurden zusätzlich auf die **halbe Kantenlänge** gebracht (meist 1024 → 512).
   Entscheidend ist dabei nicht die Dateigröße, sondern der Grafikspeicher: dort liegen Texturen
   unkomprimiert, und aus **735 MB wurden 184 MB** (145 → 36 Megapixel). Auf einem Tablet passte das
