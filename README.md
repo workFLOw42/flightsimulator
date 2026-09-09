@@ -27,7 +27,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | **Bremse / Umkehrschub** (halten) | A | C |
 | Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
 | **Aussteigen** (nach der Landung) · draußen: **hüpfen** / einsteigen | B | B |
-| Im **Schlauchboot** fahren (lenken/Gas) | L-Stick | ← → ↑ ↓ |
+| Im **Schlauchboot** fahren: lenken · Schub | L-Stick ←→ · R-Stick ↕ | ← → · W / S |
 | Modell wechseln | Y | M |
 | Kamera wechseln | — | V |
 | Ansicht von links/rechts (halten) | LB / RB | — |
@@ -203,6 +203,46 @@ Wasser kann man aber zu Fuß hinein — dort steht man dann im **Schlauchboot** 
   Die Basis wird über das Relief angehoben (bis über 20 m), sonst steckte sie im Hang — wer das nicht
   mitrechnet, sackt genau um diese Anhebung durch.
 
+## 🛳️ Schiffe auf dem Meer
+
+Auf dem offenen Meer fahren vier echte Schiffe ihre Bahnen — **langsam und gemächlich**, wie es sich
+für Handelsschiffe gehört. Sie sind **keine Kulisse**, sondern feste Hindernisse: wer hineinfliegt,
+stürzt ab, genau wie an einem Berg oder am Trägerrumpf. Darüber weg geht.
+
+| Schiff | Länge | Tempo | Modell von |
+|---|---|---|---|
+| 🚢 Containerschiff | 300 m (Panamax) | 18 km/h | **RM02** |
+| 🛳️ Kreuzfahrtschiff | 250 m | 20 km/h | **farhad.Guli** |
+| 🚢 Liberty-Frachter | 135 m | 16 km/h | **AlanTinka** |
+| ⛵ Großsegler | 90 m Rumpf, 60 m Masthöhe | 11 km/h | **Liaval** |
+
+Die Größen stimmen **zueinander** und zu den echten Vorbildern; der Flugzeugträger im Spiel ist
+280 m lang, alles liegt also in derselben Größenordnung. Sieben Schiffe fahren gleichzeitig in einem
+Ring von 1,2 bis 3,5 km um den Spieler und werden nachgezogen, wenn man weiterfliegt — genau wie der
+Flugverkehr in der Luft.
+
+- **Die Hülle ist ein Rechteck, kein Kreis.** Bei einem 300-m-Schiff wäre ein Kreis eine 300 m breite
+  Sperrzone, durch die man nicht mehr seitlich vorbeifliegen könnte. Gerechnet wird deshalb im
+  Koordinatensystem des Schiffs: 46 m quer daneben ist frei, 46 m in Längsrichtung ist noch Rumpf.
+- **Sie meiden Land selbst.** Geprüft wird eine halbe Schiffslänge **vor dem Bug**, sonst schiebt sich
+  ein 300-m-Schiff mit der Nase in den Strand, bevor sein Mittelpunkt Land erreicht. Kommt Land, dreht
+  es über mehrere Sekunden sichtbar ab — ein Frachter wendet nicht ruckartig.
+  Über drei Minuten Spielzeit gemessen: **0-mal** auf Land, **0-mal** ineinander, geringster Abstand
+  zwischen zwei Schiffen 355 m.
+- **Auch das Feuerwehrboot und das Schlauchboot** kommen nicht durch ein Schiff hindurch — für sie
+  gilt derselbe Rumpf wie für die Flugzeuge (20 s Vollgas frontal dagegen: 0 Bilder im Schiff).
+
+### Die Wasserlinie muss man ausmessen
+Jedes Modell hat seinen eigenen Maßstab (von 0,14 bis 27.000 Einheiten) und seine eigene Bauart. Wo
+die Wasseroberfläche hingehört, ist deshalb pro Schiff gemessen: die Höhe, ab der der Rumpf **mittschiffs**
+seine volle Breite erreicht (Bug und Heck sind immer schmal und verfälschen das). In Prozent der
+Schiffslänge: Kreuzfahrtschiff **2,99 %**, Liberty **6,69 %**, Container **0,93 %**, Segler **10,27 %**.
+
+Beim Kreuzfahrtschiff fällt der Wert aus dem Rahmen, und das hat einen Grund: sein Rumpf ist
+**unter der Wasserlinie gar nicht modelliert** — gemessen zeigen nur 0,5 % seiner Fläche nach unten,
+das Modell ist dort einfach abgeschnitten. Hätte man es so tief gelegt wie die anderen, würde man in
+ein Loch sehen.
+
 ## 🛟 Ins Wasser: das Schlauchboot
 
 Früher war das Meer für den Astronauten eine unsichtbare Wand — man stand am Rand des
@@ -218,9 +258,12 @@ Flugzeugträgers und kam nicht weiter, obwohl das Wasser direkt davor lag. Jetzt
   als erstes abgeworfen, und ein Schirm über einem Boot sah aus, als hinge der Springer noch in der
   Luft. Diese Boote **treiben** nur mit der Dünung, gefahren wird ausschließlich das eigene.
 
-**Gefahren wird wie mit dem Feuerwehrboot:** linker Stick ←→ lenkt, ↕ gibt Gas (rückwärts geht auch).
-Bis **40 km/h**, wendiger als das 16 m lange Feuerwehrboot. Der Außenborder ist derselbe synthetische
-Motor-Loop — es ist ja auch einer.
+**Gefahren wird genau wie mit dem Feuerwehrboot:** linker Stick ←→ **lenkt**, rechter Stick ↕ setzt
+den **Schub** in 10-%-Stufen (Tastatur W/S, Leertaste = Vollgas), **A bzw. C** fährt rückwärts. Bis
+**40 km/h**, wendiger als das 16 m lange Feuerwehrboot. Der Außenborder ist derselbe synthetische
+Motor-Loop — es ist ja auch einer. Zwei verschiedene Bootssteuerungen zu lernen wäre für ein Kind
+eine unnötige Hürde, deshalb ist es bewusst dieselbe (das Umsehen mit dem rechten Stick gibt es
+darum nur **zu Fuß**, nicht im Boot).
 
 - **Im Boot wird nicht gehüpft.** Dort ist man ein **Fahrzeug**, kein Mensch: B tut nichts, und das
   HUD zeigt statt der Sprungweite wieder **Schub in Prozent** — genau wie beim Feuerwehrboot. Die
@@ -234,6 +277,14 @@ Motor-Loop — es ist ja auch einer.
 - Der Astronaut **steht** im Boot. Sitzen kann er nicht: seine Pose ist beim Verkleinern des Modells
   fest in die Geometrie gebacken, es gibt keine Knochen mehr. Stehend passt es aber besser — er ist
   auf **4,2 m** Bootslänge gut zu sehen, sitzend verschwände er hinter dem Wulst.
+- **Der Tiefgang ist ausgemessen, nicht geschätzt.** Mit 0,18 m schaute der Außenborder aus dem
+  Wasser — derselbe Fehler, der beim Feuerwehrboot schon einmal auffiel. Am normierten Modell gilt:
+  der Antrieb reicht bis **0,10 m** über dem Kiel hinunter, der **Innenboden** liegt bei 0,46 und die
+  Oberkante des Schlauchwulstes bei 1,31. Das brauchbare Fenster ist damit **0,10 bis 0,46** — 0,55
+  hätte den Innenboden um 9 cm absaufen lassen, der Astronaut hätte im Wasser gestanden. Gewählt sind
+  **0,32 m**: Antrieb 22 cm unter Wasser, Innenboden 14 cm darüber, Bordwand ragt 0,99 m heraus. Das
+  Nicken in der Dünung hebt das Heck nur um 4 cm (stärkste Wellenneigung 1,7° über 4,2 m Bootslänge),
+  es kann den Antrieb also nicht freilegen.
 
 ### Zwei Fallen beim Einbau (beide ausgemessen)
 - **Der Trägerrumpf ist 4 m breiter als das Deck.** Direkt neben der Deckkante ist also Bordwand,
@@ -419,6 +470,10 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Millennium Falcon (Star Wars) | **jay2307** |
 | Parachute Simple | **TopNotch Assets** |
 | Schlauchboot | **Mike0916** |
+| Kreuzfahrtschiff | **farhad.Guli** |
+| Liberty-Frachter | **AlanTinka** |
+| Containerschiff | **RM02** |
+| Großsegler | **Liaval** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 
@@ -445,6 +500,18 @@ Weitere verwendete Technik:
   Großteil in den Texturen (0,89 MB = 60 % der Binärdaten bei nur 17.233 Dreiecken). Also nur die
   eine Textur halbiert (1024 → 512); die Geometrie blieb unangetastet, weil das Boot aus der Nähe
   zu sehen ist.
+- Die **vier Schiffe** gingen von zusammen **54,0 MB auf 4,7 MB** (9 %). Dabei kamen drei ganz
+  verschiedene Ursachen zum Vorschein — pauschal hätte keine Maßnahme gereicht:
+  - Der **Liberty-Frachter** brachte **zehn UV-Sätze** mit (TEXCOORD_0 bis _9, zusammen 5 MB), von
+    denen three.js genau einen nutzt.
+  - Beim **Containerschiff** war es reine Geometrie: 188.676 Dreiecke. Vertex-Clustering machte
+    daraus 22.178 (12 %) bei gleicher Silhouette.
+  - Beim **Großsegler** waren **78 % der Datei Texturen** (17 Bilder à 1 MB) — die auf ein Viertel
+    der Kantenlänge, und aus 20,2 MB wurden 3,8.
+  Der größte Einzelfehler steckte aber im Werkzeug: es übernahm ganze `bufferView`-Blöcke, und weil
+  sich mehrere Attribute einen Block teilen, kamen die gerade entfernten UV-Sätze **wieder mit**.
+  Beim Liberty waren das 3,8 MB Nutzdaten in einer 8,3 MB großen Datei. Erst das dichte Neupacken
+  **pro Accessor** löste das.
 - Alle **181 Texturen** wurden zusätzlich auf die **halbe Kantenlänge** gebracht (meist 1024 → 512).
   Entscheidend ist dabei nicht die Dateigröße, sondern der Grafikspeicher: dort liegen Texturen
   unkomprimiert, und aus **735 MB wurden 184 MB** (145 → 36 Megapixel). Auf einem Tablet passte das

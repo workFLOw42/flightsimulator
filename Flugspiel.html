@@ -61,7 +61,7 @@
     <div class="hrow"><span>L-Stick ←→</span><b>Lenken</b></div>
     <div class="hrow"><span>L-Stick ↕</span><b>Nase hoch/runter</b></div>
     <div class="hrow"><span>LT / RT</span><b>Rollen — loslassen richtet wieder auf</b></div>
-    <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 % · zu Fuß: <b>umsehen</b> (↕ hoch/runter, ←→ herum)</b></div>
+    <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 % (auch im Schlauchboot) · zu Fuß: <b>umsehen</b> (↕ hoch/runter, ←→ herum)</b></div>
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
     <div class="hrow"><span>B</span><b>gelandet: <b>aussteigen</b> · Aktion (Wasser/Kiste/Schleudersitz) · im Weltall Laser</b></div>
     <div class="hrow"><span>B</span><b>draußen: <b>hüpfen</b> · am Flieger: einsteigen · im Schlauchboot: nichts (dort wird gefahren)</b></div>
@@ -103,9 +103,10 @@
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
+    <div class="hrow"><span>🛳️ Schiffe</span><b>auf dem Meer fahren <b>Kreuzfahrtschiff</b> (250 m), <b>Containerschiff</b> (300 m), <b>Liberty-Frachter</b> (135 m) und ein <b>Großsegler</b> (90 m) — langsam und gemächlich, richtig groß zueinander. Sie sind <b>feste Hindernisse</b>: hineinfliegen = Absturz, drüber weg geht. Mit dem Boot fährt man um sie herum</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
-    <div class="hrow"><span>🛟 ins Wasser</span><b>zu Fuß ins Meer laufen oder vom Flugzeugträger springen: du landest im <b>Schlauchboot</b> und fährst wie mit dem Feuerwehrboot (linker Stick) · fährst du an Land, steigst du von allein aus · gehüpft wird im Boot nicht — es ist ein Fahrzeug</b></div>
+    <div class="hrow"><span>🛟 ins Wasser</span><b>zu Fuß ins Meer laufen oder vom Flugzeugträger springen: du landest im <b>Schlauchboot</b>. Gefahren wird <b>genau wie beim Feuerwehrboot</b>: linker Stick lenkt, rechter Stick ↕ gibt Schub, A bremst und fährt rückwärts · fährst du an Land, steigst du von allein aus · gehüpft wird im Boot nicht — es ist ein Fahrzeug</b></div>
     <div class="hrow"><span>🪂 Wasserlandung</span><b>jeder Fallschirmspringer, der aufs Meer herunterkommt, wird auf einem Schlauchboot gerettet — der Schirm ist dann weg. Gilt auch für die KI-Piloten</b></div>
     <div class="hrow"><span>🏖️ Strand</span><b>zu Fuß kann man auch über den Sand laufen, bis ins Wasser hinein</b></div>
     <div class="hrow"><span>👀 umsehen</span><b>zu Fuß schwenkt der <b>rechte Stick</b> den Blick: ←→ herum, ↕ in den Himmel hinauf oder auf den Boden hinunter · loslassen = alles gleitet von allein zurück · Tastatur: <b>I J K L</b></b></div>
@@ -127,6 +128,10 @@
 <script src="astronaut_glb.js"></script>
 <script src="boat_glb.js"></script>
 <script src="dinghy_glb.js"></script>
+<script src="cruise_glb.js"></script>
+<script src="liberty_glb.js"></script>
+<script src="container_glb.js"></script>
+<script src="empty_glb.js"></script>
 <script src="firetruck_glb.js"></script>
 <script src="mustang_glb.js"></script>
 <script src="ford_glb.js"></script>
@@ -533,7 +538,7 @@ function islandBuildings(cx, cz) {
 
 // Trifft das Flugzeug an Weltposition (x,y,z) ein Gebäude? (Türme/Häuser, keine Hügel-Extra).
 // Nutzt dieselbe deterministische Bauwerks-Liste wie buildIsland.
-function hitsBuilding(x, y, z, skipHarbor) {
+function hitsBuilding(x, y, z, skipHarbor, exceptShip) {
   const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
   for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) {
     const info = islandInfo(pcx+dx, pcz+dz);
@@ -560,6 +565,11 @@ function hitsBuilding(x, y, z, skipHarbor) {
     const hb = harborLocal(pcx+dx, pcz+dz);
     if(!skipHarbor && y - ISLAND_Y < harborHeight + 3 && Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.45) return true;
   }
+  // Fahrende Handelsschiffe: feste Hindernisse wie ein Berg (siehe hitsShip). Sie stehen nicht im
+  // Zellenraster, deshalb hier separat — dafuer gilt es damit ueberall, wo auch Haeuser gelten:
+  // Absturzpruefung, Bootsfahrt, Schritte des Astronauten.
+  // exceptShip nimmt genau ein Schiff aus — das braucht die Flotte selbst (siehe seaShipWaterFor).
+  if(typeof seaShips !== 'undefined' && hitsSeaShip(x, y, z, exceptShip)) return true;
   // Flugzeugträger: seitlich in den Rumpf/Aufbau fliegen = Treffer. Das Flugdeck (oben, landbar)
   // ist frei -> Treffer nur UNTERHALB der Deckhöhe (Bordwand) oder am Turm knapp über Deck.
   return _hitsBuildingCarrier(x, y, z);
@@ -839,6 +849,228 @@ function refreshCarriers(){
     if(ng) scene.add(ng);
     carrierCells.set(key, ng);
   }
+}
+
+// ---------- Handelsschiffe auf dem Meer ----------
+// Vier echte Schiffe fahren langsam ihre Bahnen über das offene Meer: Kreuzfahrtschiff, Liberty-
+// Frachter, Containerschiff und ein Großsegler. Sie sind KEINE Kulisse, sondern feste Hindernisse
+// (siehe hitsSeaShip) — wer hineinfliegt, stürzt ab, genau wie an einem Berg oder am Trägerrumpf.
+//
+// Größen zueinander maßstäblich, an den echten Vorbildern:
+//   Containerschiff 300 m (Panamax-Klasse), Kreuzfahrtschiff 250 m, Liberty-Frachter 135 m
+//   (die historische Länge dieser Baureihe), Großsegler 90 m Rumpflänge.
+// Der Flugzeugträger im Spiel ist 280 m lang, die Schiffe liegen also in derselben Größenordnung.
+//
+// Die WASSERLINIE wurde für jedes Modell einzeln ausgemessen (Höhe, ab der der Rumpf seine volle
+// Breite erreicht, jeweils mittschiffs — Bug und Heck sind immer schmal und verfälschen das).
+// Angegeben in Prozent der Schiffslänge, weil die Modelle völlig verschiedene Eigenmaßstäbe haben
+// (0,14 bis 27.000 Einheiten). Ohne diese Werte schwimmt ein Schiff sichtbar obenauf oder säuft ab:
+//   Kreuzfahrtschiff 2,99 %  ·  Liberty 6,69 %  ·  Container 0,93 %  ·  Segler 10,27 %
+// Beim Kreuzfahrtschiff ist der Rumpf unter der Wasserlinie GAR NICHT modelliert (gemessen: nur
+// 0,5 % der Fläche zeigt nach unten, das Modell ist dort abgeschnitten) — deshalb der kleine Wert.
+const SHIP_TYPES = [
+  { key:'cruise',    glb:()=>window.CRUISE_GLB,    len:250, wl:0.0299, spd:5.5, sym:'🛳️' },
+  { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0669, spd:4.5, sym:'🚢' },
+  { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0093, spd:5.0, sym:'🚢' },
+  { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.1027, spd:3.0, sym:'⛵' },
+];
+// Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
+// belebt wirken, ohne dass man ständig ausweichen muss: bei 3.500 m Radius liegt selten mehr als
+// eines im Blickfeld.
+const SHIP_COUNT     = 7;
+const SHIP_SPAWN_MIN = 1200;    // näher als das taucht keines neu auf (kein Erscheinen vor der Nase)
+const SHIP_SPAWN_MAX = 3500;
+const SHIP_DESPAWN   = 5200;    // weiter weg wird es recycelt
+const SHIP_TURN      = 0.02;    // rad/s: ganz sachte Kursänderungen, ein Frachter dreht träge
+const SHIP_CLEAR     = 260;     // so weit muss ein Platz von Insel/Träger/anderen Schiffen frei sein
+const shipTemplates = {};       // key -> normiertes Modell (Wasserlinie auf y = 0)
+const shipHalf = {};            // key -> {hl, hw, top}: halbe Länge/Breite und Höhe über Wasser
+const seaShips = [];            // {key, group, x, z, heading, spd, len}
+function preloadSeaShips(){
+  if(!THREE.GLTFLoader) return;
+  for(const def of SHIP_TYPES){
+    const src = def.glb();
+    if(!src) continue;
+    const gl = new THREE.GLTFLoader();
+    const b64 = src.split(',')[1];
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    gl.parse(bytes.buffer, '', (gltf)=>{
+      const obj = gltf.scene;
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = new THREE.Vector3(); box.getSize(size);
+      // Auf die Ziellänge normieren. Die Längsachse ist je Modell verschieden (Container liegt auf X,
+      // die anderen auf Z) — die größere der beiden waagerechten Achsen ist immer die Länge.
+      const longest = Math.max(size.x, size.z);
+      obj.scale.setScalar(def.len / Math.max(0.001, longest));
+      const box2 = new THREE.Box3().setFromObject(obj);
+      const c = new THREE.Vector3(); box2.getCenter(c);
+      obj.position.x -= c.x; obj.position.z -= c.z;
+      // Wasserlinie auf y = 0: der ausgemessene Anteil der Länge über der Modell-Unterkante.
+      obj.position.y -= box2.min.y + def.len * def.wl;
+      const wrap = new THREE.Group();
+      // Längsachse auf Z drehen, damit alle Schiffe dieselbe Konvention haben wie die Flugzeuge
+      // (Nase auf -Z). Beim Container liegt sie auf X, er braucht die Vierteldrehung.
+      const box3 = new THREE.Box3().setFromObject(obj);
+      const s3 = new THREE.Vector3(); box3.getSize(s3);
+      if(s3.x > s3.z) obj.rotation.y = Math.PI/2;
+      wrap.add(obj);
+      shipTemplates[def.key] = wrap;
+      const box4 = new THREE.Box3().setFromObject(wrap);
+      const s4 = new THREE.Vector3(); box4.getSize(s4);
+      shipHalf[def.key] = { hl: s4.z/2, hw: s4.x/2, top: box4.max.y };
+      // Schon fahrende Platzhalter dieses Typs gegen das echte Modell tauschen.
+      for(const sh of seaShips) if(sh.key === def.key) refreshSeaShip(sh);
+    }, (err)=>{ console.warn('Schiff-GLB Ladefehler ('+def.key+'):', err); });
+  }
+}
+// Ersatzkörper, solange ein GLB noch lädt: ein grauer Kasten in den richtigen Maßen. Besser als
+// nichts — sonst wäre dort ein unsichtbares Hindernis, an dem man ohne Grund abstürzt.
+const shipStubMat = new THREE.MeshLambertMaterial({ color: 0x8a8f96 });
+function makeSeaShipBody(key){
+  const def = SHIP_TYPES.find(d=>d.key===key);
+  if(shipTemplates[key]) return shipTemplates[key].clone(true);
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(def.len*0.14, def.len*0.06, def.len), shipStubMat);
+  hull.position.y = def.len*0.02; g.add(hull);
+  return g;
+}
+function refreshSeaShip(sh){
+  if(sh.group) scene.remove(sh.group);
+  sh.group = makeSeaShipBody(sh.key);
+  sh.group.position.set(sh.x, 0, sh.z);
+  sh.group.rotation.y = sh.heading;
+  scene.add(sh.group);
+  const h = shipHalf[sh.key];
+  sh.hl = h ? h.hl : sh.len/2;
+  sh.hw = h ? h.hw : sh.len*0.07;
+  sh.top = h ? h.top : sh.len*0.08;
+}
+// Ist der Platz für ein Schiff dieser Länge frei? Ein 300 m langes Schiff braucht viel Wasser:
+// keine Insel (auch nicht deren Strand), kein Träger, kein anderes Schiff, kein Hafen.
+function seaShipSpotFree(x, z, len, skip){
+  const r = len*0.5 + SHIP_CLEAR;
+  // Inseln und Träger im Umfeld prüfen — in Zellenschritten, weil die Welt so aufgebaut ist.
+  const span = Math.ceil(r / CELL) + 1;
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz);
+    if(info && Math.hypot(x-info.wx, z-info.wz) < info.radius*BEACH_FACTOR + len*0.5 + 120) return false;
+    const car = carrierInfo(pcx+dx, pcz+dz);
+    if(car && Math.hypot(x-car.wx, z-car.wz) < FORD_LEN*0.5 + len*0.5 + 120) return false;
+  }
+  for(const o of seaShips){
+    if(o === skip) continue;
+    if(Math.hypot(x-o.x, z-o.z) < (len + o.len)*0.5 + SHIP_CLEAR) return false;
+  }
+  return true;
+}
+// Ein Schiff (neu) irgendwo im Ring um den Bezugspunkt aussetzen. Gibt false zurück, wenn kein
+// freier Platz gefunden wurde — dann wird es diesen Frame einfach nicht gesetzt und später erneut
+// versucht, statt es in eine Insel zu stellen.
+function placeSeaShip(sh, fx, fz){
+  for(let tries=0; tries<24; tries++){
+    const a = Math.random()*Math.PI*2;
+    const d = SHIP_SPAWN_MIN + Math.random()*(SHIP_SPAWN_MAX-SHIP_SPAWN_MIN);
+    const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
+    if(!seaShipWaterFor(sh, x, z)) continue;
+    if(!seaShipSpotFree(x, z, sh.len, sh)) continue;
+    sh.x = x; sh.z = z;
+    sh.heading = Math.random()*Math.PI*2;
+    if(sh.group){ sh.group.position.set(x, 0, z); sh.group.rotation.y = sh.heading; }
+    return true;
+  }
+  return false;
+}
+function spawnSeaShips(){
+  const F = worldFocus();
+  for(let i=0; i<SHIP_COUNT; i++){
+    const def = SHIP_TYPES[i % SHIP_TYPES.length];
+    const sh = { key:def.key, group:null, x:0, z:0, heading:0, len:def.len,
+                 spd:def.spd*(0.8+Math.random()*0.4), placed:false };
+    refreshSeaShip(sh);
+    sh.placed = placeSeaShip(sh, F.x, F.z);
+    if(!sh.placed && sh.group){ scene.remove(sh.group); sh.group = null; }
+    seaShips.push(sh);
+  }
+}
+function clearSeaShips(){
+  for(const sh of seaShips) if(sh.group) scene.remove(sh.group);
+  seaShips.length = 0;
+}
+function updateShipsSea(dt){
+  if(locale !== 'earth') return;
+  if(!seaShips.length) spawnSeaShips();
+  const F = worldFocus();
+  for(const sh of seaShips){
+    // Noch kein Platz gefunden (alles voll oder man steht mitten in einem Archipel)? Weiter versuchen.
+    if(!sh.group){
+      const tmp = { key:sh.key, len:sh.len, group:null };
+      if(!placeSeaShip(tmp, F.x, F.z)) continue;
+      sh.x = tmp.x; sh.z = tmp.z; sh.heading = tmp.heading;
+      refreshSeaShip(sh);
+      continue;
+    }
+    // Gemächlich Kurs halten, mit sachten Schlängeln — ein Frachter fährt nicht schnurgerade,
+    // aber auch keine Kurven. Der Sinus über der Zeit gibt genau dieses langsame Wandern.
+    sh.heading += Math.sin(seaTime*0.07 + sh.x*0.001) * SHIP_TURN * dt;
+    const fx = -Math.sin(sh.heading), fz = -Math.cos(sh.heading);
+    const nx = sh.x + fx*sh.spd*dt, nz = sh.z + fz*sh.spd*dt;
+    // Vor dem Bug muss Wasser sein: geprüft wird eine halbe Schiffslänge voraus, sonst schiebt sich
+    // ein 300-m-Schiff mit dem Bug in den Strand, bevor sein Mittelpunkt Land erreicht.
+    const ax = nx + fx*sh.hl, az = nz + fz*sh.hl;
+    if(seaShipWaterFor(sh, ax, az) && seaShipWaterFor(sh, nx, nz)){
+      sh.x = nx; sh.z = nz;
+    } else {
+      // Land voraus -> abdrehen. Ein Schiff wendet langsam, also nur den Kurs ändern und diesen
+      // Frame stehen bleiben. Über mehrere Sekunden dreht es sich sichtbar von der Küste weg.
+      sh.heading += SHIP_TURN * 40 * dt;
+    }
+    // Zu weit weg -> an anderer Stelle im Ring wieder aussetzen (die Welt ist endlos, die Flotte
+    // begleitet den Spieler wie der Flugverkehr).
+    if(Math.hypot(sh.x - F.x, sh.z - F.z) > SHIP_DESPAWN) placeSeaShip(sh, F.x, F.z);
+    sh.group.position.set(sh.x, 0, sh.z);
+    sh.group.rotation.y = sh.heading;
+    // Nicken und Rollen in der Dünung — sehr wenig: ein 300-m-Schiff liegt in dieser See ruhig.
+    // Bezug ist die WELTposition (seaYAt), das Schiff sitzt nicht in der Gittermitte.
+    const bowY  = seaYAt(sh.x + fx*sh.hl*0.7, sh.z + fz*sh.hl*0.7, dt);
+    const stnY  = seaYAt(sh.x - fx*sh.hl*0.7, sh.z - fz*sh.hl*0.7, dt);
+    sh.group.rotation.x = Math.atan2(bowY - stnY, sh.hl*1.4) * 0.5;
+    sh.group.position.y = seaYAt(sh.x, sh.z, dt) * 0.6;
+  }
+}
+// Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
+// Schiffs-Koordinatensystem (um -heading zurückgedreht), damit ein langes Schiff auch schräg als
+// Rechteck wirkt und nicht als Kreis: sonst wäre um ein 300-m-Schiff eine 300 m breite Sperrzone,
+// durch die man nicht mehr seitlich vorbeifliegen könnte.
+function hitsSeaShip(x, y, z, except){
+  for(const sh of seaShips){
+    if(!sh.group || sh === except) continue;
+    if(y > sh.top + 4) continue;                      // über den Aufbauten -> drüberfliegen ok
+    const rx = x - sh.x, rz = z - sh.z;
+    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+    if(Math.abs(lx) < sh.hw + 4 && Math.abs(lz) < sh.hl + 4) return true;
+  }
+  return false;
+}
+// Fahrwasser für EIN BESTIMMTES Schiff: offenes Wasser, aber es selbst zählt nicht als Hindernis.
+// isOpenWater allein geht hier nicht — es fragt hitsBuilding, und das kennt seit dem Einbau auch die
+// Schiffe. Jedes Schiff hätte damit sein eigenes Fahrwasser gesperrt (gemessen: alle vier Typen).
+function seaShipWaterFor(sh, x, z){
+  return !isOnLand(x, z) && !isOnBeach(x, z) && !isOnCarrier(x, z)
+         && !hitsBuilding(x, ISLAND_Y+2, z, false, sh);
+}
+// Das nächstgelegene Schiff (fürs Radar). Rückgabe {x,z,sym} oder null.
+function nearestSeaShip(x, z){
+  let best = null, bd = Infinity;
+  for(const sh of seaShips){
+    if(!sh.group) continue;
+    const d = Math.hypot(sh.x - x, sh.z - z);
+    if(d < bd){ bd = d; best = sh; }
+  }
+  return best ? { x:best.x, z:best.z, dist:bd } : null;
 }
 
 // ---------- Feuerwehr (Fahrzeug an Land / Boot auf dem Meer) ----------
@@ -2086,6 +2318,7 @@ function evaEnterDinghy(x, z){
   eva.boat = b;
   eva.boatVel = new THREE.Vector3(0, 0, 0);
   eva.boatThr = 0;
+  state.throttle = 0;   // Gas beginnt bei 0 — es soll still liegen, nicht sofort losfahren
   // Ihn GLEICH auf den Innenboden setzen, nicht erst im naechsten Frame: sonst steht er ein Bild
   // lang noch auf der alten Hoehe (gemessen 19 cm daneben) und zuckt sichtbar.
   eva.group.position.set(x, b.position.y + (b.userData.floorY || 0), z);
@@ -2099,7 +2332,8 @@ function evaEnterDinghy(x, z){
 function evaLeaveDinghy(x, z){
   if(!eva || !eva.boat) return;
   scene.remove(eva.boat);
-  eva.boat = null; eva.boatVel = null;
+  eva.boat = null; eva.boatVel = null; eva.boatThr = 0;
+  state.throttle = 0;   // an Land steht er wieder zu Fuss da, kein laufender Schub
   eva.group.position.set(x, evaFootY(x, z), z);
   eva.vy = 0; eva.onGround = true;
   showBig('🧑‍🚀'); bigTimer = 1.2;
@@ -2198,12 +2432,13 @@ function updateDinghy(dt, inp){
   // Lenken: ein Aussenborder gibt auch im Stand Ruderdruck, deshalb dieselbe authority-Formel wie
   // beim Feuerwehrboot — sonst kaeme man aus einer Bucht nicht mehr heraus.
   const spd = Math.hypot(v.x, v.z);
-  const authority = Math.min(1, 0.3 + Math.abs(eva.boatThr || 0) * 0.5 + spd / DINGHY_VMAX);
+  const authority = Math.min(1, 0.3 + Math.abs(state.throttle) * 0.5 + spd / DINGHY_VMAX);
   eva.yaw -= (inp.yaw || 0) * DINGHY_YAW * authority * dt;
-  // Gas: der Stick gibt direkt die Zielfahrt (nach vorn = vorwaerts, nach hinten = rueckwaerts).
-  // Anders als beim Flugzeug gibt es keine Schubstufen — zu Fuss unterwegs waere das eine Huerde,
-  // und der Stick liegt ja schon in der Hand.
-  const want = -(inp.pitch || 0);
+  // Gas: derselbe Weg wie beim Feuerwehrboot — die SCHUBSTUFEN aus state.throttle (rechter Stick
+  // hoch/runter, W/S, Leertaste = Vollgas, A/C = Umkehrschub zum Rueckwaertsfahren). Der linke
+  // Stick lenkt nur. Vorher gab der linke Stick direkt Gas; das war eine zweite, andere
+  // Bootssteuerung als beim Feuerwehrboot.
+  const want = state.throttle;
   eva.boatThr = want;
   const fwd = new THREE.Vector3(-Math.sin(eva.yaw), 0, -Math.cos(eva.yaw));
   const targetV = DINGHY_VMAX * want;
@@ -2618,7 +2853,16 @@ const DINGHY_LEN   = 4.2;    // Laenge im Spiel (m). Deutlich groesser als das r
                              // ein 1,9 m hoher Astronaut in einem 2,35-m-Boot sieht aus wie ein
                              // Riese in einer Badewanne. 4,2 m ist ein glaubwuerdiges Beiboot.
 const DINGHY_FLOOR = 0.24;   // Anteil der Modellhoehe, auf dem der Innenboden liegt (ausgemessen)
-const DINGHY_DRAFT = 0.18;   // so tief liegt der Kiel unter der Wasserlinie (Schlauchboot: flach)
+// Tiefgang: um so viel liegt der Kiel UNTER der Wasserlinie. Mit 0,18 m schaute der Aussenborder
+// heraus — genau derselbe Fehler wie beim Feuerwehrboot. Ausgemessen am normierten Modell (4,20 m
+// lang, 1,93 hoch): der Antrieb an der Heck-Mittellinie reicht bis y = 0,10 ueber dem Kiel
+// hinunter, der Innenboden liegt bei 0,46 und die Oberkante des Schlauchwulstes bei 1,31.
+// Damit ist das brauchbare Fenster 0,10 (Antrieb gerade nass) bis 0,46 (Boden gerade trocken) —
+// 0,55 hatte den Innenboden um 9 cm absaufen lassen, der Astronaut haette im Wasser gestanden.
+// 0,32 liegt mittig: Antrieb 22 cm unter Wasser, Innenboden 14 cm darueber, Bordwand ragt 0,99 m
+// heraus. Das Nicken in der Duenung hebt das Heck nur um 4 cm (staerkste Wellenneigung 1,7 Grad
+// ueber 4,2 m Bootslaenge, davon DINGHY_BOB), es kann den Antrieb also nicht freilegen.
+const DINGHY_DRAFT = 0.32;
 let dinghyTemplate = null, dinghyFloorY = 0;
 function preloadDinghy(){
   if(!window.DINGHY_GLB || !THREE.GLTFLoader) return;
@@ -3533,6 +3777,7 @@ function earthWorldVisible(on){
     for(const e of fleet) removePlane(e);
     fleet.length = 0; clearFlyby(); clearAiEffects();
     clearRescue();
+    clearSeaShips();                     // Handelsschiffe gibt es nur auf der Erde
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -5054,7 +5299,7 @@ function readInput() {
   if(keys['Space'])      state.throttle = 1;
   // Umsehen beim Astronauten: I/J/K/L als Tastatur-Pendant zum rechten Stick (die Pfeiltasten sind
   // fürs Laufen belegt). Nur draußen wirksam.
-  if(eva){
+  if(eva && !eva.boat){
     lookX = (keys['KeyL'] ? 1 : 0) - (keys['KeyJ'] ? 1 : 0);
     lookY = (keys['KeyI'] ? 1 : 0) - (keys['KeyK'] ? 1 : 0);   // I hebt, K senkt
   }
@@ -5080,10 +5325,13 @@ function readInput() {
       const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
       roll += (rt - lt);
       // Rechter Stick: im Fahrzeug steuert er vertikal den Schub (in 10%-Stufen, nur bis 0),
-      // horizontal ist er unbelegt. Beim Astronauten ist der Motor aus — dort ist der GANZE Stick
-      // frei und schwenkt die Kamera (siehe evaLook / updateCamera).
+      // horizontal ist er unbelegt. Beim Astronauten ZU FUSS ist der Motor aus — dort ist der GANZE
+      // Stick frei und schwenkt die Kamera (siehe evaLook / updateCamera).
+      // Im SCHLAUCHBOOT gilt wieder die Fahrzeug-Belegung: Schub rechts, lenken links — genau wie
+      // beim Feuerwehrboot. Es ist ja auch ein Boot, und zwei verschiedene Boots-Steuerungen zu
+      // lernen waere fuer ein Kind eine unnoetige Huerde.
       const rx = deadzone(gp.axes[2] || 0), ry2 = gp.axes[3] || 0;
-      if(eva){
+      if(eva && !eva.boat){
         lookX = rx;
         // Vorzeichen umgedreht: der Stick liefert für "oben" einen negativen Wert (wie der linke).
         // Ohne das senkte "Stick nach oben" die Kamera, statt sie zu heben.
@@ -6859,6 +7107,7 @@ function loop(now){
   if(locale === 'earth') updateSea(dt);   // animierte Meereswellen (nur in der Erdwelt)
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
+  updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
   // Die Wartezeit ist nötig, weil beim App-Start noch weitere Modelle nachladen (siehe oben).
   if(wantHangarStart && hangarObj && MODEL_NAMES[currentModel] === 'XWing' && locale === 'earth'
@@ -6894,6 +7143,7 @@ preloadParachute();    // Fallschirm-GLB laden (Reserve)
 preloadChute2();       // Fallschirm 2 (TopNotch Assets) — Kisten UND Pilot
 preloadAstronaut();    // Astronaut — am Fallschirm und zum Aussteigen
 preloadDinghy();       // Schlauchboot — Rettung fuer alles, was sonst im Wasser landet
+preloadSeaShips();     // Handelsschiffe: Kreuzfahrer, Liberty, Container, Grosssegler
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
 preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft
