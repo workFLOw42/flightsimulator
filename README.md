@@ -21,6 +21,7 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 | Nase hoch/runter | linker Stick ↕ | ↑ / ↓ |
 | Rollen (loslassen = richtet sich auf) | LT / RT | Q / E |
 | Schub 0–100 % | rechter Stick ↕ | W / S |
+| **Umsehen** (nur zu Fuß) | rechter Stick ↕←→ | I / J / K / L |
 | Vollgas | — | Leertaste |
 | **Boost** (halten): 100 % + extra Schub | X | Shift |
 | **Bremse / Umkehrschub** (halten) | A | C |
@@ -160,6 +161,12 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
   Weiter als 4 km kommt man nicht weg, sonst verlässt man die geladene Welt.
 - Die Kamera folgt von **hinten**, leicht von oben. **LB/RB** gehalten zeigt von der Seite — dieselben
   Tasten wie im Flugzeug.
+- Mit dem **rechten Stick** kann man sich **umsehen**: ←→ dreht die Kamera um den Astronauten herum,
+  ↕ hebt und senkt sie (von flach von der Seite bis steil von oben). Der Stick ist zu Fuß komplett
+  frei — im Fahrzeug steuert er den Schub, aber draußen ist der Motor aus.
+  **Lässt man ihn los, gleitet die Kamera von allein wieder hinter den Astronauten**, damit man die
+  Orientierung nicht verliert. Gelaufen wird weiter mit dem linken Stick: Blick und Laufrichtung sind
+  unabhängig, das Umsehen dreht die Figur also nicht. Auf der Tastatur liegt es auf **I J K L**.
 - Das **Radar** zeigt draußen genau eine Sache: **wo dein Flugzeug steht**. Der Maßstab ist dabei ein
   anderer als im Flug (500 m statt 2500 m füllen die Scheibe), denn zu Fuß sind ein paar Hundert Meter
   weit. Brände zeigt es nicht — löschen kann man zu Fuß ohnehin nicht.

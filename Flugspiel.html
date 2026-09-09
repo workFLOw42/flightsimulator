@@ -61,7 +61,7 @@
     <div class="hrow"><span>L-Stick ←→</span><b>Lenken</b></div>
     <div class="hrow"><span>L-Stick ↕</span><b>Nase hoch/runter</b></div>
     <div class="hrow"><span>LT / RT</span><b>Rollen — loslassen richtet wieder auf</b></div>
-    <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 %</b></div>
+    <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 % · zu Fuß: <b>umsehen</b> (↕ hoch/runter, ←→ herum)</b></div>
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
     <div class="hrow"><span>B</span><b>gelandet: <b>aussteigen</b> · Aktion (Wasser/Kiste/Schleudersitz) · im Weltall Laser</b></div>
     <div class="hrow"><span>B</span><b>draußen: <b>hüpfen</b> · am Flieger: einsteigen</b></div>
@@ -105,6 +105,7 @@
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
+    <div class="hrow"><span>👀 umsehen</span><b>zu Fuß dreht der <b>rechte Stick</b> die Kamera um dich herum und hebt sie · loslassen = sie gleitet von allein zurück · Tastatur: <b>I J K L</b></b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -1958,6 +1959,13 @@ const EVA_TURN     = 2.6;     // wie schnell er sich dreht (rad/s)
 const EVA_JUMP_V   = 4.6;     // Absprunggeschwindigkeit (m/s) — auf der Erde gut 1 m hoch
 const EVA_BOARD_R  = 22;      // so nah am Flieger wird B zum Einsteigen (m)
 const EVA_MAX_DIST = 4000;    // weiter als das kommt man nicht weg (dann zieht es zurück)
+// Freies Umsehen mit dem rechten Stick. Der ist beim Astronauten komplett frei: vertikal steuert er
+// sonst den Schub, aber der Motor ist draußen aus, und horizontal war er ohnehin unbelegt.
+const EVA_LOOK_SPEED  = 2.2;  // rad/s, mit der der Stick die Kamera herumzieht
+const EVA_LOOK_RETURN = 3.0;  // wie schnell sie ohne Eingabe zurückgleitet
+const EVA_PITCH_MIN   = -0.5; // rad: so weit darf sie herunter (flach von der Seite)
+const EVA_PITCH_MAX   = 1.15; // rad: und so weit hinauf (steil von oben, ~66°)
+let evaOrbit = 0, evaPitch = 0;   // aktueller Schwenk (0 = hinter ihm, wie bisher)
 let eva = null;               // { group, vy, onGround, yaw, planeAt } oder null
 
 // Darf man hier aussteigen? Nur am Boden, nicht abgestürzt, und nur auf FESTEM Grund —
@@ -2006,6 +2014,7 @@ function evaExit(){
           planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
   state.throttle = 0;                 // Motor aus, während man draußen ist
   showBig('🧑‍🚀'); bigTimer = 1.2;     // kurze Bestätigung, dann wieder freie Sicht
+  evaOrbit = 0; evaPitch = 0;         // Kamera beginnt hinter ihm
   roverBesideEva();                   // auf dem Mars steht der Rover gleich daneben
 }
 function evaBoard(){
@@ -4636,6 +4645,9 @@ function updateRumble(dt){
   } else _rumStallT = 0;
 }
 
+// Blick-Eingabe für den Astronauten (rechter Stick bzw. I/J/K/L). Wird in readInput gesetzt und in
+// updateCamera ausgewertet — beim Fahrzeug immer 0.
+let lookX = 0, lookY = 0;
 let btnPrev = {};
 let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
 let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
@@ -4668,6 +4680,12 @@ function readInput() {
   if(keys['KeyW'])       thrDir = +1;   // W/S = Schub hoch/runter (Auto-Repeat, s.u.)
   else if(keys['KeyS'])  thrDir = -1;
   if(keys['Space'])      state.throttle = 1;
+  // Umsehen beim Astronauten: I/J/K/L als Tastatur-Pendant zum rechten Stick (die Pfeiltasten sind
+  // fürs Laufen belegt). Nur draußen wirksam.
+  if(eva){
+    lookX = (keys['KeyL'] ? 1 : 0) - (keys['KeyJ'] ? 1 : 0);
+    lookY = (keys['KeyI'] ? 1 : 0) - (keys['KeyK'] ? 1 : 0);   // I hebt, K senkt
+  }
   // C HALTEN = Umkehrschub -20 % (Bremse), Tastatur-Pendant zu "A halten" am Controller.
   if(keys['KeyC']) state.throttle = -0.2; else if(cPrev) state.throttle = 0;
   cPrev = !!keys['KeyC'];
@@ -4689,10 +4707,19 @@ function readInput() {
       const rt = gp.buttons[7] ? gp.buttons[7].value : 0;
       const lt = gp.buttons[6] ? gp.buttons[6].value : 0;
       roll += (rt - lt);
-      // rechter Stick vertikal: oben = Schub steigt, unten = fällt (in 10%-Stufen) — nur bis 0.
-      const ry = gp.axes[3] || 0;
-      if(ry < -0.5) thrDir = +1; else if(ry > 0.5) thrDir = -1;
-      // rechter Stick horizontal: bewusst unbelegt
+      // Rechter Stick: im Fahrzeug steuert er vertikal den Schub (in 10%-Stufen, nur bis 0),
+      // horizontal ist er unbelegt. Beim Astronauten ist der Motor aus — dort ist der GANZE Stick
+      // frei und schwenkt die Kamera (siehe evaLook / updateCamera).
+      const rx = deadzone(gp.axes[2] || 0), ry2 = gp.axes[3] || 0;
+      if(eva){
+        lookX = rx;
+        // Vorzeichen umgedreht: der Stick liefert für "oben" einen negativen Wert (wie der linke).
+        // Ohne das senkte "Stick nach oben" die Kamera, statt sie zu heben.
+        lookY = -deadzone(ry2);
+      } else {
+        lookX = 0; lookY = 0;
+        if(ry2 < -0.5) thrDir = +1; else if(ry2 > 0.5) thrDir = -1;
+      }
 
       // A HALTEN = Umkehrschub -20 % (Bremse); beim LOSLASSEN -> Motor 0.
       const aDown = gp.buttons[0] && gp.buttons[0].pressed;
@@ -5227,14 +5254,15 @@ function stepPhysics(dt, inp){
 let dtCam = 1/60;
 const _camOff = new THREE.Vector3(), _camDes = new THREE.Vector3();
 function updateCamera(){
-  // Draußen unterwegs: Kamera hinter dem Astronauten, leicht von oben. Bewusst nur diese eine
-  // Ansicht — von hinten reicht, und eine Figur von vorn zu filmen hilft beim Laufen nicht.
+  // Draußen unterwegs: Kamera hinter dem Astronauten, leicht von oben — und mit dem rechten Stick
+  // frei um ihn herum schwenkbar (siehe evaOrbit/evaPitch). Losgelassen gleitet sie von allein
+  // zurück, damit man die Orientierung nicht verliert.
   if(eva){
     const g = eva.group;
     const look = new THREE.Vector3(g.position.x, g.position.y + ASTRONAUT_H*0.6, g.position.z);
     camera.up.set(0,1,0);
-    // LB/RB gehalten = von links/rechts schauen, genau wie im Flieger. Das fehlte hier: sideView
-    // wurde nur im Flieger-Zweig ausgewertet, der nach diesem return nie erreicht wird.
+    // LB/RB gehalten = von links/rechts schauen, genau wie im Flieger. Hat Vorrang vor dem
+    // freien Schwenken, weil es eine feste, wiederfindbare Ansicht ist.
     if(sideView !== 0){
       const right = new THREE.Vector3(Math.cos(eva.yaw), 0, -Math.sin(eva.yaw));   // quer zum Blick
       const desired = g.position.clone().addScaledVector(right, 6*sideView);
@@ -5243,9 +5271,36 @@ function updateCamera(){
       camera.lookAt(look);
       return;
     }
-    const back = new THREE.Vector3(Math.sin(eva.yaw), 0, Math.cos(eva.yaw));   // hinter ihm
-    const desired = g.position.clone().addScaledVector(back, 7).setY(g.position.y + 3.4);
-    camera.position.lerp(desired, Math.min(1, 6*dtCam));
+    // Freies Umsehen: der Stick verstellt den Winkel, ohne Eingabe läuft beides zurück auf null.
+    const active = Math.abs(lookX) > 0.01 || Math.abs(lookY) > 0.01;
+    if(active){
+      evaOrbit += lookX * EVA_LOOK_SPEED * dtCam;
+      evaPitch += lookY * EVA_LOOK_SPEED * 0.6 * dtCam;
+      // Nicht über den Scheitel und nicht unter den Boden schwenken.
+      evaPitch = Math.max(EVA_PITCH_MIN, Math.min(EVA_PITCH_MAX, evaPitch));
+      // Der Umlaufwinkel darf ganz herum gehen, aber im Bereich bleiben, damit die Rückkehr
+      // den kurzen Weg nimmt.
+      while(evaOrbit >  Math.PI) evaOrbit -= 2*Math.PI;
+      while(evaOrbit < -Math.PI) evaOrbit += 2*Math.PI;
+    } else {
+      // Zurückgleiten: erst der Umlauf, dann die Höhe — beides weich, damit es nicht zuckt.
+      const k = Math.min(1, EVA_LOOK_RETURN * dtCam);
+      evaOrbit += (0 - evaOrbit) * k;
+      evaPitch += (0 - evaPitch) * k;
+      if(Math.abs(evaOrbit) < 0.002) evaOrbit = 0;
+      if(Math.abs(evaPitch) < 0.002) evaPitch = 0;
+    }
+    // Kameraplatz: hinter ihm, um evaOrbit herumgedreht und um evaPitch angehoben.
+    const yaw = eva.yaw + evaOrbit;
+    const dist = 7 * Math.cos(evaPitch);
+    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const desired = g.position.clone().addScaledVector(back, dist);
+    desired.y = g.position.y + 3.4 + 7*Math.sin(evaPitch);
+    // Nicht unter den Boden: sonst schaut man durch das Gelände.
+    const floor = surfaceY(desired.x, desired.z) + 0.8;
+    if(desired.y < floor) desired.y = floor;
+    // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
+    camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
     camera.lookAt(look);
     return;
   }
