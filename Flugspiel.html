@@ -92,7 +92,7 @@
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
     <div class="hrow"><span>🌍 ins Weltall</span><b>X-Wing mit 80–100 % steil steigen: ab 3 km dunkelt der Himmel, ab 4 km Weltall · zurück unter 2,2 km</b></div>
-    <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10 · beim Anflug auf einen Himmelskörper bremst er selbst · nach jedem Übergang startet er mit 50 %</b></div>
+    <div class="hrow"><span>⚡ Hyperraum</span><b>im Weltall 100 % halten: Warp 1 → Warp 10 · beim Anflug auf einen Himmelskörper bremst er selbst (dann 90 % Schub) · angekommen geht es mit 30 % weiter</b></div>
     <div class="hrow"><span>🌙 Mond &amp; 🔴 Mars</span><b>anfliegen und mit 10 % landen · Mondbasis bzw. Mars-Rover stehen in der Nähe, ein dünner Lichtstrahl zeigt wo · dort starten und landen auch andere Schiffe</b></div>
     <div class="hrow"><span>☀️ Sonne</span><b>nur umkreisen — eine unsichtbare Grenze lässt einen seitlich vorbeiziehen</b></div>
     <div class="hrow"><span>🛰️ Hangar</span><b>Todesstern, Star Destroyer und ISS anfliegen = Landung im Hangar · dort schwebt man mittig, mit 10 % aufsetzen · hinausfliegen = zurück ins All · hier startet der X-Wing</b></div>
@@ -1957,7 +1957,9 @@ function clearParachute(){
 const EVA_SPEED    = 6.0;     // Laufgeschwindigkeit (m/s) — flott, aber kein Sprint
 const EVA_TURN     = 2.6;     // wie schnell er sich dreht (rad/s)
 const EVA_JUMP_V   = 4.6;     // Absprunggeschwindigkeit (m/s) — auf der Erde gut 1 m hoch
-const EVA_BOARD_R  = 22;      // so nah am Flieger wird B zum Einsteigen (m)
+// So nah am Flieger wird B zum Einsteigen statt zum Hüpfen. Vorher 22 m — das ist doppelt so weit
+// wie die Spannweite eines X-Wing (11 m), man konnte also nicht direkt neben dem Flieger hüpfen.
+const EVA_BOARD_R  = 8;
 const EVA_MAX_DIST = 4000;    // weiter als das kommt man nicht weg (dann zieht es zurück)
 // Freies Umsehen mit dem rechten Stick. Der ist beim Astronauten komplett frei: vertikal steuert er
 // sonst den Schub, aber der Motor ist draußen aus, und horizontal war er ohnehin unbelegt.
@@ -3285,6 +3287,10 @@ function snapCamera(){
   camera.up.set(0,1,0);
   camera.lookAt(state.pos);
 }
+// Schub, mit dem man an einem Himmelskörper ankommt. 30 % ist genau die Schwelle, ab der der X-Wing
+// waagerecht vorwärts fliegt (darunter übernehmen die Repulsoren: 20 % schweben, 10 % sinken) — man
+// kommt also ruhig an und ist einen Tastendruck vom Schweben entfernt. Vorher 40 %.
+const APPROACH_THR = 0.3;
 function setupApproach(key, tx, tz, dist, alt){
   const a = Math.random()*Math.PI*2;
   const px = tx + Math.cos(a)*dist, pz = tz + Math.sin(a)*dist;
@@ -3294,7 +3300,7 @@ function setupApproach(key, tx, tz, dist, alt){
   const dir = new THREE.Vector3(tx - px, 0, tz - pz).normalize();
   state.quat.setFromEuler(new THREE.Euler(0, Math.atan2(-dir.x, -dir.z), 0, 'YXZ'));
   state.vel.copy(dir).multiplyScalar(110);
-  state.throttle = 0.4; state.onGround = false; state.stalling = false;
+  state.throttle = APPROACH_THR; state.onGround = false; state.stalling = false;
   snapCamera();
 }
 
@@ -3429,13 +3435,18 @@ function pathDist(c){
 // aber NUR beim Anflug. Die Fahrt muss zu mindestens 30 % auf ihn zeigen: mit einer reinen
 // "größer null"-Prüfung reichte schon ein leichtes Schwenken beim Wegfliegen. Dazu ruht die Bremse
 // kurz nach jedem Ortswechsel, weil man da noch dicht am Körper startet.
+// Abstand, ab dem gebremst wird, als Vielfaches des Körperradius — und der Schub, auf den gedrosselt
+// wird. Vorher r*3 und 50 %: beim Mars (30 km Radius) fiel man also 90 km vor der Oberfläche aus dem
+// Hyperraum und kroch den Rest mit halber Fahrt. r*1,5 und 90 % lassen den Anflug zügig weitergehen.
+const WARP_BRAKE_AT  = 1.5;
+const WARP_BRAKE_THR = 0.9;
 function warpBrakeFor(center, d, r){
-  if(d >= r*3 || warpDrive <= 0.02 || warpBrakeLock > 0) return;
+  if(d >= r*WARP_BRAKE_AT || warpDrive <= 0.02 || warpBrakeLock > 0) return;
   const v = state.vel.length();
   const toward = v > 1 ? state.vel.dot(_bodyDir.copy(center).sub(state.pos).normalize())/v : 0;
   if(toward > 0.3){
     warpDrive = 0;
-    if(state.throttle > 0.5) state.throttle = 0.5;
+    if(state.throttle > WARP_BRAKE_THR) state.throttle = WARP_BRAKE_THR;
     showSpaceHint('🛑', 2);
   }
 }
@@ -5274,7 +5285,9 @@ function updateCamera(){
     // Freies Umsehen: der Stick verstellt den Winkel, ohne Eingabe läuft beides zurück auf null.
     const active = Math.abs(lookX) > 0.01 || Math.abs(lookY) > 0.01;
     if(active){
-      evaOrbit += lookX * EVA_LOOK_SPEED * dtCam;
+      // Minus: Stick nach rechts soll den BLICK nach rechts schwenken. Die Kamera muss dafür nach
+      // LINKS um den Astronauten wandern, weil sie ihn ansieht — mit Plus fühlte es sich vertauscht an.
+      evaOrbit -= lookX * EVA_LOOK_SPEED * dtCam;
       evaPitch += lookY * EVA_LOOK_SPEED * 0.6 * dtCam;
       // Nicht über den Scheitel und nicht unter den Boden schwenken.
       evaPitch = Math.max(EVA_PITCH_MIN, Math.min(EVA_PITCH_MAX, evaPitch));

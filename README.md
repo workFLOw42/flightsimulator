@@ -157,11 +157,13 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
 - **Wasser ist eine Wand** — der Astronaut läuft nicht hinein und fällt nicht vom Trägerdeck.
   Häuser und Berge sind ebenfalls fest; an einer Kante läuft man entlang.
 - Das **Flugzeug bleibt stehen**, wo man gelandet ist, mit abgeschaltetem Motor. Kommt man ihm
-  wieder näher als 22 m, wird **B zum Einsteigen** — das HUD zeigt mit ✈️ bzw. ⤒ an, was B gerade tut.
+  wieder näher als **8 m**, wird **B zum Einsteigen** — das HUD zeigt mit ✈️ bzw. ⤒ an, was B gerade
+  tut. Der Radius ist bewusst kleiner als die Spannweite eines X-Wing (11 m), damit man direkt neben
+  dem Flieger noch hüpfen kann.
   Weiter als 4 km kommt man nicht weg, sonst verlässt man die geladene Welt.
 - Die Kamera folgt von **hinten**, leicht von oben. **LB/RB** gehalten zeigt von der Seite — dieselben
   Tasten wie im Flugzeug.
-- Mit dem **rechten Stick** kann man sich **umsehen**: ←→ dreht die Kamera um den Astronauten herum,
+- Mit dem **rechten Stick** kann man sich **umsehen**: ←→ schwenkt den Blick nach links und rechts,
   ↕ hebt und senkt sie (von flach von der Seite bis steil von oben). Der Stick ist zu Fuß komplett
   frei — im Fahrzeug steuert er den Schub, aber draußen ist der Motor aus.
   **Lässt man ihn los, gleitet die Kamera von allein wieder hinter den Astronauten**, damit man die
@@ -202,7 +204,10 @@ mehr — dafür **Warp**: 100 % Schub sind **Warp 1**, und wer 100 % hält, ruts
 **Hyperraum** bis **Warp 10**. Das ist kein Tor und kein Schalter: der Effekt blendet sich mit der
 Geschwindigkeit ein, genau wie der Übergang vom Himmel ins Weltall — der leuchtende Ring erscheint
 **ab Lichtgeschwindigkeit** (Warp 1). **Kurz vor jedem Himmelskörper bremst er von selbst aus dem
-Hyperraum**, damit man ihn in Ruhe ansehen kann.
+Hyperraum** und drosselt auf **90 %** Schub — nah genug, dass der Anflug zügig bleibt: beim Mond
+setzt das 18 km vor der Mitte ein, beim Mars 45 km. **Angekommen** geht es mit **30 %** weiter, und
+das ist genau die Schwelle, ab der der X-Wing waagerecht vorwärts fliegt: eine Stufe weniger und er
+schwebt.
 
 Der Schub ist im Weltall **linear**: 10 % sind Warp 0,1, 50 % sind Warp 0,5, 100 % ist Warp 1.
 
