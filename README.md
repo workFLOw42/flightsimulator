@@ -216,6 +216,16 @@ stürzt ab, genau wie an einem Berg oder am Trägerrumpf. Darüber weg geht.
 | 🚢 Liberty-Frachter | 135 m | 16 km/h | **AlanTinka** |
 | ⛵ Großsegler | 90 m Rumpf, 60 m Masthöhe | 11 km/h | **Liaval** |
 
+### Und die Flugzeugträger?
+Nach dem Einbau der Schiffe wirkte es, als gäbe es **weniger Träger**. Nachgemessen: es waren
+genauso viele wie vorher. Der Würfel im Code steht auf 10 %, gilt aber nur für **Wasserzellen** — und
+53 % aller Zellen sind Inseln. Effektiv kamen so nur **3,8 %** aller Zellen auf einen Träger (24 in
+625 Zellen gemessen). Die Schiffe teilen also nur die Aufmerksamkeit und verdecken Träger im
+Blickfeld; die Häufigkeit war unverändert.
+
+Trotzdem angehoben, weil man ihnen öfter begegnen soll: Schwelle 0,10 → **0,18**, damit **41 statt
+24** Träger in denselben 625 Zellen (6,6 % statt 3,8 %).
+
 Die Größen stimmen **zueinander** und zu den echten Vorbildern; der Flugzeugträger im Spiel ist
 280 m lang, alles liegt also in derselben Größenordnung. Sieben Schiffe fahren gleichzeitig in einem
 Ring von 1,2 bis 3,5 km um den Spieler und werden nachgezogen, wenn man weiterfliegt — genau wie der
@@ -229,8 +239,61 @@ Flugverkehr in der Luft.
   es über mehrere Sekunden sichtbar ab — ein Frachter wendet nicht ruckartig.
   Über drei Minuten Spielzeit gemessen: **0-mal** auf Land, **0-mal** ineinander, geringster Abstand
   zwischen zwei Schiffen 355 m.
+- **Auch die KI-Maschinen sehen die Schiffe** — und den Flugzeugträger. Das fehlte zunächst: ihre
+  Hindernisliste kannte nur Inseln, weil alles auf dem Meer nicht im Zellenraster steht. Sie flogen
+  durch die Handelsschiffe *und* durch den Träger hindurch. Jetzt gilt für sie dasselbe wie an Land:
+  Airliner ziehen hoch und weichen aus, Jets stürzen ab.
 - **Auch das Feuerwehrboot und das Schlauchboot** kommen nicht durch ein Schiff hindurch — für sie
-  gilt derselbe Rumpf wie für die Flugzeuge (20 s Vollgas frontal dagegen: 0 Bilder im Schiff).
+  gilt derselbe Rumpf wie für die Flugzeuge (25 s Vollgas frontal dagegen: 0 Bilder im Rumpf).
+- **Ein Schiff verdrängt, es blockiert nicht nur.** Das musste nachgebessert werden: die Schiffe
+  FAHREN, ein Rumpf kann sich also über ein stillliegendes Boot schieben. Die normale
+  Küsten-Ausweichlogik hilft dort nicht, weil sie nur **nach vorne** sucht (±120° um die
+  Fahrtrichtung) — mitten im Rumpf findet sie nirgends Wasser und bewegt gar nichts. Gemessen saß ein
+  Boot **10 Sekunden bewegungslos** in der Schiffsmitte, während das Schiff darüber hinwegfuhr: genau
+  so fährt man scheinbar *durch* ein Schiff. Jetzt drückt der Rumpf ein Boot mit 30 m/s **quer**
+  heraus (der kurze Weg: 16 m Halbbreite gegen 125 m halbe Länge). Aus der Schiffsmitte ist man damit
+  in 0,65 s frei.
+
+### Sie wackeln nach ihrer Größe
+Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro
+Schiff. Kurze Rümpfe folgen der Welle, lange überbrücken mehrere und liegen ruhig. Bezugslänge sind
+120 m; darunter reagiert ein Schiff voll, darüber im Verhältnis weniger:
+
+| | Länge | Neigung | Hebung |
+|---|---|---|---|
+| Schlauchboot | 4,2 m | 3,81° | reitet auf der Welle |
+| Feuerwehrboot | 16 m | 3,13° | reitet auf der Welle |
+| ⛵ Großsegler | 90 m | 2,09° | 1,95 m |
+| 🚢 Liberty | 135 m | 1,29° | 1,73 m |
+| 🛳️ Kreuzfahrtschiff | 250 m | 0,22° | 0,93 m |
+| 🚢 Containerschiff | 300 m | 0,10° | 0,78 m |
+
+Bei den langen Schiffen laufen die Wellen dadurch **sichtbar am Rumpf hoch und runter** — die
+Wasserlinie wandert, statt dass das ganze Schiff mitschaukelt. Beim Containerschiff steigt das Wasser
+um 2,30 m an der Bordwand, während es sich selbst nur 0,65 m hebt.
+
+Die **Wellen selbst** sind größer geworden: Hub 2,19 m → **4,10 m**. Kürzer machen ließ sie sich
+nicht — das Meeresgitter hat 62,5 m Punktabstand, darstellbar sind erst Wellen ab etwa 250 m Länge,
+und mehr Segmente sind nicht drin (das Gitter kostet bei 96 Segmenten schon 8,3 ms von 16,7, bei 128
+wären es 14,7). Deshalb sind sie **höher** statt kürzer.
+
+Als Nebenwirkung musste das **Feuerwehrboot tiefer** liegen (1,5 → 2,0 m): das stärkere Nicken hob
+sein Heck um 0,44 m, und damit stand die Schraubenoberkante 0,25 m über Wasser. Beim **Großsegler**
+brauchte es mehr Freibord (3,74 m), weil er als kürzestes der vier Schiffe voll mitschwingt *und*
+nickt — bei 1,89 m tauchte sein Deck im Zusammenspiel beider um 1,08 m ein.
+
+### Bug und Heck: nicht berechenbar
+Zwei der vier Modelle sind **gegen** die Fahrtrichtung gebaut und fuhren rückwärts (Kreuzfahrtschiff
+und Liberty-Frachter, beide jetzt um 180° gedreht). Automatisch feststellen lässt sich das nicht
+zuverlässig:
+- Die **Rumpfform** taugt bei Kastenrümpfen nicht — Container und Kreuzfahrtschiff sind über fast
+  ihre ganze Länge gleich breit (gemessen 92 bis 100 % der Maximalbreite).
+- Die **Brücke** ist auch kein sicheres Kriterium. Bei Frachtern steht sie klassisch am Heck, bei
+  modernen Containerschiffen aber mittschiffs, damit vor ihr mehr Container gestapelt werden können —
+  genau so ist dieses Modell gebaut. Ich habe den Container deshalb erst falsch gedreht, obwohl er
+  richtig fuhr.
+
+Wer hier etwas ändert: **im Spiel nachsehen, nicht rechnen.**
 
 ### Die Wasserlinie muss man ausmessen
 Jedes Modell hat seinen eigenen Maßstab (von 0,14 bis 27.000 Einheiten) und seine eigene Bauart. Wo
@@ -242,6 +305,14 @@ Beim Kreuzfahrtschiff fällt der Wert aus dem Rahmen, und das hat einen Grund: s
 **unter der Wasserlinie gar nicht modelliert** — gemessen zeigen nur 0,5 % seiner Fläche nach unten,
 das Modell ist dort einfach abgeschnitten. Hätte man es so tief gelegt wie die anderen, würde man in
 ein Loch sehen.
+
+Zwei Werte musste ich nach dem ersten Spielen korrigieren, weil die 92-%-Regel dort in die Irre führte:
+- **Containerschiff 0,93 → 1,46 %.** Sein Rumpf endet bei −2,79, der tiefste **Heck**punkt lag aber
+  bei +0,58 — die Schraube stand also über Wasser und war sichtbar.
+- **Großsegler 10,27 → 8,05 %.** Seine breiteste Stelle mittschiffs liegt bei −0,11, und das ist das
+  **Schanzkleid**: sein Deck stand damit praktisch im Wasser, während Back und Poop reichlich Luft
+  hatten. Jetzt hat er 1,89 m Freibord, was für einen 90-m-Segler passt; sein tiefster Heckpunkt
+  (−9,03) bleibt weit unter Wasser.
 
 ## 🛟 Ins Wasser: das Schlauchboot
 

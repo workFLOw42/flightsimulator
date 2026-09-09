@@ -103,7 +103,8 @@
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
-    <div class="hrow"><span>🛳️ Schiffe</span><b>auf dem Meer fahren <b>Kreuzfahrtschiff</b> (250 m), <b>Containerschiff</b> (300 m), <b>Liberty-Frachter</b> (135 m) und ein <b>Großsegler</b> (90 m) — langsam und gemächlich, richtig groß zueinander. Sie sind <b>feste Hindernisse</b>: hineinfliegen = Absturz, drüber weg geht. Mit dem Boot fährt man um sie herum</b></div>
+    <div class="hrow"><span>🛳️ Schiffe</span><b>auf dem Meer fahren <b>Kreuzfahrtschiff</b> (250 m), <b>Containerschiff</b> (300 m), <b>Liberty-Frachter</b> (135 m) und ein <b>Großsegler</b> (90 m) — langsam und gemächlich, richtig groß zueinander. Sie sind <b>feste Hindernisse</b>: hineinfliegen = Absturz, drüber weg geht. Auch die anderen Flieger weichen ihnen aus. Mit dem Boot fährt man um sie herum — kommt eines zu nah, schiebt sein Rumpf dich beiseite</b></div>
+    <div class="hrow"><span>🌊 Wellen</span><b>die Dünung ist deutlich höher geworden. <b>Kleine Boote reiten darauf</b> und wackeln sichtbar, der <b>Großsegler</b> schwingt noch mit, und bei den <b>großen Frachtern</b> läuft das Wasser am Rumpf hoch und runter, während sie ruhig liegen — je länger ein Schiff, desto gelassener</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
     <div class="hrow"><span>🛟 ins Wasser</span><b>zu Fuß ins Meer laufen oder vom Flugzeugträger springen: du landest im <b>Schlauchboot</b>. Gefahren wird <b>genau wie beim Feuerwehrboot</b>: linker Stick lenkt, rechter Stick ↕ gibt Schub, A bremst und fährt rückwärts · fährst du an Land, steigst du von allein aus · gehüpft wird im Boot nicht — es ist ein Fahrzeug</b></div>
@@ -211,7 +212,13 @@ const seaCol = seaGeo.attributes.color;
 const seaDeep = new THREE.Color(0x1a5a94);   // Wellental (dunkelblau)
 const seaMid  = new THREE.Color(0x2f8fd0);   // mittlere Höhe (helleres Blau)
 const seaFoam = new THREE.Color(0xdff2ff);   // Wellenkamm/Gischt (fast weiß)
-const AMP = 1.6;    // größere Wellen -> mehr Kontrast/Höhenreferenz fürs Kind
+// Wellenhöhe. Von 1,6 auf 3,0 erhöht: der Hub wächst damit von 2,19 m auf 4,10 m (gemessen), das
+// Meer wirkt deutlich lebendiger und die Boote arbeiten sichtbar darin.
+// Mehr geht NICHT über kürzere Wellen: das Meeresgitter hat 62,5 m Punktabstand (SEA_SIZE/SEA_SEG),
+// darstellbar sind damit erst Wellen ab etwa 250 m Länge. Eine kürzere Komponente würde durchs
+// Raster fallen — sichtbar wäre nur ein Zappeln der Stützpunkte. Und mehr Segmente sind nicht drin:
+// updateSea kostet bei 96 schon 8,3 ms von 16,7 (gemessen), bei 128 wären es 14,7.
+const AMP = 3.0;
 // Wellenhöhe an einer Weltposition. Genau dieselbe Formel, die updateSea auf die Gitterpunkte legt —
 // als Funktion herausgezogen, damit das Feuerwehrboot exakt auf der Dünung liegt und nicht daneben.
 // seaTime läuft weiter, die Wellen wandern also unter dem Boot durch.
@@ -393,7 +400,10 @@ function _islandInfoCalc(cx, cz) {
 function carrierInfo(cx, cz){
   if(cx===0 && cz===0) return null;             // Startzelle frei halten
   if(islandInfo(cx, cz)) return null;           // eigene Zelle muss Wasser sein
-  if(cellRnd(cx, cz, 42) >= 0.10) return null;  // ~10%
+  // Haeufigkeit. Die Schwelle gilt nur fuer WASSERzellen, und 53 % aller Zellen sind Inseln —
+  // effektiv kamen bei 0,10 also nur 3,8 % aller Zellen auf einen Traeger (gemessen in 625 Zellen).
+  // Auf 0,18 angehoben: rund 7 % aller Zellen, damit man ihnen oefter begegnet.
+  if(cellRnd(cx, cz, 42) >= 0.18) return null;
   const wx = cx*CELL + (cellRnd(cx,cz,43)-0.5)*CELL*0.3;
   const wz = cz*CELL + (cellRnd(cx,cz,44)-0.5)*CELL*0.3;
   // Der lange Träger darf keine Insel überlappen: kein Inselrand näher als FORD_LEN/2+Puffer.
@@ -865,14 +875,31 @@ function refreshCarriers(){
 // Breite erreicht, jeweils mittschiffs — Bug und Heck sind immer schmal und verfälschen das).
 // Angegeben in Prozent der Schiffslänge, weil die Modelle völlig verschiedene Eigenmaßstäbe haben
 // (0,14 bis 27.000 Einheiten). Ohne diese Werte schwimmt ein Schiff sichtbar obenauf oder säuft ab:
-//   Kreuzfahrtschiff 2,99 %  ·  Liberty 6,69 %  ·  Container 0,93 %  ·  Segler 10,27 %
+//   Kreuzfahrtschiff 2,99 %  ·  Liberty 6,69 %  ·  Container 1,46 %  ·  Segler 8,05 %
 // Beim Kreuzfahrtschiff ist der Rumpf unter der Wasserlinie GAR NICHT modelliert (gemessen: nur
 // 0,5 % der Fläche zeigt nach unten, das Modell ist dort abgeschnitten) — deshalb der kleine Wert.
+// Zwei Werte sind nachträglich korrigiert, weil die 92-%-Breitenregel dort in die Irre führte:
+//  · Container: sein Rumpf endet bei y = -2,79, der tiefste HECKpunkt lag aber bei +0,58 — die
+//    Schraube stand also über Wasser. 1,46 % gibt ihr 1 m Überdeckung.
+//  · Segler: seine breiteste Stelle mittschiffs liegt bei y = -0,11, das ist das SCHANZKLEID. Sein
+//    Deck stand damit praktisch im Wasser, während Back und Poop reichlich Luft hatten. Mit 6,00 %
+//    hat er 3,74 m Freibord — nötig, weil er als kürzestes der vier Schiffe voll mit der Welle
+//    schwingt UND nickt: bei 1,89 m tauchte sein Deck im Zusammenspiel von Wellenberg und Nicken um
+//    1,08 m ein. Sein tiefster Heckpunkt (-9,03) bleibt trotzdem weit unter Wasser.
+// rot180 dreht ein Modell, das gegen die Fahrtrichtung gebaut ist — beim Kreuzfahrtschiff und beim
+// Liberty-Frachter nötig, beim Container NICHT.
+// Bei Kastenrümpfen taugt keine gemessene Regel: Container und Kreuzfahrtschiff sind fast überall
+// gleich breit, und die Brücke steht auch nicht zuverlässig am Heck (bei modernen Containerschiffen
+// sitzt sie mittschiffs, damit vor ihr mehr Container gestapelt werden können — genau so ist dieses
+// Modell gebaut). Ich habe den Container deshalb erst falsch gedreht. Wer hier etwas ändert:
+// im Spiel nachsehen, nicht rechnen.
 const SHIP_TYPES = [
-  { key:'cruise',    glb:()=>window.CRUISE_GLB,    len:250, wl:0.0299, spd:5.5, sym:'🛳️' },
-  { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0669, spd:4.5, sym:'🚢' },
-  { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0093, spd:5.0, sym:'🚢' },
-  { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.1027, spd:3.0, sym:'⛵' },
+  { key:'cruise',    glb:()=>window.CRUISE_GLB,    len:250, wl:0.0299, spd:5.5, sym:'🛳️', rot180:true },
+  // rot180: das Modell zeigt mit dem Bug nach hinten — gemessen war die Breite vorne 16,5 und hinten
+  // 15,0, also lief die schmale Seite falsch herum. Es fuhr sichtbar rueckwaerts.
+  { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0669, spd:4.5, sym:'🚢', rot180:true },
+  { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0146, spd:5.0, sym:'🚢' },
+  { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.0600, spd:3.0, sym:'⛵' },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
 // belebt wirken, ohne dass man ständig ausweichen muss: bei 3.500 m Radius liegt selten mehr als
@@ -883,6 +910,17 @@ const SHIP_SPAWN_MAX = 3500;
 const SHIP_DESPAWN   = 5200;    // weiter weg wird es recycelt
 const SHIP_TURN      = 0.02;    // rad/s: ganz sachte Kursänderungen, ein Frachter dreht träge
 const SHIP_CLEAR     = 260;     // so weit muss ein Platz von Insel/Träger/anderen Schiffen frei sein
+// Wie stark ein Schiff auf die Dünung reagiert — abhängig von SEINER LÄNGE, nicht als fester Wert.
+// Ein 90-m-Segler arbeitet in der See sichtbar mit, ein 300-m-Containerschiff überbrückt mehrere
+// Wellen und liegt fast ruhig. Mit einem Wert für alle wäre entweder der Segler zu starr oder der
+// Frachter zu zappelig gewesen.
+// Bezugslänge 120 m: darunter reagiert es voll, darüber im Verhältnis weniger. Gemessene Neigungen
+// mit AMP 3,0 — Segler 2,09° · Liberty 1,29° · Kreuzfahrtschiff 0,22° · Container 0,10°, und zum
+// Vergleich Feuerwehrboot 3,13° und Schlauchboot 3,81°. Die Staffelung von klein nach groß ergibt
+// sich damit von allein, ohne Werte pro Schiff.
+const SHIP_BOB_REF   = 120;     // Länge (m), bis zu der ein Schiff der Welle voll folgt
+const SHIP_HEAVE_MAX = 0.55;    // so weit hebt sich höchstens eines mit der Welle (kurze Schiffe)
+function shipWaveFactor(len){ return Math.min(1, SHIP_BOB_REF / Math.max(1, len)); }
 const shipTemplates = {};       // key -> normiertes Modell (Wasserlinie auf y = 0)
 const shipHalf = {};            // key -> {hl, hw, top}: halbe Länge/Breite und Höhe über Wasser
 const seaShips = [];            // {key, group, x, z, heading, spd, len}
@@ -915,6 +953,8 @@ function preloadSeaShips(){
       const box3 = new THREE.Box3().setFromObject(obj);
       const s3 = new THREE.Vector3(); box3.getSize(s3);
       if(s3.x > s3.z) obj.rotation.y = Math.PI/2;
+      // Einzelne Modelle sind gegen die Fahrtrichtung modelliert -> um 180 Grad drehen.
+      if(def.rot180) obj.rotation.y += Math.PI;
       wrap.add(obj);
       shipTemplates[def.key] = wrap;
       const box4 = new THREE.Box3().setFromObject(wrap);
@@ -1032,12 +1072,17 @@ function updateShipsSea(dt){
     if(Math.hypot(sh.x - F.x, sh.z - F.z) > SHIP_DESPAWN) placeSeaShip(sh, F.x, F.z);
     sh.group.position.set(sh.x, 0, sh.z);
     sh.group.rotation.y = sh.heading;
-    // Nicken und Rollen in der Dünung — sehr wenig: ein 300-m-Schiff liegt in dieser See ruhig.
+    // Nicken in der Dünung — sehr wenig: ein 300-m-Schiff überbrückt mehrere Wellen und liegt ruhig.
     // Bezug ist die WELTposition (seaYAt), das Schiff sitzt nicht in der Gittermitte.
     const bowY  = seaYAt(sh.x + fx*sh.hl*0.7, sh.z + fz*sh.hl*0.7, dt);
     const stnY  = seaYAt(sh.x - fx*sh.hl*0.7, sh.z - fz*sh.hl*0.7, dt);
-    sh.group.rotation.x = Math.atan2(bowY - stnY, sh.hl*1.4) * 0.5;
-    sh.group.position.y = seaYAt(sh.x, sh.z, dt) * 0.6;
+    const wf = shipWaveFactor(sh.len);
+    sh.group.rotation.x = Math.atan2(bowY - stnY, sh.hl*1.4) * wf;
+    // Höhe: ein kurzes Schiff hebt sich mit der Welle, ein langes bleibt nahe der Ruhewasserlinie —
+    // bei ihm laufen die Wellen sichtbar am Rumpf hoch und runter, die Wasserlinie wandert also,
+    // statt dass der ganze Rumpf mitschaukelt. Der Segler (90 m) schwingt mit, das 300-m-Contain-
+    // erschiff praktisch nicht.
+    sh.group.position.y = seaYAt(sh.x, sh.z, dt) * SHIP_HEAVE_MAX * wf;
   }
 }
 // Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
@@ -1061,6 +1106,42 @@ function hitsSeaShip(x, y, z, except){
 function seaShipWaterFor(sh, x, z){
   return !isOnLand(x, z) && !isOnBeach(x, z) && !isOnCarrier(x, z)
          && !hitsBuilding(x, ISLAND_Y+2, z, false, sh);
+}
+// Steckt (x,z) in einem Schiff? Dann quer aus dem Rumpf hinausschieben und true zurückgeben.
+// Nötig, weil die Küsten-Ausweichlogik (coastSlide) nur nach VORNE sucht (±120° um die Fahrtrichtung):
+// mitten im Rumpf findet sie dort nirgends Wasser und bewegt gar nichts — gemessen saß ein Boot
+// 10 Sekunden bewegungslos in der Schiffsmitte, während das Schiff darüber hinwegfuhr. Genau das sah
+// aus, als führe man durch das Schiff hindurch.
+// Geschoben wird QUER heraus: bei 16 m Halbbreite gegen 125 m halbe Länge ist das der kurze Weg.
+// Ein Schiff verdrängt also, statt zu blockieren — physikalisch ist das auch das Richtige.
+const SHIP_PUSH = 30;      // m/s, mit denen ein Rumpf ein Boot beiseite drückt (deutlich über Schiffstempo)
+function pushOutOfSeaShip(pos, vel, dt){
+  for(const sh of seaShips){
+    if(!sh.group) continue;
+    const rx = pos.x - sh.x, rz = pos.z - sh.z;
+    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;          // Lage im Schiffssystem
+    if(Math.abs(lx) >= sh.hw + 4 || Math.abs(lz) >= sh.hl + 4) continue;   // nicht in diesem Schiff
+    // Zur näheren Bordwand hinaus. Genau auf der Mittellinie (lx = 0) gibt es keine Richtung —
+    // dann nach Steuerbord, damit es überhaupt eine gibt.
+    const side = lx >= 0 ? 1 : -1;
+    const need = (sh.hw + 6) - Math.abs(lx);               // so weit fehlt es bis nach draußen
+    const step = Math.min(need, SHIP_PUSH * dt);
+    // Querrichtung des Schiffs in Weltkoordinaten. Die Hin-Drehung oben rechnet
+    // lx = rx*cos(-h) - rz*sin(-h), lx ist also die Projektion auf (cos h, SIN h). Mit -sin h
+    // (mein erster Versuch) schob es diagonal: das Boot pendelte zwischen quer -0,24 und 0,00 und
+    // kam nie aus dem Rumpf (gemessen).
+    const qx = Math.cos(sh.heading) * side, qz = Math.sin(sh.heading) * side;
+    pos.x += qx * step;
+    pos.z += qz * step;
+    // Fahrt mit hinausdrehen, sonst steuert man im nächsten Frame direkt wieder hinein.
+    if(vel){
+      const spd = Math.hypot(vel.x, vel.z);
+      if(spd > 0.5){ vel.x = qx * spd * 0.6; vel.z = qz * spd * 0.6; }
+    }
+    return true;
+  }
+  return false;
 }
 // Das nächstgelegene Schiff (fürs Radar). Rückgabe {x,z,sym} oder null.
 function nearestSeaShip(x, z){
@@ -2266,7 +2347,8 @@ const DINGHY_VMAX  = 11;      // Hoechstfahrt (m/s ~ 40 km/h) — flotter als La
 const DINGHY_ACCEL = 7;       // wie schnell es die Zielfahrt erreicht (m/s^2)
 const DINGHY_YAW   = 1.4;     // Ruderwirkung (rad/s) — wendiger als das 16-m-Feuerwehrboot
 const DINGHY_ROLL  = 0.18;    // Kraengung in der Kurve (rein optisch)
-const DINGHY_BOB   = 0.6;     // wie stark es mit der Duenung nickt
+const DINGHY_BOB   = 1.2;     // wie stark es mit der Duenung nickt — am staerksten von allen,
+                              // es ist mit 4,2 m das kleinste Boot und liegt praktisch auf der Welle
 const DINGHY_LAND_R = 3.0;    // so weit vor dem Bug wird auf Land geprueft -> dort steigt er aus
 // So weit voraus wird nach Wasser gesucht, wenn er zu Fuss festsitzt. Muss ueber die BORDWAND des
 // Traegers reichen: der Rumpf ist 4 m breiter als das Deck, von der Deckkante bis zum freien Wasser
@@ -2475,6 +2557,8 @@ function updateDinghy(dt, inp){
   } else {
     coastSlide(b.position, v, fwd, dt);
   }
+  // Wie beim Feuerwehrboot: ein fahrendes Schiff kann sich darueberschieben -> quer hinausdruecken.
+  pushOutOfSeaShip(b.position, v, dt);
   // Auf der Duenung liegen und mit ihr nicken. Bezug ist die WELTposition -> seaYAt (das Boot ist
   // nicht der Flieger, der in der Gittermitte sitzt).
   b.position.y = seaYAt(b.position.x, b.position.z, dt) - DINGHY_DRAFT;
@@ -5416,11 +5500,19 @@ function thrStep(dir){
 // Land ist eine Wand: es rammt nicht und sinkt nicht, es kommt einfach nicht weiter.
 const BOAT_YAW = 0.9;        // Wendigkeit am Ruder (rad/s bei voller Fahrt)
 const BOAT_ROLL = 0.25;      // wie stark es sich in die Kurve legt (rein optisch)
-const BOAT_BOB = 0.5;        // wie stark es mit der Dünung nickt
+// Wie stark das Boot mit der Dünung nickt. Angehoben (0,5 -> 1,0): bei den größeren Wellen soll man
+// dem 16-m-Boot ansehen, dass es arbeitet. Die Neigung, die es dabei erfährt, kommt aus der
+// Wellensteilheit über SEINE Länge — ein kurzes Boot folgt der Welle, ein langes Schiff überbrückt
+// sie. Deshalb wackeln die Boote und die 250-m-Schiffe bleiben ruhig, ohne dass man das eigens
+// einbauen muss (gemessen: 3,2 Grad beim Boot gegen 0,5 Grad beim Kreuzfahrtschiff).
+const BOAT_BOB = 1.0;
 // Tiefgang: um so viel liegt der Kiel UNTER der Wasserlinie. Das Modell ist 6,40 m hoch, seine
-// Schrauben sitzen bei 0,14–1,31 m (ausgemessen). 1,5 m versenken sie sauber, ohne dass das Deck
-// (ab ~2,7 m) nass wird.
-const BOAT_DRAFT = 1.5;
+// Schrauben sitzen bei 0,14–1,31 m (ausgemessen), das Deck beginnt bei ~2,70 m.
+// Von 1,5 auf 2,0 erhöht, als die Wellen größer wurden (AMP 1,6 -> 3,0): das stärkere Nicken hebt
+// das Heck um 0,44 m, und bei 1,5 m Tiefgang lag die Schraubenoberkante damit 0,25 m ÜBER Wasser —
+// genau der Effekt, den man vorher schon einmal gesehen hat. Mit 2,0 bleiben die Schrauben auch im
+// Wellenberg 0,25 m unter Wasser, und das Deck hat noch 0,70 m Luft.
+const BOAT_DRAFT = 2.0;
 // An der Küste ABGLEITEN statt anzuhalten: von der Fahrtrichtung aus schrittweise zur Seite drehen
 // (abwechselnd links/rechts), bis ein Schritt im Wasser landet, und die Fahrt dorthin umlenken. So
 // gleitet ein Boot an jedem Ufer ab, in jedem Anfahrtwinkel. Beide Boote nutzen das.
@@ -5510,6 +5602,10 @@ function stepBoat(dt, inp){
     // Blockiert -> an der Kueste abgleiten (dieselbe Logik nutzt das Schlauchboot, siehe coastSlide).
     coastSlide(state.pos, state.vel, fwd, dt);
   }
+  // Steckt es (doch) in einem Schiffsrumpf, quer hinausschieben. Das kann passieren, obwohl die
+  // Fahrt geprueft wird: die Schiffe FAHREN, ein Rumpf kann sich also ueber ein stillliegendes Boot
+  // schieben. coastSlide hilft dort nicht (es sucht nur nach vorne) — siehe pushOutOfSeaShip.
+  pushOutOfSeaShip(state.pos, state.vel, dt);
 
   // Auf der Wasseroberfläche liegen, aber mit TIEFGANG: vorher sass der Kiel genau auf der
   // Wasserlinie, also schwamm das ganze Boot obenauf und man sah hinten die Schrauben (die liegen
@@ -6787,7 +6883,38 @@ function aiObstacleTopAt(x, z, margin){
       }
     }
   }
-  return ISLAND_Y + top;   // Welt-Y der Hindernisspitze
+  // Alles, was auf dem MEER steht, kennt das Insel-Raster nicht — es muss eigens dazu, sonst fliegen
+  // die KI-Maschinen mitten hindurch. Genau das war der Fall: durch die Handelsschiffe UND durch den
+  // Flugzeugträger.
+  let seaTop = 0;
+  // Flugzeugträger: sein Aufbau ist das Hindernis, das Flugdeck selbst wird ja angeflogen. Die
+  // Rumpf-Halbbreite (nicht die Deckbreite) zählt, weil die Bordwand seitlich übersteht.
+  const car = carrierHullAt(x, z);
+  if(car){
+    const towerTop = fordTower ? fordTower.top : fordDeckY + 22;
+    // Innerhalb des Turm-Grundrisses die Turmspitze, sonst die Deckhöhe.
+    const info = car.info, rx = x-info.wx, rz = z-info.wz;
+    const cs = Math.cos(info.rot), sn = Math.sin(info.rot);
+    const lx2 = rx*cs - rz*sn, lz2 = rx*sn + rz*cs;
+    let t = fordDeckY;
+    if(fordTower && lx2 > fordTower.minX-margin && lx2 < fordTower.maxX+margin
+                 && lz2 > fordTower.minZ-margin && lz2 < fordTower.maxZ+margin) t = towerTop;
+    else if(!fordTower) t = towerTop;
+    if(t > seaTop) seaTop = t;
+  }
+  // Handelsschiffe: Aufbauten bis 53 m (Containerschiff) bzw. 60 m Masthöhe (Großsegler) — daran
+  // fliegt man sich tot, wenn die KI sie nicht sieht. Rechteck im Schiffssystem wie in hitsSeaShip.
+  if(typeof seaShips !== 'undefined'){
+    for(const sh of seaShips){
+      if(!sh.group) continue;
+      const rx = x - sh.x, rz = z - sh.z;
+      const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+      const lx2 = rx*cs - rz*sn, lz2 = rx*sn + rz*cs;
+      if(Math.abs(lx2) < sh.hw + margin && Math.abs(lz2) < sh.hl + margin && sh.top > seaTop)
+        seaTop = sh.top;
+    }
+  }
+  return Math.max(ISLAND_Y + top, seaTop);   // Welt-Y der Hindernisspitze
 }
 // Nur in Reise-/Anflug-Reisezuständen aktiv (nicht beim Landen/Rollen/Tieflug-Missionen).
 const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1 };
