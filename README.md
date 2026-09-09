@@ -4,6 +4,8 @@ Ein kindgerechtes 3D-Flugspiel zum freien Fliegen, Löschen, Retten und Abwerfen
 **im Browser**, auf Desktop und Android. Gedacht für kleine Kinder — daher
 **keine Lesetexte im Spiel, nur Symbole und Farben**.
 
+Offene Punkte stehen in **[TODO.md](TODO.md)**.
+
 ## ▶️ Spielen
 **[→ Jetzt spielen](https://workflow42.github.io/flightsimulator/Flugspiel.html)**
 (`https://workflow42.github.io/flightsimulator/Flugspiel.html`)
