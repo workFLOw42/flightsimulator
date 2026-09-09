@@ -101,7 +101,7 @@
     <div class="hrow"><span>📡 Radar</span><b>über der Insel: die nächste brennende Stelle · im Weltall: 🌙 Mond, 🔴 Mars, 🌍 Erde, 🛰️ ISS und Todesstern, jedes in eigener Farbe</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
-    <div class="hrow"><span>🛰️ ISS finden</span><b>eine Leuchtsäule steht über ihr, und im Radar hat sie ihren eigenen Blip — sie ist nur 120 m groß</b></div>
+    <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -2320,7 +2320,17 @@ function preloadSpace(){
     g.scale.setScalar(5.52);       // im Original 100 m — als Station auf dem Mond zu zierlich
     moonBaseObj = g;
   });
-  preloadStationGLB(window.ISS_GLB, (g)=>{ issObj = g; });
+  // ISS auf Star-Destroyer-Größe (1200 m). Im Original ist sie nur 120 m groß (gemessen) und war
+  // damit im Sternenfeld praktisch nicht zu finden — gegen einen Todesstern mit 20 km Radius
+  // verschwindet sie. Zehnfach vergrößert ist sie noch auf 12 km Entfernung 62 px hoch und damit
+  // auch für ein Kind eindeutig zu sehen. Nicht maßstabsgetreu, aber das ist hier auch der
+  // Todesstern nicht.
+  preloadStationGLB(window.ISS_GLB, (g)=>{
+    const box = new THREE.Box3().setFromObject(g);
+    const size = new THREE.Vector3(); box.getSize(size);
+    g.scale.setScalar(ISS_LEN / Math.max(size.x, size.y, size.z));
+    issObj = g;
+  });
   // Der Rover ist nur ~4 m lang — auf 10 m gestreckt, damit man ihn aus der Luft erkennt.
   preloadStationGLB(window.ROVER_GLB, (g)=>{
     const box = new THREE.Box3().setFromObject(g);
@@ -2567,8 +2577,11 @@ function clearGroundTiles(){
 let moonBaseObj = null, issObj = null, roverObj = null;
 const issCenter = new THREE.Vector3();     // aktueller Platz der ISS
 // Die ISS ist 120 m groß (unnormiert übernommen). So nah heran heißt: Landung im Hangar, dieselbe
-// Logik wie beim Todesstern. Etwas mehr als ihre Länge, sonst trifft man sie im Flug kaum.
-const ISS_DOCK = 170;
+// Logik wie beim Todesstern. Der Andockabstand muss zur Größe passen (etwas mehr als die halbe
+// Ausdehnung), sonst flöge man mitten durch das Modell hindurch, ohne anzudocken — beim Star
+// Destroyer sind es 700 bei 1200 m Länge, hier dieselbe Größenordnung.
+const ISS_LEN  = 1200;    // Zielgröße im Spiel (Original nur ~120 m, siehe preloadStationGLB)
+const ISS_DOCK = 700;
 const issDrift = new THREE.Vector3();      // ihr eigener, langsamer Kurs
 function preloadStationGLB(dataUrl, cb){
   if(!dataUrl || !THREE.GLTFLoader) return;
@@ -2886,9 +2899,10 @@ function enterSpace(){
   // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
-  // Gleich beim Austritt in Sichtweite und näher als vorher (1,6 km -> 900 m): bei 120 m Größe ist
-  // sie erst so nah wirklich als Station zu erkennen.
-  issCenter.copy(state.pos).add(new THREE.Vector3(400, 260, -900));
+  // Gleich beim Austritt in Sichtweite. Bei 1200 m Größe braucht es etwas Abstand, sonst steht sie
+  // einem im Bild: 2,4 km sind nah genug, um sie sofort zu sehen, und weit genug, um sie ganz zu
+  // erfassen.
+  issCenter.copy(state.pos).add(new THREE.Vector3(900, 600, -2200));
   issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   earthWorldVisible(false);
   showSpaceHint('🚀');
@@ -3513,26 +3527,9 @@ function placeShip(s){
   s.dock = Math.random() < 0.2;         // Anflug auf einen Star Destroyer statt freier Bahn
   s.obj.visible = true;
 }
-// Leuchtsäule über der ISS. Mondbasis und Rover haben so eine schon, und aus demselben Grund: die
-// Station ist mit 120 m winzig gegen die Himmelskörper (Todesstern 20 km Radius, Star Destroyer
-// 1200 m) und im Sternenfeld sonst nicht auszumachen. Die Säule ist von weitem sichtbar, aber
-// schmal genug, um nichts zu verdecken.
-let issBeam = null;
-function updateIssBeam(){
-  if(!issObj) return;
-  if(!issBeam){
-    // Zylinder mit offenen Enden, additiv gemischt -> leuchtet, ohne die Station zu verdecken.
-    const geo = new THREE.CylinderGeometry(18, 18, 6000, 10, 1, true);
-    const mat = new THREE.MeshBasicMaterial({ color:0x66ddff, transparent:true, opacity:0.30,
-                                              side:THREE.DoubleSide, depthWrite:false,
-                                              blending:THREE.AdditiveBlending });
-    issBeam = new THREE.Mesh(geo, mat);
-    issBeam.renderOrder = 995;
-    scene.add(issBeam);
-  }
-  issBeam.visible = !!(issObj.visible && locale === 'space');
-  if(issBeam.visible) issBeam.position.copy(issCenter);
-}
+// (Hier stand eine Leuchtsäule über der ISS. Sie war nur nötig, weil die Station mit 120 m zu klein
+// zum Finden war — jetzt ist sie 1200 m groß und von selbst gut zu sehen. Der blaue Balken im
+// Sternenhimmel sah außerdem nicht gut aus.)
 
 function updateShips(dt){
   if(locale !== 'space'){ for(const s of ships) s.obj.visible = false; return; }
@@ -3545,12 +3542,11 @@ function updateShips(dt){
   if(issObj && issObj.visible && issCenter.distanceTo(state.pos) < ISS_DOCK){
     if(enterHangar({ pos: issCenter.clone(), up: 400 })) return;
   }
-  // Die ISS ist nur 120 m groß (gemessen) — schon auf 5 km ist sie 15 px hoch, auf 12 km ein Punkt
-  // von 6 px. Sie durfte also so weit wegtreiben, dass man sie praktisch nicht mehr fand. Jetzt
-  // wird sie schon ab 4 km wieder in Sichtweite gesetzt, und zwar näher (1,2–3 km statt 2,5–5,5 km).
-  if(issCenter.distanceTo(state.pos) > 4000){
+  // Mit 1200 m Größe ist sie auch auf 8 km noch gut zu sehen (rund 90 px hoch), darf also weiter
+  // wegtreiben als in der 120-m-Fassung. Vorher waren 12 km erlaubt — da war sie ein 6-px-Punkt.
+  if(issCenter.distanceTo(state.pos) > 8000){
     const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.4+0.1, Math.random()-0.5).normalize();
-    issCenter.copy(state.pos).addScaledVector(dir, 1200 + Math.random()*1800);
+    issCenter.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*3000);
     issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   }
   for(const s of ships){
@@ -4417,25 +4413,44 @@ function stepBoat(dt, inp){
   const water = (x,z)=> !isOnLand(x,z) && !isOnBeach(x,z) && !isOnCarrier(x,z)
                         && !hitsBuilding(x, ISLAND_Y+2, z, false);
   if(water(nx, nz)){ state.pos.x = nx; state.pos.z = nz; }
-  else if(water(nx, state.pos.z)){ state.pos.x = nx; state.vel.z = 0; }
-  else if(water(state.pos.x, nz)){ state.pos.z = nz; state.vel.x = 0; }
   else {
-    // Beide Einzelachsen blockiert. Das passiert, wenn die Nase fast senkrecht auf die Küste zeigt:
-    // die kleine Seitwärtskomponente reicht dann nicht aus der Sperrzone heraus. Vorher blieb das
-    // Boot hier einfach stehen — gemessen 48 s bewegungslos —, und weil es stand, wirkte auch das
-    // Ruder kaum noch (authority hängt an der Fahrt). Es war also nicht mehr freizufahren.
-    // Deshalb hier ENTLANG der Küste ausweichen: quer zur Fahrtrichtung nach der freien Seite
-    // suchen, mit der Fahrt, die es hat. So gleitet es an der Küste ab, statt zu kleben.
-    const sp = Math.hypot(state.vel.x, state.vel.z) * dt;        // Schrittweite dieses Frames
-    const pl = sp > 1e-9 ? Math.hypot(state.vel.x, state.vel.z) : 1;
-    const qx = -state.vel.z/pl, qz = state.vel.x/pl;             // Einheitsvektor quer zur Fahrt
+    // Blockiert. Statt anzuhalten wird ENTLANG der Küste ausgewichen: von der Fahrtrichtung aus
+    // schrittweise zur Seite drehen (abwechselnd links/rechts), bis ein Schritt im Wasser landet,
+    // und die Fahrt dorthin umlenken. So gleitet das Boot an jedem Ufer ab, in jedem Anfahrtwinkel.
+    //
+    // Drei Fallen, die hier vorher zugeschlagen haben — alle ausgemessen:
+    //  1. Erst X und Z EINZELN zu probieren half nicht: bei senkrechter Anfahrt ist die eine
+    //     Komponente ohnehin null, und die Zweige setzten dabei die Fahrt auf null.
+    //  2. Nur ±90° zu prüfen genügt nicht — bei senkrechter Anfahrt auf eine runde Küste liegt auch
+    //     der Querschritt noch in der Sperrzone.
+    //  3. Die Schrittweite darf NICHT allein an der Fahrt hängen. War die Fahrt erst genullt, war
+    //     der Schritt (spd*dt) null, das Ausweichen konnte nichts verschieben, die Fahrt baute sich
+    //     auf und wurde erneut genullt: eine Endlosschleife. Gemessen 561 Frames bewegungslos,
+    //     obwohl 13 von 24 Richtungen frei waren. Daher eine Mindestschrittweite und die
+    //     Nasenrichtung als Rückfall, wenn das Boot steht.
+    const spd0 = Math.hypot(state.vel.x, state.vel.z);
+    const sp = Math.max(spd0 * dt, 0.05);                  // mind. 5 cm pro Frame -> klemmt nie
+    let ux, uz;
+    if(spd0 > 1e-6){ ux = state.vel.x/spd0; uz = state.vel.z/spd0; }        // Fahrtrichtung
+    else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                        // steht: Nasenrichtung
+           ux = fwd.x/fl; uz = fwd.z/fl; }
     let freed = false;
-    for(const sgn of [1, -1]){
-      const tx = state.pos.x + qx*sp*sgn, tz = state.pos.z + qz*sp*sgn;
-      if(water(tx, tz)){ state.pos.x = tx; state.pos.z = tz; freed = true; break; }
+    for(const deg of [20, 40, 60, 80, 100, 120]){
+      const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
+      for(const sgn of [1, -1]){
+        const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
+        if(!water(state.pos.x + dx*sp, state.pos.z + dz*sp)) continue;
+        state.pos.x += dx*sp; state.pos.z += dz*sp;
+        // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
+        // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
+        const keep = Math.max(spd0*0.85, 2);
+        state.vel.x = dx*keep; state.vel.z = dz*keep;
+        freed = true; break;
+      }
+      if(freed) break;
     }
-    // Kommt es auch quer nicht weiter (echte Sackgasse, etwa eine enge Bucht), Fahrt abbauen —
-    // aber die Ruderwirkung nicht ganz verlieren, damit man herausdrehen kann.
+    // Selbst 120° Abweichung blockiert (echte Sackgasse, etwa eine enge Bucht): Fahrt abbauen, aber
+    // nicht ganz — die Schraube gibt weiter Ruderdruck (siehe authority), man dreht also heraus.
     if(!freed){ state.vel.x *= 0.3; state.vel.z *= 0.3; }
   }
 
@@ -5595,6 +5610,40 @@ function aiObstacleTopAt(x, z, margin){
 }
 // Nur in Reise-/Anflug-Reisezuständen aktiv (nicht beim Landen/Rollen/Tieflug-Missionen).
 const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1 };
+
+// ---- Triebwerksausfall ueber dem Meer ----
+// Grund: Abstuerze passierten nur an Hindernissen, und die stehen alle an Land — fuer das
+// Feuerwehrboot war also nie eines erreichbar. Ein Jet kann deshalb auch ueber offenem Wasser
+// ausfallen; das brennende Wrack treibt dann dort, wo das Boot hinkommt.
+// Nur Jets (AlphaJet/Mustang), weil nur die einen Schleudersitz haben — bei den Verkehrsfliegern
+// waere ein Absturz ohne Rettung des Piloten unschoen. Und nur, wenn WIRKLICH das Boot gefahren
+// wird: sonst haette man beim normalen Fliegen ploetzlich abstuerzende Maschinen ohne Anlass.
+const AI_SEA_FAIL_EVERY = 14;    // Sekunden: so oft wird gewuerfelt
+const AI_SEA_FAIL_CHANCE = 0.55; // Wahrscheinlichkeit pro Wurf, wenn ein Jet passend fliegt
+const AI_SEA_FAIL_NEAR = 1400;   // nur Jets in diesem Umkreis (m) — man soll es sehen
+let aiSeaFailT = AI_SEA_FAIL_EVERY;
+function updateSeaFailures(dt){
+  if(!isBoat() || locale !== 'earth') { aiSeaFailT = AI_SEA_FAIL_EVERY; return; }
+  aiSeaFailT -= dt;
+  if(aiSeaFailT > 0) return;
+  aiSeaFailT = AI_SEA_FAIL_EVERY;
+  // Läuft schon ein brennendes Wrack herum? Dann nicht noch eines — sonst wird es zu viel.
+  for(const e of fleet) if(e.state === 'crash') return;
+  if(Math.random() > AI_SEA_FAIL_CHANCE) return;
+  // Kandidaten: Jet, normal unterwegs, in Sichtweite, und ÜBER WASSER (dort soll er niedergehen).
+  const cands = [];
+  for(const e of fleet){
+    if(e.state === 'crash') continue;
+    if(e.model !== 'AlphaJet' && e.model !== 'Mustang') continue;
+    if(!AI_AVOID_STATES[e.state] || e.onFinal || e.rolling) continue;
+    const px = e.group.position.x, pz = e.group.position.z;
+    if(isOnLand(px, pz) || isOnBeach(px, pz) || isOnCarrier(px, pz)) continue;
+    if(Math.hypot(px - state.pos.x, pz - state.pos.z) > AI_SEA_FAIL_NEAR) continue;
+    cands.push(e);
+  }
+  if(!cands.length) return;
+  aiCrash(cands[Math.floor(Math.random()*cands.length)], 0);
+}
 function aiAvoidObstacles(e, dt){
   if(e.state==='crash'){ aiStepCrash(e, dt); return; }
   if(!AI_AVOID_STATES[e.state] || e.onFinal || e.rolling) return;
@@ -5643,9 +5692,16 @@ function aiStepCrash(e, dt){
     e.group.position.x += -Math.sin(e.heading)*e.spd*0.35*dt;
     e.group.position.z += -Math.cos(e.heading)*e.spd*0.35*dt;
     e.holder.rotation.z += e.spinV*dt; e.holder.rotation.x += e.spinV*0.6*dt;
-    const gy=isOnCarrier(e.group.position.x,e.group.position.z)?fordDeckY:(isOnLand(e.group.position.x,e.group.position.z)?ISLAND_Y:0);
+    // Aufschlaghöhe: Trägerdeck, Insel — oder das Meer. Über Wasser zählt die Wellenhöhe, sonst
+    // hinge das Wrack bei einem Wellental in der Luft und stäke auf einem Wellenberg darin
+    // (die Dünung schwankt um ±1,7 m).
+    const onDeck = isOnCarrier(e.group.position.x, e.group.position.z);
+    const onIsl  = isOnLand(e.group.position.x, e.group.position.z);
+    const gy = onDeck ? fordDeckY : (onIsl ? ISLAND_Y
+             : seaSurfaceY(e.group.position.x - state.pos.x, e.group.position.z - state.pos.z));
     if(e.group.position.y <= gy+1.5){                          // aufgeschlagen -> Wrack + Feuer + Feuerwehr
       e.group.position.y=gy+1.5; e.wrecked=true; e.crashT=0;
+      e.wreckSea = !onDeck && !onIsl;                          // treibt es im Wasser?
       const fg=new THREE.Group();
       for(let i=0;i<6;i++){ const fl=new THREE.Mesh(new THREE.ConeGeometry(1.6,5,6), flameMat); fl.position.set((Math.random()-0.5)*8, gy+2.5, (Math.random()-0.5)*8); fg.add(fl); }
       fg.position.set(e.group.position.x,0,e.group.position.z); scene.add(fg); e.crashFire=fg;
@@ -5653,15 +5709,23 @@ function aiStepCrash(e, dt){
     }
     return;
   }
-  // Wrack liegt: Feuerwehr fährt heran und löscht (eigene KI-Einheiten, spielerunabhängig)
-  if(e.rescue) aiStepRescue(e, dt);
-  if(e.crashT > 8){                                            // nach 8 s: aufräumen + Flieger respawnen
+  // Wrack liegt: Feuerwehr fährt heran und löscht (eigene KI-Einheiten, spielerunabhängig).
+  // AUSNAHME: treibt das Wrack im Meer und man fährt selbst das Feuerwehrboot, bleibt die KI-Rettung
+  // weg — sonst wäre der Brand gelöscht, bevor man hingefahren ist, und man käme nie zum Einsatz.
+  const mineToPut = e.wreckSea && isBoat();
+  if(e.rescue && !mineToPut) aiStepRescue(e, dt);
+  // Wie lange bleibt das Wrack liegen? Normal 8 s. Für das Boot viel zu kurz: bei 86 km/h sind das
+  // gerade 190 m Anfahrt. Ein Seewrack wartet daher deutlich länger auf den Spieler — und ist das
+  // Feuer aus (selbst gelöscht), verschwindet es nach kurzer Nachbrennzeit von allein.
+  const linger = mineToPut ? (e.crashFire ? 75 : 3) : 8;
+  if(e.crashT > linger){                                       // aufräumen + Flieger respawnen
     if(e.crashFire){ scene.remove(e.crashFire); e.crashFire=null; }
     if(e.chute){ scene.remove(e.chute.group); e.chute=null; }
     if(e.rescue){ for(const r of e.rescue){ scene.remove(r.group); scene.remove(r.jet); } e.rescue=null; }
     const p=spawnAroundPlayer(0.9,1.3);
     e.group.position.set(p.x, Math.max(70, state.pos.y+e.altOff), p.z);
     e.heading=Math.random()*Math.PI*2; e.holder.rotation.set(0,0,0); e.wrecked=false;
+    e.wreckSea=false;                                          // gilt nur für DIESEN Absturz
     assignMission(e);
   }
 }
@@ -5789,6 +5853,7 @@ function clearFlyby(){
 function updateTrafficAll(dt){
   worldClock+=dt;
   updateTraffic(dt); updateFlyby(dt);
+  updateSeaFailures(dt);   // Triebwerksausfall über dem Meer (nur wenn das Boot gefahren wird)
 }
 
 
@@ -5846,7 +5911,7 @@ function loop(now){
   updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
   updateDestroyers(dt);      // Star Destroyer im Raum (anfliegbar wie der Todesstern)
   updateShips(dt);           // fremde Raumschiffe ziehen ihre Bahn durchs Weltall
-  updateIssBeam();           // Leuchtsäule über der ISS (sie ist sonst zu klein zum Finden)
+
   updatePads(dt);            // Start- und Landeverkehr an Mondbasis bzw. Mars-Rover
   updateSpaceHint(dt);       // Ort/Ziel/Treffer kurz über dem Flieger (wie Tropfen und Kisten)
   updateFade(dt);            // kurzes Aufblenden nach einem Ortswechsel

@@ -85,8 +85,9 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
   mit der Dünung; gelenkt wird mit dem linken Stick, der Schub arbeitet wie bei den Fliegern als
   Zielgeschwindigkeit (rund 86 km/h bei Vollgas), und **A/C** fährt rückwärts. Weil eine laufende
   Schraube auch im Stand Wasser aufs Ruder drückt, dreht es sich selbst dann, wenn es steht.
-  **Land und Strand sind eine Wand**: es rammt nicht und sinkt nicht, es kommt einfach nicht weiter
-  — schräg an einer Küste gleitet es daran entlang, statt festzukleben.
+  **Land und Strand sind eine Wand**: es rammt nicht und sinkt nicht, es kommt einfach nicht weiter.
+  An einer Küste **gleitet es entlang** — auch dann, wenn man genau senkrecht darauf zufährt: es
+  sucht sich selbst die freie Richtung und dreht die Fahrt dorthin, statt anzuhalten.
   **B = Wasserstrahl** nach vorn (2,5 s), der alles Brennende um den Zielpunkt des Strahls löscht:
   einen **Waldbrand am Ufer** genauso wie die **brennenden Wracks** abgestürzter KI-Flieger und die
   Brände der KI-Canadairs. Zusammen reicht das rund **160 m** weit — nach **hinten** löscht es nicht.
@@ -105,6 +106,16 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
 
   Er darf **überall landen**. Solange der Antrieb läuft, trägt ihn sein Repulsorlift: er sackt nie
   durch und hat keinen Strömungsabriss.
+
+**Abstürze über dem Meer**: Fährt man das Feuerwehrboot, fällt gelegentlich einem KI-**Jet** über
+offenem Wasser das Triebwerk aus. Der Pilot kommt am Fallschirm herunter, das **Wrack brennt auf dem
+Wasser** — und bleibt dort liegen, bis man es selbst gelöscht hat (die KI-Feuerwehr hält sich dann
+zurück, sonst wäre der Brand aus, bevor man da ist). Das Radar zeigt, wo. Ohne Boot passiert das
+nicht: dann stürzt nur ab, wer wie bisher gegen einen Berg oder ein Haus fliegt.
+
+Das war nötig, weil Abstürze sonst **ausschließlich an Land** passieren — die Auslöser sind Berge und
+Häuser — und ein Wrack dort bis zu 199 m vom Ufer liegt, also außerhalb der Reichweite eines Boots.
+Es gab für das Feuerwehrboot also nie eine Absturzstelle zu löschen, nur Waldbrände.
 
 **Brände** brechen aus, solange man ein **Löschfahrzeug** steuert — die **Canadair** oder das
 **Feuerwehrboot**. Für das Boot brennt es dabei **nahe am Ufer** (auf 80–93 % des Inselradius),
@@ -173,10 +184,11 @@ Schiffe einfliegen**. Nach dem Hinausfliegen bleibt das Andocken ein paar Sekund
 würde der Gastgeber einen sofort wieder einsaugen — er zieht ja mit. Die **Sonne** kann man nur
 **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihr hin, seitlich fliegt man weiter.
 
-Die **ISS** ist mit 120 m das kleinste anfliegbare Ziel — gegen einen Todesstern von 20 km Radius
-verschwindet sie im Sternenfeld. Damit man sie findet, steht wie über Mondbasis und Rover eine
-**Leuchtsäule** über ihr, sie hat im Radar ihren **eigenen Blip**, und sie hält sich in der Nähe
-(sie wird schon ab 4 km Entfernung wieder in Sichtweite gesetzt).
+Die **ISS** ist im Spiel **1200 m groß** — genauso groß wie ein Star Destroyer. Im Originalmodell hat
+sie nur 120 m, und damit war sie gegen einen Todesstern von 20 km Radius im Sternenfeld praktisch
+nicht zu finden. Maßstabsgetreu ist das nicht, der Todesstern hier aber auch nicht. Dafür sieht man
+sie jetzt von weitem: auf 8 km Entfernung füllt sie noch gut ein Achtel der Bildhöhe. Im Radar hat
+sie zusätzlich ihren **eigenen Blip**.
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (9×),
 **Razor Crest** (6×), **Serenity** (2×), **USS Voyager** (2×) und **USS Enterprise-D** (2×) fliegen
