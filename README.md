@@ -111,8 +111,10 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
   Er darf **überall landen**. Solange der Antrieb läuft, trägt ihn sein Repulsorlift: er sackt nie
   durch und hat keinen Strömungsabriss.
 
-**Abstürze über dem Meer**: Fährt man das Feuerwehrboot, fällt gelegentlich einem KI-**Jet** über
-offenem Wasser das Triebwerk aus. Der Pilot kommt am Fallschirm herunter, das **Wrack brennt auf dem
+**Abstürze über dem Meer**: Fährt man das Feuerwehrboot, fällt regelmäßig einem KI-**Jet** über
+offenem Wasser das Triebwerk aus — etwa alle 20 Sekunden einer, und zwar **rund zehn Sekunden
+Fahrzeit voraus**, damit man ihn herunterkommen sieht. Liegt dort eine Insel, weicht der Ort seitlich
+aus, bleibt aber im Blickfeld. Der Pilot kommt am Fallschirm herunter, das **Wrack brennt auf dem
 Wasser** — und bleibt dort liegen, bis man es selbst gelöscht hat (die KI-Feuerwehr hält sich dann
 zurück, sonst wäre der Brand aus, bevor man da ist). Das Radar zeigt, wo. Ohne Boot passiert das
 nicht: dann stürzt nur ab, wer wie bisher gegen einen Berg oder ein Haus fliegt.
@@ -156,7 +158,16 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
 - Das **Flugzeug bleibt stehen**, wo man gelandet ist, mit abgeschaltetem Motor. Kommt man ihm
   wieder näher als 22 m, wird **B zum Einsteigen** — das HUD zeigt mit ✈️ bzw. ⤒ an, was B gerade tut.
   Weiter als 4 km kommt man nicht weg, sonst verlässt man die geladene Welt.
-- Die Kamera folgt von **hinten**, leicht von oben.
+- Die Kamera folgt von **hinten**, leicht von oben. **LB/RB** gehalten zeigt von der Seite — dieselben
+  Tasten wie im Flugzeug.
+- Das **Radar** zeigt draußen genau eine Sache: **wo dein Flugzeug steht**. Der Maßstab ist dabei ein
+  anderer als im Flug (500 m statt 2500 m füllen die Scheibe), denn zu Fuß sind ein paar Hundert Meter
+  weit. Brände zeigt es nicht — löschen kann man zu Fuß ohnehin nicht.
+- Auf dem **Mars** steht der **Perseverance-Rover** beim Aussteigen gleich neben dir und bleibt dabei,
+  während du läufst. Seine Leuchtsäule ist dann aus: es gibt nichts zu suchen.
+- Der **Astronaut hat die Arme angelegt**. Das Originalmodell schwebt mit ausgestreckten Armen; die
+  Pose wurde umgerechnet, damit er wie ein Fußgänger aussieht (Spannweite von 262 auf 76 Einheiten,
+  bei unveränderter Höhe und Tiefe).
 
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
@@ -213,15 +224,31 @@ Schiffe einfliegen**. Nach dem Hinausfliegen bleibt das Andocken ein paar Sekund
 würde der Gastgeber einen sofort wieder einsaugen — er zieht ja mit. Die **Sonne** kann man nur
 **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihr hin, seitlich fliegt man weiter.
 
-Die **ISS** ist im Spiel **1200 m groß** — genauso groß wie ein Star Destroyer. Im Originalmodell hat
-sie nur 120 m, und damit war sie gegen einen Todesstern von 20 km Radius im Sternenfeld praktisch
-nicht zu finden. Maßstabsgetreu ist das nicht, der Todesstern hier aber auch nicht. Dafür sieht man
-sie jetzt von weitem: auf 8 km Entfernung füllt sie noch gut ein Achtel der Bildhöhe. Im Radar hat
-sie zusätzlich ihren **eigenen Blip**.
+Die **ISS** ist im Spiel **2400 m groß** — doppelt so groß wie ein Star Destroyer — und **leuchtet
+leicht von selbst**. Im Originalmodell hat sie nur 109 m, und damit war sie im Sternenfeld praktisch
+nicht zu finden: sie besteht aus dunklem Metall, und im Weltall ist das Streulicht bewusst
+heruntergefahren. Jetzt sieht man sie von weitem, und im Radar hat sie zusätzlich ihren **eigenen
+Blip**.
+
+### Wie genau sind die Größen?
+Die **Schiffslängen folgen den offiziellen Angaben**, damit die Verhältnisse untereinander stimmen:
+Space Shuttle 37 m · Razor Crest 24,3 m · Millennium Falcon 40 m · Serenity 82,1 m · USS Voyager
+344,5 m · USS Enterprise-D 642,5 m · Star Destroyer 1200 m · X-Wing 12,5 m.
+
+Zwei Dinge sind **bewusst unmaßstäblich**, weil es sonst nicht spielbar wäre:
+
+- Die **ISS** ist real 109 m lang. Maßstabsgetreu wäre sie ein Punkt von wenigen Pixeln — man würde
+  sie nie finden.
+- Der **Todesstern** hat im Kanon 160 km Durchmesser, im Spiel sind es 40 km. Bei 160 km wäre er
+  größer als der halbe Anflugweg (die Himmelskörper stehen 150 bis 900 km auseinander) und würde beim
+  Anflug den ganzen Himmel füllen.
+
+Auch die **Entfernungen** sind zusammengeschoben: der Mond steht 150 km weit weg statt 384.400 km.
+Sonst wäre man mit Mach 2 wochenlang unterwegs.
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (9×),
-**Razor Crest** (6×), **Serenity** (2×), **USS Voyager** (2×) und **USS Enterprise-D** (2×) fliegen
-ihre eigenen Kurse durchs All — jedes fünfte Schiff steuert einen Star Destroyer an, von denen fünf
+**Razor Crest** (6×), **Millennium Falcon** (4×), **Serenity** (2×), **USS Voyager** (2×) und
+**USS Enterprise-D** (2×) fliegen ihre eigenen Kurse durchs All — jedes fünfte Schiff steuert einen Star Destroyer an, von denen fünf
 im Raum verteilt stehen. Ihr Tempo liegt nahe an
 deinem — manche überholen dich langsam, andere werden überholt, mancher zieht einfach quer durchs
 Bild. **Rammen kann man sie nicht**, und Waffen haben sie keine; **nur X-Wings schießen** auf
@@ -310,6 +337,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | USS Voyager (Star Trek) | **CGI Tutorials** |
 | USS Enterprise-D (Star Trek) | **LoganRolphh** |
 | Astronaut im Raumanzug | **LasquetiSpice** |
+| Millennium Falcon (Star Wars) | **jay2307** |
 | Parachute Simple | **TopNotch Assets** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
@@ -330,6 +358,9 @@ Weitere verwendete Technik:
   (Texturkoordinaten, Tangenten, Normalen) — und die hängen an der Dreieckszahl. Also 58.312 → 14.288
   Dreiecke (die Silhouette stimmt gemessen noch zu **99 %**), Texturen auf ein Viertel der
   Kantenlänge, und die **Animation** samt Skinning-Daten heraus, weil die Figur nicht animiert wird.
+- Der **Millennium Falcon** ging von **3,78 MB auf 0,58 MB** (15 %) — hier lag es umgekehrt zum
+  Astronauten: nur 3.703 Dreiecke, aber **94 % der Datei waren Texturen**. Also nur die Texturen
+  halbiert (1024 → 512) und die zweiten UV-Sätze entfernt, die three.js ohnehin nicht nutzt.
 - Alle **181 Texturen** wurden zusätzlich auf die **halbe Kantenlänge** gebracht (meist 1024 → 512).
   Entscheidend ist dabei nicht die Dateigröße, sondern der Grafikspeicher: dort liegen Texturen
   unkomprimiert, und aus **735 MB wurden 184 MB** (145 → 36 Megapixel). Auf einem Tablet passte das

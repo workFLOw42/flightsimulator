@@ -103,7 +103,8 @@
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
     <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
     <div class="hrow"><span>🚤 Einsatz</span><b>mit dem Boot fallen manchmal Jets übers Meer aus — das Wrack brennt auf dem Wasser und wartet auf dich. Das Radar zeigt, wo</b></div>
-    <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · zurück am Flieger <b>B</b> = einsteigen</b></div>
+    <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
+    <div class="hrow"><span>🔴 auf dem Mars</span><b>der Rover steht beim Aussteigen gleich neben dir und bleibt dabei</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -117,6 +118,7 @@
 <script src="transall_glb.js"></script>
 <script src="parachute_glb.js"></script>
 <script src="chute2_glb.js"></script>
+<script src="falcon_glb.js"></script>
 <script src="astronaut_glb.js"></script>
 <script src="boat_glb.js"></script>
 <script src="firetruck_glb.js"></script>
@@ -1962,6 +1964,19 @@ function evaSolid(x, z){
   if(GROUNDS[locale] || locale === 'death') return true;
   return isOnLand(x, z) || isOnCarrier(x, z);
 }
+// Der Mars-Rover begleitet den Astronauten: steigt man auf dem Mars aus, wird er direkt rechts
+// daneben gesetzt, statt irgendwo in der Landschaft zu stehen. Zusammen wirkt es wie ein
+// Erkundungsteam — und man muss ihn nicht suchen.
+const ROVER_SIDE = 9;              // Abstand rechts neben dem Astronauten (m)
+function roverBesideEva(){
+  if(!eva || locale !== 'mars' || !roverObj) return;
+  const g = eva.group;
+  const right = new THREE.Vector3(Math.cos(eva.yaw), 0, -Math.sin(eva.yaw));
+  const rx = g.position.x + right.x*ROVER_SIDE, rz = g.position.z + right.z*ROVER_SIDE;
+  roverObj.position.set(rx, surfaceY(rx, rz), rz);
+  roverObj.rotation.y = eva.yaw;      // schaut in dieselbe Richtung
+  roverObj.visible = true;
+}
 function evaExit(){
   if(!evaAllowed()) return;
   const g = makeAstronaut();
@@ -1976,13 +1991,14 @@ function evaExit(){
   eva = { group:g, vy:0, onGround:true, yaw:eul.y,
           planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
   state.throttle = 0;                 // Motor aus, während man draußen ist
-  showBig('🧑‍🚀');
+  showBig('🧑‍🚀'); bigTimer = 1.2;     // kurze Bestätigung, dann wieder freie Sicht
+  roverBesideEva();                   // auf dem Mars steht der Rover gleich daneben
 }
 function evaBoard(){
   if(!eva) return;
   scene.remove(eva.group);
   eva = null;
-  showBig('✈️');
+  showBig('✈️'); bigTimer = 1.2;
 }
 // Steht der Astronaut nahe genug am Flieger, um einzusteigen?
 function evaCanBoard(){
@@ -2001,6 +2017,7 @@ function evaButtonB(){
 function updateEva(dt, inp){
   if(!eva) return;
   const g = eva.group;
+  roverBesideEva();        // Rover bleibt neben dem Astronauten (placeGroundBase würde ihn versetzen)
   // Drehen und laufen: ←→ dreht, ↕ läuft vor/zurück (wie ein Fahrzeug — für Kinder einfacher als
   // eine kameragebundene Steuerung, weil "vorwärts" immer die Blickrichtung ist).
   eva.yaw -= (inp.yaw || 0) * EVA_TURN * dt;
@@ -2531,6 +2548,7 @@ function preloadSpace(){
     const box = new THREE.Box3().setFromObject(g);
     const size = new THREE.Vector3(); box.getSize(size);
     g.scale.setScalar(ISS_LEN / Math.max(size.x, size.y, size.z));
+    brightenISS(g);
     issObj = g;
   });
   // Der Rover ist nur ~4 m lang — auf 10 m gestreckt, damit man ihn aus der Luft erkennt.
@@ -2779,11 +2797,40 @@ function clearGroundTiles(){
 let moonBaseObj = null, issObj = null, roverObj = null;
 const issCenter = new THREE.Vector3();     // aktueller Platz der ISS
 // Die ISS ist 120 m groß (unnormiert übernommen). So nah heran heißt: Landung im Hangar, dieselbe
+// Die ISS aufhellen. Im Weltall ist das Streulicht bewusst schwach (hemiLight fällt auf 0,15), und
+// das Modell besteht aus dunklem Metall und Solarpaneelen — im Sternenfeld sieht man davon fast
+// nichts. Ein Eigenleuchten (emissive) macht sie unabhängig von der Beleuchtung sichtbar, ohne dass
+// sie wie eine Lampe wirkt: die Farbe des Materials wird nur zu einem Teil als Eigenleuchten
+// übernommen. Das ist dasselbe Mittel, das die Blaulichter der Feuerwehr benutzen.
+function brightenISS(root){
+  root.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    o.material = mats.map(m=>{
+      const c = m.clone();                       // eigene Instanz, sonst färbt es andere Modelle mit
+      if(c.emissive){
+        // Grundton aus der eigenen Farbe bzw. Textur, gedämpft — dunkle Teile bleiben dunkler als
+        // helle, die Station behält also ihre Struktur.
+        c.emissive = new THREE.Color(0xffffff);
+        c.emissiveIntensity = 0.55;
+        if(c.map) c.emissiveMap = c.map;         // Eigenleuchten folgt der Textur
+      }
+      if(c.color) c.color.multiplyScalar(1.25);  // Grundfarbe etwas anheben
+      return c;
+    });
+    if(o.material.length === 1) o.material = o.material[0];
+  });
+}
+
 // Logik wie beim Todesstern. Der Andockabstand muss zur Größe passen (etwas mehr als die halbe
 // Ausdehnung), sonst flöge man mitten durch das Modell hindurch, ohne anzudocken — beim Star
 // Destroyer sind es 700 bei 1200 m Länge, hier dieselbe Größenordnung.
-const ISS_LEN  = 1200;    // Zielgröße im Spiel (Original nur ~120 m, siehe preloadStationGLB)
-const ISS_DOCK = 700;
+// Zielgröße im Spiel. Das Original hat nur ~120 m (ausgemessen), war damit im Sternenfeld praktisch
+// unsichtbar. 1200 m — Star-Destroyer-Größe — half, reichte aber noch nicht: das Modell ist
+// überwiegend dunkles Metall, und im Weltall ist das Streulicht bewusst heruntergefahren.
+// Jetzt das Doppelte eines Star Destroyers, dazu ein Eigenleuchten (siehe brightenISS).
+const ISS_LEN  = 2400;
+const ISS_DOCK = 1300;    // etwas mehr als die halbe Ausdehnung, sonst fliegt man durch das Modell
 const issDrift = new THREE.Vector3();      // ihr eigener, langsamer Kurs
 function preloadStationGLB(dataUrl, cb){
   if(!dataUrl || !THREE.GLTFLoader) return;
@@ -3007,6 +3054,9 @@ function placeGroundBase(){
   if(beaconObj && !GROUNDS[locale]) beaconObj.visible = false;
   if(locale === 'moon'){
     const T = GROUNDS.moon.tile;
+    // Bezugspunkt ist die FLIEGER-Position (state.pos), und die bleibt während der EVA stehen — die
+    // Mondbasis wandert also nicht weg, während man um sie herumläuft. Ihre Leuchtsäule bleibt
+    // sichtbar: anders als der Rover ist sie ein Gebäude, das man aus der Luft finden muss.
     const p = _basePosMoon && Math.hypot(_basePosMoon.x - state.pos.x, _basePosMoon.z - state.pos.z) < T*0.7
       ? _basePosMoon
       : baseSpotForTile(Math.round(state.pos.x/T), Math.round(state.pos.z/T));
@@ -3018,6 +3068,10 @@ function placeGroundBase(){
     showBeacon(p.x, y, p.z, 0x9fd8ff);
     _lastBase = p; _lastBaseY = y;
   } else if(locale === 'mars'){
+    // Während der EVA übernimmt roverBesideEva() den Rover: er begleitet den Astronauten. Hier
+    // aussteigen, sonst würde er jeden Frame an seinen alten Platz zurückgesetzt. Die Leuchtsäule
+    // entfällt dabei ebenfalls — der Rover steht ja direkt daneben, da gibt es nichts zu suchen.
+    if(eva){ if(beaconObj) beaconObj.visible = false; return; }
     // beim Sinkflug mit 10 % Schub steht der Landepunkt praktisch fest -> Rover daneben setzen
     const landing = (state.throttle <= VTOL_LAND && !state.onGround);
     if(!roverAnchor || (landing && Math.hypot(roverAnchor.x - state.pos.x, roverAnchor.z - state.pos.z) > 260)){
@@ -3101,10 +3155,10 @@ function enterSpace(){
   // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
-  // Gleich beim Austritt in Sichtweite. Bei 1200 m Größe braucht es etwas Abstand, sonst steht sie
-  // einem im Bild: 2,4 km sind nah genug, um sie sofort zu sehen, und weit genug, um sie ganz zu
+  // Gleich beim Austritt in Sichtweite. Bei 2400 m Größe braucht es Abstand, sonst füllt sie das
+  // ganze Bild: 4,5 km sind nah genug, um sie sofort zu sehen, und weit genug, um sie ganz zu
   // erfassen.
-  issCenter.copy(state.pos).add(new THREE.Vector3(900, 600, -2200));
+  issCenter.copy(state.pos).add(new THREE.Vector3(1700, 1100, -4000));
   issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   earthWorldVisible(false);
   showSpaceHint('🚀');
@@ -3538,22 +3592,39 @@ function ensurePads(){
     const box = new THREE.Box3().setFromObject(holder);
     inner.position.y -= box.min.y;                    // Unterseite auf y = 0 des Halters
     holder.visible = false; scene.add(holder);
-    pads.push({ obj:holder, phase:'down', t:0, x:0, z:0, hold:0, yaw:Math.random()*Math.PI*2 });
+    // Höhe merken: die Schiffe werden auf dieselbe LÄNGE normiert, sind dabei aber sehr
+    // unterschiedlich hoch (gemessen: Enterprise 7,42 m als flache Untertasse, Shuttle 12,12 m).
+    // Der Aufsetz-Aufschlag muss deshalb pro Schiff verschieden sein, sonst versinkt das flachste
+    // im Boden, sobald das Höhenprofil ein paar Meter danebenliegt.
+    const hBox = new THREE.Box3().setFromObject(holder);
+    const hSize = new THREE.Vector3(); hBox.getSize(hSize);
+    pads.push({ obj:holder, phase:'down', t:0, x:0, z:0, hold:0, yaw:Math.random()*Math.PI*2,
+                h:Math.max(1, hSize.y) });
   }
 }
-const PAD_LIFT = 3;                // Aufschlag: das Höhenraster kann eine Kuppe abschneiden, sonst
-                                   // steht das Schiff halb im Boden
+// Aufschlag über dem gemessenen Boden. Das Höhenraster kann eine Kuppe abschneiden, und das
+// Höhenprofil der Mondbasis ist eine Interpolation — beides liegt um Meter daneben. Ein FESTER
+// Aufschlag von 3 m genügte deshalb nicht: er ist für ein 12 m hohes Shuttle reichlich, aber die
+// nur 7,4 m flache Enterprise verschwand im Boden (beobachtet und nachgemessen). Jetzt ist der
+// Aufschlag ein Anteil der Schiffshöhe, mit 3 m als Untergrenze — so ragt jedes Schiff gleich
+// deutlich heraus, egal wie flach es gebaut ist.
+const PAD_LIFT = 3;                // Mindest-Aufschlag (m)
+const PAD_LIFT_FRAC = 0.45;        // zusätzlich dieser Anteil der eigenen Schiffshöhe
 // Aufsetzhöhe eines Landeplatzes: auf dem Mond aus dem vermessenen Profil der Basisfläche, gerechnet
 // von der Höhe, auf der die Basis tatsächlich steht. Bewusst OHNE Raycast — ein Raycast arbeitet mit
 // obj.matrixWorld, und die aktualisiert three.js erst beim Rendern, während placeGroundBase() die
 // Basis erst NACH updatePads() setzt. Landeplätze, die in so einem Frame entstanden, fielen deshalb
 // auf den Kraterboden zurück und standen unter der Fläche: unsichtbar.
-function padSurfaceY(x, z){
+// lift = zusätzlicher Aufschlag für DIESES Schiff (siehe PAD_LIFT_FRAC). Auch auf der Mondbasis
+// nötig: ihr Höhenprofil ist eine Interpolation und liegt um Meter daneben — genau daran ist die
+// flache Enterprise im Boden verschwunden.
+function padSurfaceY(x, z, lift){
+  const up = (lift === undefined) ? PAD_LIFT : lift;
   if(locale === 'moon' && _lastBase && moonBaseObj && moonBaseObj.visible){
     const plat = basePlatformY(Math.hypot(x - _lastBase.x, z - _lastBase.z));
-    if(plat !== null) return _lastBaseY + plat;
+    if(plat !== null) return _lastBaseY + plat + up;
   }
-  return groundHeightAt(locale, x, z) + PAD_LIFT;
+  return groundHeightAt(locale, x, z) + up;
 }
 function padSpot(p){
   const c = _lastBase;
@@ -3573,7 +3644,8 @@ function updatePads(dt){
     if(_lastBase && Math.hypot(p.x - _lastBase.x, p.z - _lastBase.z) > 600) padSpot(p);
     // Jeden Frame frisch: die Rechnung ist nur noch eine Interpolation im Profil, und ein gemerkter
     // Wert wäre falsch, sobald die Basis ihre Höhe ändert (Standortwechsel oder Anhebung).
-    const gy = padSurfaceY(p.x, p.z);
+    // Aufschlag aus der eigenen Höhe: ein flaches Schiff braucht mehr, um sichtbar zu bleiben.
+    const gy = padSurfaceY(p.x, p.z, PAD_LIFT + (p.h || 0) * PAD_LIFT_FRAC);
     p.obj.rotation.set(0, p.yaw, 0);                  // immer waagerecht, nur gedreht
     if(p.phase === 'down'){
       if(!p.obj.visible){
@@ -3676,12 +3748,24 @@ function nearestDestroyer(from){
 // (Vertex-Clustering, siehe WELTRAUM_PLAN.md): Serenity 288.678 -> 32.930, Voyager 147.206 -> 14.526,
 // Enterprise 49.588 -> 19.388, Razor Crest 38.112 -> 9.843 Dreiecke. Deshalb sind jetzt von allen
 // mehrere unterwegs, und die Szene ist trotzdem leichter als vorher.
+// Längen nach den offiziellen Angaben (Kanon bzw. real), damit die Größenverhältnisse untereinander
+// stimmen: Shuttle 37,2 m · Razor Crest 24,27 m · Serenity 82,1 m · Voyager 344,5 m ·
+// Enterprise-D 642,5 m. Auf dem Landeplatz werden sie allerdings alle auf dieselbe Länge normiert
+// (PAD_LEN), sonst wäre die Enterprise dort 26-mal so groß wie die Razor Crest.
 const SHIP_DEFS = [
   { key:'shuttle',    glb:()=>window.SHUTTLE_GLB,    len:37,  rot:[0, Math.PI, 0],    count:9 },
-  { key:'razor',      glb:()=>window.RAZOR_GLB,      len:30,  rot:[Math.PI/2, 0, 0],  count:6 },
-  { key:'serenity',   glb:()=>window.SERENITY_GLB,   len:60,  rot:[0, -Math.PI/2, 0], count:2 },
+  // Razor Crest: 24,27 m laut Wookieepedia (war 30). Serenity: 82,1 m laut den offiziellen
+  // Blueprints (war 60) — sie ist also größer als gedacht, nicht kleiner.
+  { key:'razor',      glb:()=>window.RAZOR_GLB,      len:24.27, rot:[Math.PI/2, 0, 0],  count:6 },
+  { key:'serenity',   glb:()=>window.SERENITY_GLB,   len:82.1,  rot:[0, -Math.PI/2, 0], count:2 },
   { key:'voyager',    glb:()=>window.VOYAGER_GLB,    len:340, rot:[0, Math.PI, 0],    count:2 },
   { key:'enterprise', glb:()=>window.ENTERPRISE_GLB, len:640, rot:[0, Math.PI, 0],    count:2 },
+  // Millennium Falcon (by jay2307). 40 m Länge wie gewünscht — im Kanon sind es 34,75 m, das Modell
+  // ist mit 4,38:1 (Länge:Höhe) etwas bauchiger als die genannten 40 × 8 m, bei 40 m Länge wird es
+  // also 9,1 m hoch. Die Länge zählt, weil sie das ist, was man im Vergleich zu anderen Schiffen sieht.
+  // Im Modell liegt die Längsachse auf X (ausgemessen: 359,8 × 82,1 × 270,1 roh) — also um 90°
+  // drehen, damit die Nase wie bei allen anderen auf -Z zeigt.
+  { key:'falcon',     glb:()=>window.FALCON_GLB,     len:40,  rot:[0, Math.PI/2, 0],  count:4 },
 ];
 const ships = [];
 function preloadShips(){
@@ -3744,11 +3828,11 @@ function updateShips(dt){
   if(issObj && issObj.visible && issCenter.distanceTo(state.pos) < ISS_DOCK){
     if(enterHangar({ pos: issCenter.clone(), up: 400 })) return;
   }
-  // Mit 1200 m Größe ist sie auch auf 8 km noch gut zu sehen (rund 90 px hoch), darf also weiter
-  // wegtreiben als in der 120-m-Fassung. Vorher waren 12 km erlaubt — da war sie ein 6-px-Punkt.
-  if(issCenter.distanceTo(state.pos) > 8000){
+  // Mit 2400 m Größe ist sie auch auf 15 km noch gut zu erkennen (rund 100 px hoch), darf also
+  // entsprechend weiter wegtreiben.
+  if(issCenter.distanceTo(state.pos) > 15000){
     const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.4+0.1, Math.random()-0.5).normalize();
-    issCenter.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*3000);
+    issCenter.copy(state.pos).addScaledVector(dir, 4500 + Math.random()*5000);
     issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   }
   for(const s of ships){
@@ -4739,7 +4823,7 @@ function stepBoat(dt, inp){
   state.stalling = false;
   planeGroup.position.copy(state.pos);
   planeGroup.quaternion.copy(state.quat);
-  if(bigTimer>0){ bigTimer-=dt; if(bigTimer<=0) showBig(''); }
+  // (bigTimer wird im Loop abgebaut — siehe dort, damit es auch während der EVA läuft.)
 }
 
 function stepPhysics(dt, inp){
@@ -5085,8 +5169,6 @@ function stepPhysics(dt, inp){
   // Transform
   planeGroup.position.copy(state.pos);
   planeGroup.quaternion.copy(state.quat);
-
-  if(bigTimer>0){ bigTimer-=dt; if(bigTimer<=0) showBig(''); }
 }
 
 // ---------- Kamera ----------
@@ -5099,11 +5181,22 @@ function updateCamera(){
   // Ansicht — von hinten reicht, und eine Figur von vorn zu filmen hilft beim Laufen nicht.
   if(eva){
     const g = eva.group;
+    const look = new THREE.Vector3(g.position.x, g.position.y + ASTRONAUT_H*0.6, g.position.z);
+    camera.up.set(0,1,0);
+    // LB/RB gehalten = von links/rechts schauen, genau wie im Flieger. Das fehlte hier: sideView
+    // wurde nur im Flieger-Zweig ausgewertet, der nach diesem return nie erreicht wird.
+    if(sideView !== 0){
+      const right = new THREE.Vector3(Math.cos(eva.yaw), 0, -Math.sin(eva.yaw));   // quer zum Blick
+      const desired = g.position.clone().addScaledVector(right, 6*sideView);
+      desired.y = g.position.y + 2.6;
+      camera.position.lerp(desired, Math.min(1, 10*dtCam));
+      camera.lookAt(look);
+      return;
+    }
     const back = new THREE.Vector3(Math.sin(eva.yaw), 0, Math.cos(eva.yaw));   // hinter ihm
     const desired = g.position.clone().addScaledVector(back, 7).setY(g.position.y + 3.4);
-    camera.up.set(0,1,0);
     camera.position.lerp(desired, Math.min(1, 6*dtCam));
-    camera.lookAt(g.position.x, g.position.y + ASTRONAUT_H*0.6, g.position.z);
+    camera.lookAt(look);
     return;
   }
   // Schleudersitz-Phasen: 1) Jet trudelt -> Fallschirm im Blick.
@@ -5279,6 +5372,10 @@ function spaceTargets(){
   return out;
 }
 function activeTarget(){
+  // Draußen unterwegs: das Radar zeigt genau eine Sache — wo das Flugzeug steht. Sonst findet man
+  // es nach ein paar Hundert Metern nicht mehr wieder. Brände bleiben weg: zu Fuß kann man ohnehin
+  // nichts löschen, und zwei Punkte wären nur verwirrend.
+  if(eva) return { x:eva.planeAt.x, z:eva.planeAt.z, col:'#ffffff' };
   if(locale === 'space'){          // im Weltall immer der nächste Himmelskörper
     let best = null, bd = Infinity;
     for(const b of bodies){
@@ -5320,8 +5417,14 @@ function updateRadar(){
   const blips = (locale === 'space') ? spaceTargets()
               : (()=>{ const a=activeTarget(); return a ? [a] : []; })();
   if(blips.length){
-    const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-    const head=Math.atan2(fwd.x, fwd.z);         // Kurs (Weltwinkel)
+    // Bezugspunkt und Blickrichtung: normalerweise der Flieger, während der EVA der Astronaut.
+    // Sonst zeigte die Scheibe die Richtung, in die das abgestellte Flugzeug schaut — und das
+    // Dreieck in der Mitte hätte nichts mit dem zu tun, was man gerade steuert.
+    const selfX = eva ? eva.group.position.x : state.pos.x;
+    const selfZ = eva ? eva.group.position.z : state.pos.z;
+    const head = eva ? eva.yaw + Math.PI
+               : (()=>{ const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+                        return Math.atan2(fwd.x, fwd.z); })();
     // Distanz auf den Radarradius abbilden. In der Inselwelt reicht ein linearer Maßstab (alles
     // liegt in derselben Größenordnung). Im Weltall NICHT: dort sind es 2 km bis zur ISS und
     // 900 km bis zur Sonne. Linear gerechnet landeten ISS (10,3 px) und Erde (12,6 px) beide unter
@@ -5330,6 +5433,10 @@ function updateRadar(){
     // der Mitte heraus, ferne bleiben trotzdem unterscheidbar.
     const RMAX = R - 8;
     const radiusFor = (dist)=>{
+      // Zu Fuß ist der Maßstab viel kleiner: 500 m sind hier weit (Laufen 6 m/s), während ein
+      // Flieger in derselben Zeit Kilometer macht. Ohne eigenen Maßstab klebte das Flugzeug-Blip
+      // direkt in der Mitte und man sah nicht, in welche Richtung man laufen muss.
+      if(eva) return Math.min(RMAX, dist/500*RMAX + 8);
       if(locale !== 'space') return Math.min(RMAX, dist/2500*RMAX + 10);
       const NEAR = 1000, FAR = 900000;                     // 1 km ... 900 km (Sonne)
       const d = Math.max(NEAR, Math.min(FAR, dist));
@@ -5337,7 +5444,7 @@ function updateRadar(){
       return 12 + f * (RMAX - 12);                         // ab 12 px, damit nichts unterm Flieger klebt
     };
     for(const tgt of blips){
-      const dx=tgt.x-state.pos.x, dz=tgt.z-state.pos.z;
+      const dx=tgt.x-selfX, dz=tgt.z-selfZ;
       // Zielwinkel relativ zum Kurs; im Radar zeigt "oben" = vorn
       const worldAng=Math.atan2(dx, dz);
       const rel=head-worldAng;   // Ziel rechts -> Blip rechts (nicht spiegelverkehrt)
@@ -5910,31 +6017,55 @@ const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1 };
 // Nur Jets (AlphaJet/Mustang), weil nur die einen Schleudersitz haben — bei den Verkehrsfliegern
 // waere ein Absturz ohne Rettung des Piloten unschoen. Und nur, wenn WIRKLICH das Boot gefahren
 // wird: sonst haette man beim normalen Fliegen ploetzlich abstuerzende Maschinen ohne Anlass.
-const AI_SEA_FAIL_EVERY = 14;    // Sekunden: so oft wird gewuerfelt
-const AI_SEA_FAIL_CHANCE = 0.55; // Wahrscheinlichkeit pro Wurf, wenn ein Jet passend fliegt
-const AI_SEA_FAIL_NEAR = 1400;   // nur Jets in diesem Umkreis (m) — man soll es sehen
-let aiSeaFailT = AI_SEA_FAIL_EVERY;
+const AI_SEA_FAIL_EVERY = 20;    // Sekunden Ruhe zwischen zwei Ausfällen (danach kommt sicher einer)
+const AI_SEA_FAIL_AHEAD = 10;    // Sekunden Fahrzeit, die er VOR dem Boot niedergeht
+const AI_SEA_FAIL_HEIGHT = 260;  // Höhe (m), aus der er herunterkommt
+let aiSeaFailT = 6;              // erster Ausfall kurz nach dem Losfahren
 function updateSeaFailures(dt){
-  if(!isBoat() || locale !== 'earth') { aiSeaFailT = AI_SEA_FAIL_EVERY; return; }
+  if(!isBoat() || locale !== 'earth') { aiSeaFailT = 6; return; }
+  // Läuft schon ein brennendes Wrack herum? Dann wartet der nächste, sonst wird es zu viel.
+  for(const e of fleet) if(e.state === 'crash') return;
   aiSeaFailT -= dt;
   if(aiSeaFailT > 0) return;
-  aiSeaFailT = AI_SEA_FAIL_EVERY;
-  // Läuft schon ein brennendes Wrack herum? Dann nicht noch eines — sonst wird es zu viel.
-  for(const e of fleet) if(e.state === 'crash') return;
-  if(Math.random() > AI_SEA_FAIL_CHANCE) return;
-  // Kandidaten: Jet, normal unterwegs, in Sichtweite, und ÜBER WASSER (dort soll er niedergehen).
-  const cands = [];
-  for(const e of fleet){
-    if(e.state === 'crash') continue;
-    if(e.model !== 'AlphaJet' && e.model !== 'Mustang') continue;
-    if(!AI_AVOID_STATES[e.state] || e.onFinal || e.rolling) continue;
-    const px = e.group.position.x, pz = e.group.position.z;
-    if(isOnLand(px, pz) || isOnBeach(px, pz) || isOnCarrier(px, pz)) continue;
-    if(Math.hypot(px - state.pos.x, pz - state.pos.z) > AI_SEA_FAIL_NEAR) continue;
-    cands.push(e);
+  // Einen Jet holen. Vorher wurde nur gewürfelt UND auf einen Jet gewartet, der zufällig über
+  // Wasser in Reichweite flog — der kam praktisch nie, weil die vier Jets der Flotte ihre eigenen
+  // Missionen fliegen (meist über Land oder weit weg). Deshalb wird jetzt einer AKTIV in Position
+  // gebracht: es sind ohnehin KI-Flieger, die ständig neu eingesetzt werden.
+  const jets = fleet.filter(e => (e.model === 'AlphaJet' || e.model === 'Mustang') && e.state !== 'crash');
+  if(!jets.length) return;
+  const e = jets[Math.floor(Math.random()*jets.length)];
+  // Zielpunkt: etwa AI_SEA_FAIL_AHEAD Sekunden Fahrzeit voraus, auf Wasser. Liegt dort eine Insel,
+  // wird seitlich ausgewichen, bis eine Wasserstelle im Blickfeld liegt — man soll den Absturz
+  // sehen können, ohne erst um eine Insel herumfahren zu müssen.
+  const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const fl = Math.hypot(fwd.x, fwd.z) || 1;
+  const fx = fwd.x/fl, fz = fwd.z/fl;
+  const dist = Math.max(150, spec.vMax * AI_SEA_FAIL_AHEAD);   // Boot: 24 m/s -> ~240 m
+  let tx = null, tz = null;
+  const water = (x,z)=> !isOnLand(x,z) && !isOnBeach(x,z) && !isOnCarrier(x,z);
+  // Erst geradeaus, dann in wachsendem Winkel nach links und rechts (bis ±60°, im Blickfeld).
+  for(const deg of [0, 15, 30, 45, 60]){
+    for(const sgn of (deg === 0 ? [1] : [1,-1])){
+      const a = deg*Math.PI/180*sgn, ca = Math.cos(a), sa = Math.sin(a);
+      const dx = fx*ca - fz*sa, dz = fx*sa + fz*ca;
+      for(const f of [1, 0.75, 1.3]){                          // etwas näher/weiter probieren
+        const px = state.pos.x + dx*dist*f, pz = state.pos.z + dz*dist*f;
+        if(water(px, pz)){ tx = px; tz = pz; break; }
+      }
+      if(tx !== null) break;
+    }
+    if(tx !== null) break;
   }
-  if(!cands.length) return;
-  aiCrash(cands[Math.floor(Math.random()*cands.length)], 0);
+  if(tx === null) return;              // ringsum kein Wasser (in einer Bucht) -> nächstes Mal
+  aiSeaFailT = AI_SEA_FAIL_EVERY;
+  // Jet über den Zielpunkt setzen, Nase in Fahrtrichtung, dann Ausfall auslösen. Er trudelt von
+  // dort herunter und schlägt in der Nähe auf — sichtbar vor dem Boot.
+  e.group.position.set(tx, AI_SEA_FAIL_HEIGHT, tz);
+  e.heading = Math.atan2(-fx, -fz);
+  e.group.rotation.y = e.heading;
+  e.state = 'cruise'; e.onFinal = false; e.rolling = false;
+  e.chute = null; e.wrecked = false; e.crashFire = null;
+  aiCrash(e, 0);
 }
 function aiAvoidObstacles(e, dt){
   if(e.state==='crash'){ aiStepCrash(e, dt); return; }
@@ -6169,6 +6300,10 @@ function loop(now){
   }
   if(eva) updateEva(dt, inp);   // draußen unterwegs: der Flieger steht, der Astronaut läuft
   else stepPhysics(dt,inp);
+  // Großes Symbol in der Bildmitte ausblenden. Das gehört HIERHER und nicht in die Physik: dort
+  // stand es in stepPhysics und stepBoat, und während der EVA läuft keines von beiden — das
+  // 🧑‍🚀 blieb deshalb für immer stehen.
+  if(bigTimer > 0){ bigTimer -= dt; if(bigTimer <= 0) showBig(''); }
   updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
   updateEngineSound();
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
