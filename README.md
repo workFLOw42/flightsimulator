@@ -168,6 +168,15 @@ Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, 
 - Der **Astronaut hat die Arme angelegt**. Das Originalmodell schwebt mit ausgestreckten Armen; die
   Pose wurde umgerechnet, damit er wie ein Fußgänger aussieht (Spannweite von 262 auf 76 Einheiten,
   bei unveränderter Höhe und Tiefe).
+- Während man draußen ist, richtet sich die **Welt am Astronauten aus**, nicht am abgestellten
+  Flugzeug: Boden-Kacheln, Bodenhöhe, Meer und Inseln werden um ihn herum nachgezogen. Ohne das
+  passierte alles am Standort des Fliegers — die Kachel unter den Füßen fehlte, und die Bodenhöhe
+  galt für eine Stelle Hunderte Meter entfernt. Auf dem **Mars** fiel das am stärksten auf, weil sein
+  Höhenraster mit 59 m Stützpunktabstand doppelt so grob ist wie das des Mondes (24 m) — die
+  Mars-Kachel ist bei gleicher Rasterzahl 2,5-mal so groß.
+- Auf der **Mondbasis** zählt beim Laufen die Höhe **ihrer Fläche**, nicht der Kraterboden darunter.
+  Die Basis wird über das Relief angehoben (bis über 20 m), sonst steckte sie im Hang — wer das nicht
+  mitrechnet, sackt genau um diese Anhebung durch.
 
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 

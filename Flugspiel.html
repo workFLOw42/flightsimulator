@@ -719,11 +719,27 @@ function harborLocal(cx, cz){
   return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang + Math.PI/2 };
 }
 
+// Bezugspunkt für alles, was die Welt nachzieht: Boden-Kacheln, exakte Bodenhöhe, Meer, Inseln.
+// Normalerweise der Flieger — während der EVA aber der ASTRONAUT, denn dann steht der Flieger still.
+// Ohne das richtete sich die Welt am Flieger aus, während man weglief: die Kachel unter den Füßen war
+// nicht geladen, der Raycast traf nichts, und die Bodenhöhe kam von einer Stelle Hunderte Meter
+// entfernt. Auf dem Mars mit seinem starken Relief blieb man deshalb hängen.
+// Steht bewusst HIER, vor dem ersten Nutzer: `const` wird nicht gehoisted, ein Aufruf davor würde
+// werfen. `eva` ist zu diesem Zeitpunkt noch nicht deklariert — das ist in Ordnung, weil worldFocus
+// erst zur Laufzeit aufgerufen wird, aber `typeof` schützt gegen einen Aufruf während des Ladens.
+const _wFocus = new THREE.Vector3();
+function worldFocus(){
+  if(typeof eva !== 'undefined' && eva) return _wFocus.copy(eva.group.position);
+  return _wFocus.copy(state.pos);
+}
+
 // Pool aktiver Insel-Zellen: Key "cx,cz" -> Group (oder null wenn Wasser)
 const islandCells = new Map();
 function updateIslands() {
-  const pcx = Math.round(state.pos.x / CELL);
-  const pcz = Math.round(state.pos.z / CELL);
+  // Bezugspunkt wie überall: während der EVA der Astronaut (siehe worldFocus).
+  const F = worldFocus();
+  const pcx = Math.round(F.x / CELL);
+  const pcz = Math.round(F.z / CELL);
   const needed = new Set();
   for (let dz = -VIEW_CELLS; dz <= VIEW_CELLS; dz++) {
     for (let dx = -VIEW_CELLS; dx <= VIEW_CELLS; dx++) {
@@ -1887,17 +1903,12 @@ function makeParachute(){
   g.add(man);
   if(chute2Template){
     const pc = chute2Template.clone(true);
-    // Schirm über dem Kopf: die Leinen (Unterkante des Modells) beginnen knapp darüber.
-    pc.position.y = ASTRONAUT_H + 0.6;
+    // Der Schirm sitzt direkt über dem Kopf. Das Modell BRINGT SEINE LEINEN MIT (die vielen dünnen),
+    // sie laufen an seiner Unterkante zusammen — deshalb wird dort angesetzt, wo die Figur hängt.
+    // Früher standen hier zusätzlich vier eigene, dicke Leinen: die endeten frei in der Luft, weil
+    // sie zu den Schultern zeigten, während die Modell-Leinen ihren eigenen Punkt haben.
+    pc.position.y = ASTRONAUT_H * 0.9;
     g.add(pc);
-    // Leinen von der Schirmkante zu den Schultern — das Modell selbst hat keine.
-    const lineMatP = new THREE.LineBasicMaterial({ color:0xdddddd });
-    const r = CHUTE2_SPAN*0.42, top = ASTRONAUT_H + 0.9, sh = ASTRONAUT_H*0.8;
-    for(const [dx,dz] of [[-r,0],[r,0],[0,-r],[0,r]]){
-      const geo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(dx, top, dz), new THREE.Vector3(0, sh, 0)]);
-      g.add(new THREE.Line(geo, lineMatP));
-    }
   } else {
     // GLB noch nicht geladen -> einfacher Ersatzschirm, damit der Pilot nie nackt fällt
     const canopy = new THREE.Mesh(new THREE.SphereGeometry(3.5, 18, 10, 0, Math.PI*2, 0, Math.PI/2), chuteMat);
@@ -1984,7 +1995,10 @@ function evaExit(){
   const right = new THREE.Vector3(1,0,0).applyQuaternion(state.quat);
   const eul = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
   let x = state.pos.x + right.x*6, z = state.pos.z + right.z*6;
-  if(!evaSolid(x, z)){ x = state.pos.x; z = state.pos.z; }   // kein Platz -> auf der Stelle
+  // Kein Platz daneben -> auf der Stelle aussteigen. Die Gebäudeprüfung bleibt hier bewusst weg:
+  // sie gilt nur für die Erdwelt (siehe updateEva), und 6 m neben dem gelandeten Flieger steht
+  // ohnehin kein Haus — sonst wäre man beim Landen dagegen geflogen.
+  if(!evaSolid(x, z)){ x = state.pos.x; z = state.pos.z; }
   g.position.set(x, surfaceY(x, z), z);
   g.rotation.y = eul.y;
   scene.add(g);
@@ -2028,7 +2042,12 @@ function updateEva(dt, inp){
     const nx = g.position.x + fx*walk*EVA_SPEED*dt;
     const nz = g.position.z + fz*walk*EVA_SPEED*dt;
     // Fester Grund und keine Wand: erst beides, dann X und Z einzeln (an einer Kante entlanglaufen).
-    const free = (x,z)=> evaSolid(x,z) && !hitsBuilding(x, surfaceY(x,z)+1, z, false);
+    // Die Gebäudeprüfung gilt NUR in der Erdwelt: hitsBuilding rechnet Weltkoordinaten in
+    // Insel-Rasterzellen um, und auf Mond und Mars gelten dieselben Koordinaten — dort fand es
+    // Häuser, die es gar nicht gibt. Auf dem Mars landet man um (0,0), und Zelle (0,0) ist immer
+    // die Startinsel mit acht Gebäuden: jeder Schritt war blockiert.
+    const free = (x,z)=> evaSolid(x,z) &&
+      (locale !== 'earth' || !hitsBuilding(x, surfaceY(x,z)+1, z, false));
     if(free(nx, nz)){ g.position.x = nx; g.position.z = nz; }
     else if(free(nx, g.position.z)) g.position.x = nx;
     else if(free(g.position.x, nz)) g.position.z = nz;
@@ -2733,20 +2752,30 @@ const _gRay = new THREE.Raycaster(), _gFrom = new THREE.Vector3(), _gDown = new 
 // messen. Auf zerklüftetem Grund steckten sonst Flügelspitzen oder Nase im Hang. Deshalb werden
 // fünf Punkte unter dem Flieger abgetastet und der HÖCHSTE genommen — er setzt auf der höchsten
 // Stelle auf, statt einzusinken.
+// Tastpunkte für den Boden-Raycast, relativ zum Bezugspunkt. Für das FLUGZEUG ein Kreuz über die
+// Spannweite: es nimmt den höchsten Treffer, damit keine Flügelspitze im Hang steckt.
+// Für den ASTRONAUTEN wäre das falsch — er stünde auf der höchsten Stelle im 7-m-Umkreis und damit
+// sichtbar über dem Boden (gemessen bis 73 m auf dem Mars). Er tastet nur unter seinen Füßen.
 const GROUND_PROBES = [[0,0], [6,0], [-6,0], [0,7], [0,-7]];
+const GROUND_PROBES_FOOT = [[0,0]];
 function stepGroundExact(){
   groundHitY = null;
   const G = GROUNDS[locale];
   if(!G || !G.tpl) return;
-  const approx = groundHeightAt(locale, state.pos.x, state.pos.z);
-  if(state.pos.y - approx > 300) return;            // weit oben genügt das Raster
+  // Gemessen wird dort, wo man IST: während der EVA am Astronauten, sonst am Flieger. Vorher stand
+  // hier state.pos, die während der EVA auf dem Flieger festgehalten wird — der exakte Bodenwert
+  // galt dann für eine Stelle, an der man längst nicht mehr war.
+  const F = worldFocus();
+  const approx = groundHeightAt(locale, F.x, F.z);
+  if(F.y - approx > 300) return;                    // weit oben genügt das Raster
   const T = G.tile;
   // Mondbasis bzw. Rover mitprüfen: sie stehen auf eigenen Flächen, die höher liegen als der
   // Kraterboden — ohne sie landet man unter der Plattform.
   const extra = (locale === 'moon') ? moonBaseObj : (locale === 'mars' ? roverObj : null);
   let best = null;
-  for(const [dx, dz] of GROUND_PROBES){
-    const px = state.pos.x + dx, pz = state.pos.z + dz;
+  // Draußen zu Fuß nur der Punkt unter den Füßen (siehe GROUND_PROBES_FOOT).
+  for(const [dx, dz] of (eva ? GROUND_PROBES_FOOT : GROUND_PROBES)){
+    const px = F.x + dx, pz = F.z + dz;
     _gFrom.set(px, approx + 400, pz);
     const tile = G.tiles.get(Math.round(px/T) + ',' + Math.round(pz/T));
     if(tile){
@@ -2761,13 +2790,16 @@ function stepGroundExact(){
       for(const h of hit2) if(best === null || h.point.y > best) best = h.point.y;
     }
   }
-  if(best !== null){ groundHitY = best; groundHitX = state.pos.x; groundHitZ = state.pos.z; }
+  if(best !== null){ groundHitY = best; groundHitX = F.x; groundHitZ = F.z; }
 }
 function updateGroundTiles(){
   const G = GROUNDS[locale];
   if(!G || !G.tpl) return;
   const T = G.tile;
-  const pix = Math.round(state.pos.x/T), piz = Math.round(state.pos.z/T);
+  // Bezugspunkt: während der EVA der Astronaut (siehe worldFocus) — sonst fehlte die Kachel unter
+  // seinen Füßen, sobald er sich vom Flieger entfernte.
+  const F = worldFocus();
+  const pix = Math.round(F.x/T), piz = Math.round(F.z/T);
   const need = new Set();
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
     const ix = pix+dx, iz = piz+dz, key = ix+','+iz;
@@ -3089,11 +3121,31 @@ function placeGroundBase(){
 }
 
 // Oberflächenhöhe an (x,z) — je Ort: Erde (Meer/Insel/Trägerdeck) oder Mondboden.
+// Liegt (x,z) auf der Fläche der Mondbasis? Dann ihre absolute Höhe, sonst null.
+// Gemeinsame Grundlage für surfaceY (Astronaut, X-Wing) und padSurfaceY (landende Schiffe) — vorher
+// kannte nur padSurfaceY die Fläche, weshalb Schiffe richtig standen, der Astronaut aber durchsackte.
+function basePlatformNear(x, z){
+  if(locale !== 'moon' || !_lastBase || !moonBaseObj || !moonBaseObj.visible) return null;
+  const plat = basePlatformY(Math.hypot(x - _lastBase.x, z - _lastBase.z));
+  return (plat === null) ? null : _lastBaseY + plat;
+}
 function surfaceY(x, z){
   if(locale === 'death') return hangarFloorY;          // ebener Hangarboden
   if(GROUNDS[locale]){
-    // in Bodennähe der exakte Wert aus dem Raycast, sonst der Rasterwert
-    if(groundHitY !== null && Math.abs(x-groundHitX) < 5 && Math.abs(z-groundHitZ) < 5) return groundHitY;
+    // Auf der Fläche der Mondbasis zählt DEREN Höhe, nicht der Kraterboden darunter: die Basis wird
+    // über das Relief angehoben (siehe baseGroundY), sonst steckte sie im Hang. Ohne diese Abfrage
+    // lieferte surfaceY den Kraterwert, und alles, was sich auf der Fläche bewegt, sackte um die
+    // Anhebung durch — beim Astronauten deutlich zu sehen.
+    // Die Prüfung steht VOR dem Raycast-Wert: der trifft die Basisgeometrie nicht zuverlässig,
+    // weil ihre Weltmatrix erst beim Rendern aktualisiert wird.
+    const bp = basePlatformNear(x, z);
+    if(bp !== null) return bp;
+    // In Bodennähe der exakte Wert aus dem Raycast, sonst der Rasterwert. Die Toleranz ist beim
+    // Astronauten enger: er läuft 6 m/s, nach einer Sekunde wäre er sonst 6 m von der Messstelle
+    // entfernt und stünde auf einer Höhe, die dort nicht mehr gilt. Beim Flugzeug sind 5 m
+    // unkritisch, weil es selbst 20 m breit ist.
+    const tol = eva ? 1.5 : 5;
+    if(groundHitY !== null && Math.abs(x-groundHitX) < tol && Math.abs(z-groundHitZ) < tol) return groundHitY;
     return groundHeightAt(locale, x, z);
   }
   if(locale === 'space') return -1e9;                  // im Weltall gibt es keinen Boden
@@ -3620,10 +3672,8 @@ const PAD_LIFT_FRAC = 0.45;        // zusätzlich dieser Anteil der eigenen Schi
 // flache Enterprise im Boden verschwunden.
 function padSurfaceY(x, z, lift){
   const up = (lift === undefined) ? PAD_LIFT : lift;
-  if(locale === 'moon' && _lastBase && moonBaseObj && moonBaseObj.visible){
-    const plat = basePlatformY(Math.hypot(x - _lastBase.x, z - _lastBase.z));
-    if(plat !== null) return _lastBaseY + plat + up;
-  }
+  const bp = basePlatformNear(x, z);          // Fläche der Mondbasis (siehe dort)
+  if(bp !== null) return bp + up;
   return groundHeightAt(locale, x, z) + up;
 }
 function padSpot(p){
@@ -5264,13 +5314,16 @@ function updateCamera(){
 
 // ---------- Welt recyceln ----------
 function recycleWorld(){
-  // Meer folgt dem Flieger (bleibt immer unter ihm)
-  ground.position.x = state.pos.x;
-  ground.position.z = state.pos.z;
+  // Meer folgt dem Bezugspunkt — während der EVA also dem Astronauten (siehe worldFocus). Sonst
+  // stünde er beim Weglaufen irgendwann neben dem Meeresgitter, und die Inseln um ihn herum wären
+  // nicht geladen.
+  const F = worldFocus();
+  ground.position.x = F.x;
+  ground.position.z = F.z;
   // Inseln in Sichtweite erzeugen/entfernen
   updateIslands();
   for(const cl of clouds){
-    const dx=cl.position.x-state.pos.x, dz=cl.position.z-state.pos.z;
+    const dx=cl.position.x-F.x, dz=cl.position.z-F.z;
     if(dx> CLOUD_SPREAD/2) cl.position.x-=CLOUD_SPREAD;
     if(dx<-CLOUD_SPREAD/2) cl.position.x+=CLOUD_SPREAD;
     if(dz> CLOUD_SPREAD/2) cl.position.z-=CLOUD_SPREAD;
