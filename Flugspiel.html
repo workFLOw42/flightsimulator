@@ -86,7 +86,7 @@
   <div class="hcol">
     <div class="htitle">🎯 Was man machen kann</div>
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
-    <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer · B = Wasserstrahl nach vorn, löscht Feuer und brennende Wracks · braucht keinen Tank</b></div>
+    <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer, liegt im Wasser und nickt mit den Wellen · B = Wasserstrahl nach vorn (bis 160 m), löscht Feuer und brennende Wracks · braucht keinen Tank · Land und Strand sind eine Wand, schräg fährt man daran entlang</b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf Bahn laden, mit B abwerfen — wo man mag</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
@@ -100,7 +100,8 @@
     <div class="hrow"><span>🌙 suchen</span><b>oben links steht das angeflogene Ziel mit Entfernung · über dem Flieger blitzt es kurz auf, wenn sich etwas ändert · das Radar zeigt die Richtung</b></div>
     <div class="hrow"><span>📡 Radar</span><b>über der Insel: die nächste brennende Stelle · im Weltall: 🌙 Mond, 🔴 Mars, 🌍 Erde, 🛰️ ISS und Todesstern, jedes in eigener Farbe</b></div>
     <div class="hrow"><span>🧭 Gyro</span><b>künstl. Horizont; Ring grün = gut zum Landen</b></div>
-    <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt</b></div>
+    <div class="hrow"><span>🔄 im Weltall</span><b>die Kamera dreht sich mit — der Flieger bleibt oben, die Sterne kippen. So sieht man immer, wie er liegt · Schräglage richtet sich auch hier von allein auf, damit der Kurs zum Planeten hält</b></div>
+    <div class="hrow"><span>🛰️ ISS finden</span><b>eine Leuchtsäule steht über ihr, und im Radar hat sie ihren eigenen Blip — sie ist nur 120 m groß</b></div>
     <div class="hrow"><span>Absturz</span><b>Berg/Haus/zu langsam → Feuerwehr kommt · im Weltall, auf Mond und Mars und im Hangar gibt es keine: dort geht es nach dem Absturz auf der Erde weiter</b></div>
     <div style="margin-top:8px;opacity:0.85;">⏸ Solange diese Hilfe offen ist, pausiert das Spiel.</div>
   </div>
@@ -166,7 +167,19 @@ sun.position.set(200, 400, 100); scene.add(sun);
 
 // ---------- Meer (große Ebene mit sanft animierten Wellen, folgt dem Flieger) ----------
 const SEA_SIZE = 6000;
-const SEA_SEG = 80;   // Segmente pro Seite -> Wellen-Auflösung (80x80 = leicht & flüssig)
+// Segmente pro Seite -> Wellen-Auflösung. Zwei Anforderungen ziehen hier gegeneinander:
+//  · FEIN genug, damit die gezeichnete Fläche der Wellenformel folgt. Bei 80 lag nur alle 75 m ein
+//    Stützpunkt und die Fläche wich dazwischen bis zu 0,73 m ab (gemessen) — für ein Flugzeug
+//    belanglos, neben dem 16 m langen Feuerwehrboot aber sichtbar.
+//  · GROB genug, um das Frame-Budget zu halten. updateSea läuft jeden Frame über alle Vertices;
+//    gemessen kostet es bei 160 Segmenten 23 ms (waveY 13,6 + computeVertexNormals 8,8), und für
+//    60 FPS stehen 16,7 ms für das GANZE Bild zur Verfügung. Das Spiel soll auf einem Tablet laufen.
+// 96 trifft die Mitte: 62 m Stützpunktabstand (Fehler etwa halbiert) bei rund 9.400 Vertices.
+// Die Zahl muss GERADE bleiben — dann fällt die Gittermitte, auf der das Boot sitzt, genau auf einen
+// Stützpunkt, wo überhaupt nicht interpoliert wird. Dass das Boot auf der sichtbaren Wasserhöhe
+// liegt, leistet ohnehin seaSurfaceY und nicht die Auflösung; sie macht nur die Wellen ringsum
+// glatter.
+const SEA_SEG = 96;
 const seaGeo = new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, SEA_SEG, SEA_SEG);
 seaGeo.rotateX(-Math.PI/2);
 const ground = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
@@ -195,14 +208,45 @@ function waveY(x, z, tOff){
        + Math.sin(z*0.028 + st*0.9)*AMP*0.35
        + Math.sin((x+z)*0.05 + st*1.8)*AMP*0.15;
 }
+// ACHTUNG bei der Rechenbasis: updateSea speist waveY mit den GITTER-LOKALEN Koordinaten
+// (seaBaseX/seaBaseZ), und das Gitter wandert mit dem Flieger mit (ground.position = state.pos).
+// Die Wasserhöhe, die man SIEHT, hängt also nicht an der Weltposition, sondern am Platz im Gitter.
+// Wer mit Weltkoordinaten rechnet, liegt um bis zu 3,18 m daneben (gemessen) — das ist die halbe
+// Bordwand des Boots. Deshalb diese Funktion für alles, was auf dem sichtbaren Wasser liegen soll:
+// dx/dz sind der Abstand zur Gittermitte, also zum Flieger.
+function seaSurfaceY(dx, dz, tOff){ return waveY(dx || 0, dz || 0, tOff); }
 let seaTime = 0;
 const _c = new THREE.Color();
+// Inseln, die das Meeresgitter gerade überdecken — EINMAL pro Frame gesammelt statt für jeden der
+// 25.921 Gitterpunkte neu gesucht. Das Gitter ist SEA_SIZE groß, es können also nur Inseln in einem
+// entsprechenden Zellenumfeld hineinragen. Wiederverwendetes Array, damit pro Frame kein Müll
+// entsteht.
+const _seaIslands = [];
+function collectSeaIslands(ox, oz){
+  _seaIslands.length = 0;
+  const half = SEA_SIZE/2;
+  const c0x = Math.round((ox-half)/CELL), c1x = Math.round((ox+half)/CELL);
+  const c0z = Math.round((oz-half)/CELL), c1z = Math.round((oz+half)/CELL);
+  for(let cz=c0z-1; cz<=c1z+1; cz++) for(let cx=c0x-1; cx<=c1x+1; cx++){
+    const info = islandInfo(cx, cz);
+    if(info) _seaIslands.push(info.wx, info.wz, info.radius*info.radius);
+  }
+}
 function updateSea(dt){
   seaTime += dt;
   const ox = ground.position.x, oz = ground.position.z;   // Meer folgt dem Flieger
+  collectSeaIslands(ox, oz);                              // Inseln im Gitterbereich (1x pro Frame)
   for(let i=0;i<seaPos.count;i++){
     const x=seaBaseX[i], z=seaBaseZ[i];
-    if(isOnLand(x+ox, z+oz)){
+    // "liegt unter einer Insel?" gegen die vorgesammelte Liste prüfen (quadrierte Abstände, keine
+    // Wurzel). Das ersetzt isOnLand pro Vertex — dort steckten 96 % der Meeres-Rechenzeit.
+    const wx = x+ox, wz = z+oz;
+    let covered = false;
+    for(let k=0;k<_seaIslands.length;k+=3){
+      const dx = wx-_seaIslands[k], dz = wz-_seaIslands[k+1];
+      if(dx*dx + dz*dz < _seaIslands[k+2]){ covered = true; break; }
+    }
+    if(covered){
       seaPos.setY(i, -1);                     // unter Inseloberfläche -> unter dem Land verborgen
       seaCol.setXYZ(i, seaMid.r, seaMid.g, seaMid.b);
     } else {
@@ -296,7 +340,23 @@ function makeHill(x, z, rnd, rnd2) {
 }
 
 // deterministische Insel-Daten je Zelle (ohne Geometrie) -> auch für isOnLand nutzbar
+// Ergebnis-Cache. islandInfo ist eine reine Funktion von (cx,cz) — dieselbe Zelle liefert immer
+// dasselbe —, wurde aber pro Aufruf mit vier cellRnd-Hashes neu gerechnet. Und aufgerufen wird sie
+// sehr oft: isOnLand fragt 9 Zellen ab, und updateSea ruft isOnLand für JEDEN Gitterpunkt des
+// Meeres (25.921 Stück, jeden Frame). Gemessen waren das 369 ms pro Frame für eine Handvoll
+// tatsächlich verschiedener Zellen — 96 % der Meeres-Rechenzeit. Mit Cache ist es ein Map-Zugriff.
+// Auch die "hier ist keine Insel"-Antwort wird gemerkt (als null), denn 45 % der Zellen sind Wasser
+// und genau die wurden sonst immer wieder neu verworfen.
+const _islandCache = new Map();
 function islandInfo(cx, cz) {
+  const key = cx + ',' + cz;
+  const hit = _islandCache.get(key);
+  if (hit !== undefined) return hit;
+  const info = _islandInfoCalc(cx, cz);
+  _islandCache.set(key, info);
+  return info;
+}
+function _islandInfoCalc(cx, cz) {
   const isStart = (cx === 0 && cz === 0);
   if (!isStart && cellRnd(cx, cz, 1) > 0.55) return null;   // ~55% Inseln
   const jx = (cellRnd(cx, cz, 2) - 0.5) * CELL * 0.5;
@@ -331,6 +391,19 @@ function isOnLand(x, z) {
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
     const info = islandInfo(pcx + dx, pcz + dz);
     if (info && Math.hypot(x - info.wx, z - info.wz) < info.radius) return true;
+  }
+  return false;
+}
+
+// Liegt (x,z) auf dem SANDRAND einer Insel? buildIsland zeichnet den Sand bis radius*1.12, während
+// isOnLand nur die Grasfläche (radius) kennt. Für Flugzeuge ist der Unterschied belanglos — sie
+// fliegen darüber —, fürs Feuerwehrboot nicht: ohne diese Prüfung fährt es sichtbar über den Strand.
+const BEACH_FACTOR = 1.12;      // muss zum Sandradius in buildIsland passen
+function isOnBeach(x, z) {
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+    const info = islandInfo(pcx + dx, pcz + dz);
+    if (info && Math.hypot(x - info.wx, z - info.wz) < info.radius * BEACH_FACTOR) return true;
   }
   return false;
 }
@@ -925,7 +998,11 @@ function buttonB(){
 // BOAT_SPRAY_R Metern löscht: die Wracks abgestürzter KI-Flieger genauso wie einen Waldbrand am
 // Ufer. Der Strahl selbst ist derselbe Kegel, den auch die Rettungsboote benutzen.
 const BOAT_SPRAY_TIME = 2.5;    // Sekunden Wasserstrahl pro Druck
-const BOAT_SPRAY_R    = 60;     // Löschradius (m) — großzügig, damit es Kindern leicht fällt
+// Löschradius um den Zielpunkt des Strahls, und der liegt selbst BOAT_SPRAY_R vor dem Bug — die
+// Reichweite ist also das Doppelte. 80 m ergeben 160 m, und das braucht es: der Sandrand hält das
+// Boot je nach Inselgröße 49–106 m vom Uferfeuer weg (gemessen), mit 60 m ging das nur knapp auf.
+// Ein Kind legt nicht auf den Meter genau an.
+const BOAT_SPRAY_R    = 80;
 let boatSpray_ = null;          // {mesh, t}
 function boatSpray(){
   if(!isBoat() || boatSpray_) return;             // ein Strahl zur Zeit
@@ -2809,7 +2886,9 @@ function enterSpace(){
   // Die ISS zieht in Erdnähe ihre Bahn — gleich beim Austritt in Sichtweite. Nur den Platz merken;
   // gesetzt wird sie in placeBodies(), damit sie auch dann erscheint, wenn ihr Modell erst später
   // fertig geladen ist (genau daran waren ISS, Mondbasis und Rover vorher unsichtbar geblieben).
-  issCenter.copy(state.pos).add(new THREE.Vector3(700, 500, -1600));
+  // Gleich beim Austritt in Sichtweite und näher als vorher (1,6 km -> 900 m): bei 120 m Größe ist
+  // sie erst so nah wirklich als Station zu erkennen.
+  issCenter.copy(state.pos).add(new THREE.Vector3(400, 260, -900));
   issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   earthWorldVisible(false);
   showSpaceHint('🚀');
@@ -3434,6 +3513,27 @@ function placeShip(s){
   s.dock = Math.random() < 0.2;         // Anflug auf einen Star Destroyer statt freier Bahn
   s.obj.visible = true;
 }
+// Leuchtsäule über der ISS. Mondbasis und Rover haben so eine schon, und aus demselben Grund: die
+// Station ist mit 120 m winzig gegen die Himmelskörper (Todesstern 20 km Radius, Star Destroyer
+// 1200 m) und im Sternenfeld sonst nicht auszumachen. Die Säule ist von weitem sichtbar, aber
+// schmal genug, um nichts zu verdecken.
+let issBeam = null;
+function updateIssBeam(){
+  if(!issObj) return;
+  if(!issBeam){
+    // Zylinder mit offenen Enden, additiv gemischt -> leuchtet, ohne die Station zu verdecken.
+    const geo = new THREE.CylinderGeometry(18, 18, 6000, 10, 1, true);
+    const mat = new THREE.MeshBasicMaterial({ color:0x66ddff, transparent:true, opacity:0.30,
+                                              side:THREE.DoubleSide, depthWrite:false,
+                                              blending:THREE.AdditiveBlending });
+    issBeam = new THREE.Mesh(geo, mat);
+    issBeam.renderOrder = 995;
+    scene.add(issBeam);
+  }
+  issBeam.visible = !!(issObj.visible && locale === 'space');
+  if(issBeam.visible) issBeam.position.copy(issCenter);
+}
+
 function updateShips(dt){
   if(locale !== 'space'){ for(const s of ships) s.obj.visible = false; return; }
   // Die ISS zieht mit: sonst ist sie nach wenigen Sekunden aus dem Bild. Sie folgt dem Flieger mit
@@ -3445,9 +3545,12 @@ function updateShips(dt){
   if(issObj && issObj.visible && issCenter.distanceTo(state.pos) < ISS_DOCK){
     if(enterHangar({ pos: issCenter.clone(), up: 400 })) return;
   }
-  if(issCenter.distanceTo(state.pos) > 12000){
+  // Die ISS ist nur 120 m groß (gemessen) — schon auf 5 km ist sie 15 px hoch, auf 12 km ein Punkt
+  // von 6 px. Sie durfte also so weit wegtreiben, dass man sie praktisch nicht mehr fand. Jetzt
+  // wird sie schon ab 4 km wieder in Sichtweite gesetzt, und zwar näher (1,2–3 km statt 2,5–5,5 km).
+  if(issCenter.distanceTo(state.pos) > 4000){
     const dir = new THREE.Vector3(Math.random()-0.5, Math.random()*0.4+0.1, Math.random()-0.5).normalize();
-    issCenter.copy(state.pos).addScaledVector(dir, 2500 + Math.random()*3000);
+    issCenter.copy(state.pos).addScaledVector(dir, 1200 + Math.random()*1800);
     issDrift.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(40);
   }
   for(const s of ships){
@@ -3835,7 +3938,8 @@ function findStart(name){
       const dir=Math.atan2(hb.x, hb.z);              // Richtung Inselmitte->Hafen (nach außen)
       // Das Boot deutlich weiter hinaus: die Hafenmole reicht bis etwa radius*1.02 + 27 m und ist
       // für das Boot eine Wand (für die Canadair nicht, die hebt ab). Bei radius*1.14 stünde es
-      // an kleinen Inseln mitten in dieser Zone und käme nicht vom Steg weg.
+      // an kleinen Inseln mitten in dieser Zone und käme nicht vom Steg weg. Der Sandrand
+      // (radius*1.12) muss ebenfalls außen bleiben — 1,35 liegt sicher dahinter.
       const rr=info.radius*(name==='Boat' ? 1.35 : 1.14);
       // Nase (-Z bei yaw) zeigt aufs offene Meer (vom Land weg): yaw = dir + PI
       return { x:info.wx+Math.sin(dir)*rr, y:0, z:info.wz+Math.cos(dir)*rr, yaw:dir+Math.PI }; };
@@ -3856,7 +3960,8 @@ function placeAtStart(name){
     for(let r = CELL*0.7; r < CELL*6 && !found; r += CELL*0.5){
       for(let a = 0; a < 12 && !found; a++){
         const tx = Math.cos(a/12*Math.PI*2)*r, tz = Math.sin(a/12*Math.PI*2)*r;
-        if(!isOnLand(tx,tz) && !isOnCarrier(tx,tz) && !hitsBuilding(tx, ISLAND_Y+2, tz, false)){
+        if(!isOnLand(tx,tz) && !isOnBeach(tx,tz) && !isOnCarrier(tx,tz)
+           && !hitsBuilding(tx, ISLAND_Y+2, tz, false)){
           px = tx; pz = tz; found = true;
         }
       }
@@ -4231,7 +4336,11 @@ const CAM_CFG = {
   Canadair: { dist: 1.3,  hgt: 1.1 },
   Transall: { dist: 1.7,  hgt: 1.2 },    // großer Transporter
   XWing:    { dist: 1.2,  hgt: 1.0 },    // X-Wing: kompakt, minimal mehr Abstand als der Jet
-  Boat:     { dist: 1.4,  hgt: 0.7 },    // Boot: flacher drauf schauen, man fährt ja auf dem Wasser
+  // Boot: deutlich weiter weg und höher als bei den Fliegern. Aus der Flieger-Perspektive (34 m
+  // hinter, 5,6 m über dem Ziel) sah man vom 16 m langen Boot fast nur den Aufbau und nichts von
+  // der Fahrtrichtung. Mit diesen Faktoren sind es rund 55 m Abstand und 14 m Höhe — Blickwinkel
+  // etwa 15° von oben, man sieht Wellen, Kurs und das Ufer voraus.
+  Boat:     { dist: 2.3,  hgt: 1.75 },
 };
 function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
 
@@ -4257,18 +4366,28 @@ function thrStep(dir){
 const BOAT_YAW = 0.9;        // Wendigkeit am Ruder (rad/s bei voller Fahrt)
 const BOAT_ROLL = 0.25;      // wie stark es sich in die Kurve legt (rein optisch)
 const BOAT_BOB = 0.5;        // wie stark es mit der Dünung nickt
+// Tiefgang: um so viel liegt der Kiel UNTER der Wasserlinie. Das Modell ist 6,40 m hoch, seine
+// Schrauben sitzen bei 0,14–1,31 m (ausgemessen). 1,5 m versenken sie sauber, ohne dass das Deck
+// (ab ~2,7 m) nass wird.
+const BOAT_DRAFT = 1.5;
 function stepBoat(dt, inp){
   const eB = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
-  // Ruderwirkung hängt an der Fahrt: im Stand dreht es sich kaum, unter Fahrt zügig.
+  // Ruderwirkung hängt an der Fahrt — aber nicht nur: eine laufende Schraube drückt auch im Stand
+  // Wasser aufs Ruder, ein Boot dreht sich also auf der Stelle, wenn man Gas gibt. Ohne diesen
+  // Anteil kam man aus einer Bucht nicht mehr heraus: dort ist die Fahrt null, und mit ihr wäre
+  // auch das Ruder fast wirkungslos gewesen.
   const spd = Math.hypot(state.vel.x, state.vel.z);
-  const authority = Math.min(1, 0.25 + spd / spec.vMax);
+  const thrHelp = Math.abs(state.throttle) * 0.5;              // Schraubenstrahl aufs Ruder
+  const authority = Math.min(1, 0.25 + thrHelp + spd / spec.vMax);
   let yaw = eB.y - inp.yaw * BOAT_YAW * authority * dt;
   // Krängung: legt sich in die Kurve und richtet sich von allein wieder auf (rein optisch).
   let roll = eB.z + (-inp.yaw * BOAT_ROLL * authority - eB.z) * Math.min(1, 3*dt);
   // Nicken aus der Dünung: die Welle vor dem Bug gegen die hinter dem Heck.
   const fwdB = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-  const bowY  = waveY(state.pos.x + fwdB.x*8, state.pos.z + fwdB.z*8, dt);
-  const sternY= waveY(state.pos.x - fwdB.x*8, state.pos.z - fwdB.z*8, dt);
+  // Gerechnet wird relativ zur Gittermitte (= Flieger), nicht in Weltkoordinaten — siehe
+  // seaSurfaceY. Bug und Heck liegen 8 m vor und hinter der Mitte.
+  const bowY  = seaSurfaceY(fwdB.x*8, fwdB.z*8, dt);
+  const sternY= seaSurfaceY(-fwdB.x*8, -fwdB.z*8, dt);
   const pitchT = Math.atan2(bowY - sternY, 16) * BOAT_BOB;
   const pitch = eB.x + (pitchT - eB.x) * Math.min(1, 2.5*dt);
   state.quat.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
@@ -4289,19 +4408,44 @@ function stepBoat(dt, inp){
   state.vel.z -= side.z * sideSpd * (1-damp);
   state.vel.y = 0;
 
-  // Bewegen — aber nur, solange das Ziel Wasser ist. Land, Hafen und Trägerrumpf halten es auf:
-  // erst der ganze Schritt, dann X und Z einzeln, damit man an einer Küste entlangfahren kann
-  // statt festzukleben.
+  // Bewegen — aber nur, solange das Ziel Wasser ist. Land, Hafen und Trägerrumpf halten es auf.
+  // "Wasser" heißt fürs Boot: kein Land, kein Trägerdeck, kein Bauwerk — UND nicht der Strand.
+  // isOnLand fragt nur die Grasfläche (info.radius) ab, der Sandrand reicht aber bis radius*1.12
+  // (siehe buildIsland). Ohne isOnBeach fuhr das Boot gut 30 m weit über den Strand, was aussah,
+  // als führe es an Land.
   const nx = state.pos.x + state.vel.x*dt, nz = state.pos.z + state.vel.z*dt;
-  const water = (x,z)=> !isOnLand(x,z) && !isOnCarrier(x,z) && !hitsBuilding(x, ISLAND_Y+2, z, false);
+  const water = (x,z)=> !isOnLand(x,z) && !isOnBeach(x,z) && !isOnCarrier(x,z)
+                        && !hitsBuilding(x, ISLAND_Y+2, z, false);
   if(water(nx, nz)){ state.pos.x = nx; state.pos.z = nz; }
   else if(water(nx, state.pos.z)){ state.pos.x = nx; state.vel.z = 0; }
   else if(water(state.pos.x, nz)){ state.pos.z = nz; state.vel.x = 0; }
-  else { state.vel.x = 0; state.vel.z = 0; }               // in der Bucht: sanft stehenbleiben
+  else {
+    // Beide Einzelachsen blockiert. Das passiert, wenn die Nase fast senkrecht auf die Küste zeigt:
+    // die kleine Seitwärtskomponente reicht dann nicht aus der Sperrzone heraus. Vorher blieb das
+    // Boot hier einfach stehen — gemessen 48 s bewegungslos —, und weil es stand, wirkte auch das
+    // Ruder kaum noch (authority hängt an der Fahrt). Es war also nicht mehr freizufahren.
+    // Deshalb hier ENTLANG der Küste ausweichen: quer zur Fahrtrichtung nach der freien Seite
+    // suchen, mit der Fahrt, die es hat. So gleitet es an der Küste ab, statt zu kleben.
+    const sp = Math.hypot(state.vel.x, state.vel.z) * dt;        // Schrittweite dieses Frames
+    const pl = sp > 1e-9 ? Math.hypot(state.vel.x, state.vel.z) : 1;
+    const qx = -state.vel.z/pl, qz = state.vel.x/pl;             // Einheitsvektor quer zur Fahrt
+    let freed = false;
+    for(const sgn of [1, -1]){
+      const tx = state.pos.x + qx*sp*sgn, tz = state.pos.z + qz*sp*sgn;
+      if(water(tx, tz)){ state.pos.x = tx; state.pos.z = tz; freed = true; break; }
+    }
+    // Kommt es auch quer nicht weiter (echte Sackgasse, etwa eine enge Bucht), Fahrt abbauen —
+    // aber die Ruderwirkung nicht ganz verlieren, damit man herausdrehen kann.
+    if(!freed){ state.vel.x *= 0.3; state.vel.z *= 0.3; }
+  }
 
-  // Immer auf der Wasseroberfläche liegen (die Wellen wandern darunter durch). Das dt sorgt dafür,
-  // dass genau die Wellenhöhe getroffen wird, die updateSea gleich danach ins Gitter schreibt.
-  state.pos.y = waveY(state.pos.x, state.pos.z, dt);
+  // Auf der Wasseroberfläche liegen, aber mit TIEFGANG: vorher sass der Kiel genau auf der
+  // Wasserlinie, also schwamm das ganze Boot obenauf und man sah hinten die Schrauben (die liegen
+  // im Modell bei 0,14–1,31 m). BOAT_DRAFT senkt es so weit ein, dass die Schraubenebene unter
+  // Wasser verschwindet und der Rumpf im Wasser liegt statt darauf.
+  // Bezug ist die Gittermitte (siehe seaSurfaceY), nicht die Weltposition, und dt trifft den
+  // Wellenstand, den updateSea gleich danach ins Gitter schreibt.
+  state.pos.y = seaSurfaceY(0, 0, dt) - BOAT_DRAFT;
   state.onGround = true;      // fürs HUD/Sound: das Boot ist per Definition „am Boden"
   state.stalling = false;
   planeGroup.position.copy(state.pos);
@@ -4361,10 +4505,13 @@ function stepPhysics(dt, inp){
   // Flieger legt sich nur wieder waagerecht — wie ein echtes Flugzeug mit Eigenstabilität.
   // Kunstflug bleibt möglich, weil das Aufrichten nur bis AUTO_LEVEL_MAX Querlage wirkt: wer weiter
   // rollt (Richtung Rückenflug), bleibt dort liegen und kann die Rolle sauber durchziehen.
-  // Im Weltall aus: dort gibt es kein "oben", auf das er sich ausrichten könnte — und mit der
-  // mitrollenden Kamera (siehe updateCamera) würde sich sonst die ganze Sternenkulisse von selbst
-  // zurückdrehen. Am Boden ebenfalls aus, dort hält ihn schon die Fahrwerks-Dämpfung waagerecht.
-  if(inp.roll === 0 && !state.onGround && locale !== 'space'){
+  // Im Weltall gilt sie GENAUSO — und dort ist sie sogar wichtiger als in der Luft: die Querlage
+  // erzeugt weiter unten eine Kurve (spec.turn), also driftet ein schräg stehender X-Wing dauernd
+  // vom Kurs ab und fliegt am angepeilten Planeten vorbei. Genau daran ist ein Kind gescheitert.
+  // Weil die Kamera im All mitrollt, dreht sich beim Aufrichten die Sternenkulisse sichtbar mit
+  // zurück — das ist gewollt und zeigt, dass er sich gerade stellt.
+  // Am Boden bleibt sie aus, dort hält ihn schon die Fahrwerks-Dämpfung waagerecht.
+  if(inp.roll === 0 && !state.onGround){
     const eR = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
     if(Math.abs(eR.z) < AUTO_LEVEL_MAX){
       eR.z += (0 - eR.z) * Math.min(1, AUTO_LEVEL_RATE*dt);
@@ -4868,14 +5015,26 @@ function updateRadar(){
   if(blips.length){
     const fwd=new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
     const head=Math.atan2(fwd.x, fwd.z);         // Kurs (Weltwinkel)
-    const REF = (locale === 'space') ? 400000 : 2500;   // Entfernung, ab der ein Blip am Rand klebt
+    // Distanz auf den Radarradius abbilden. In der Inselwelt reicht ein linearer Maßstab (alles
+    // liegt in derselben Größenordnung). Im Weltall NICHT: dort sind es 2 km bis zur ISS und
+    // 900 km bis zur Sonne. Linear gerechnet landeten ISS (10,3 px) und Erde (12,6 px) beide unter
+    // dem weißen Flieger-Dreieck in der Mitte — genau deshalb war die ISS nicht zu finden.
+    // Logarithmisch bekommt jede Größenordnung denselben Platz: nahe Ziele wandern sichtbar aus
+    // der Mitte heraus, ferne bleiben trotzdem unterscheidbar.
+    const RMAX = R - 8;
+    const radiusFor = (dist)=>{
+      if(locale !== 'space') return Math.min(RMAX, dist/2500*RMAX + 10);
+      const NEAR = 1000, FAR = 900000;                     // 1 km ... 900 km (Sonne)
+      const d = Math.max(NEAR, Math.min(FAR, dist));
+      const f = Math.log(d/NEAR) / Math.log(FAR/NEAR);     // 0 (nah) .. 1 (fern)
+      return 12 + f * (RMAX - 12);                         // ab 12 px, damit nichts unterm Flieger klebt
+    };
     for(const tgt of blips){
       const dx=tgt.x-state.pos.x, dz=tgt.z-state.pos.z;
       // Zielwinkel relativ zum Kurs; im Radar zeigt "oben" = vorn
       const worldAng=Math.atan2(dx, dz);
       const rel=head-worldAng;   // Ziel rechts -> Blip rechts (nicht spiegelverkehrt)
-      const dist=Math.hypot(dx,dz);
-      const rr=Math.min(R-8, dist/REF*(R-8)+10);   // Distanz auf Radarradius mappen
+      const rr=radiusFor(Math.hypot(dx,dz));
       const bx=cx + Math.sin(rel)*rr;
       const by=cy - Math.cos(rel)*rr;
       radarCtx.fillStyle=tgt.col;
@@ -5687,6 +5846,7 @@ function loop(now){
   updateAsteroids(dt);       // Asteroiden treiben, Laserblitze fliegen, Explosionen verblassen
   updateDestroyers(dt);      // Star Destroyer im Raum (anfliegbar wie der Todesstern)
   updateShips(dt);           // fremde Raumschiffe ziehen ihre Bahn durchs Weltall
+  updateIssBeam();           // Leuchtsäule über der ISS (sie ist sonst zu klein zum Finden)
   updatePads(dt);            // Start- und Landeverkehr an Mondbasis bzw. Mars-Rover
   updateSpaceHint(dt);       // Ort/Ziel/Treffer kurz über dem Flieger (wie Tropfen und Kisten)
   updateFade(dt);            // kurzes Aufblenden nach einem Ortswechsel

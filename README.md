@@ -37,6 +37,10 @@ Oben rechts: **Radar** und darunter ein **Gyroskop / künstlicher Horizont** —
 **nächstgelegene brennende Stelle** (bewusst nur eine, sonst wird die Scheibe zu voll), im Weltall
 die anfliegbaren Ziele: **Mond, Mars, Erde, ISS und Todesstern**, jedes in eigener Farbe.
 
+Im Weltall ist die Radar-Skala **logarithmisch**, denn dort liegen 2 km (ISS) und 900 km (Sonne)
+nebeneinander: linear gerechnet klebten ISS und Erde beide unter dem eigenen Flieger-Symbol in der
+Mitte. So bekommt jede Größenordnung denselben Platz und man kann die Ziele auseinanderhalten.
+
 ### Selbst-Aufrichten der Querlage
 Lässt man **LT/RT** (bzw. **Q/E**) los, dreht sich die Schräglage von allein wieder auf null — der
 Flieger legt sich also waagerecht, ohne dass man gegensteuern muss. Betroffen ist **nur die
@@ -45,8 +49,12 @@ unverändert steuerbar.
 
 Damit **Kunstflug** möglich bleibt, wirkt die Hilfe nur bis **60° Querlage**. Wer weiter rollt
 (Richtung Rückenflug), bleibt dort liegen und kann die Rolle sauber durchziehen; kleine Schräglagen
-räumt der Flieger von selbst auf. Im **Weltall ist die Hilfe aus** — dort gibt es kein „oben",
-nach dem er sich ausrichten könnte.
+räumt der Flieger von selbst auf.
+
+**Im Weltall gilt sie ebenso — und dort ist sie sogar wichtiger.** Die Querlage erzeugt nämlich eine
+Kurve (wie bei einem echten Flugzeug), also driftete ein schräg stehender X-Wing dauernd vom Kurs ab
+und flog am angepeilten Planeten vorbei. Jetzt stellt er sich beim Loslassen wieder gerade, und der
+Kurs hält. Weil die Kamera im All mitrollt, dreht sich dabei die Sternenkulisse sichtbar mit zurück.
 
 ### Kein Aufgaben- und kein Verkehrsschalter mehr
 Die früheren **Aufgaben** (RB / T) sind **ausgebaut**: vorgegebene Zielringe und die Erfolgsmeldung
@@ -73,15 +81,19 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
 - **Feuerwehrboot** 🚤 — **fährt** auf dem Meer statt zu fliegen und ist das siebte Fahrzeug in der
   **Y/M**-Reihe. Es startet **vor dem Hafen** einer Insel im offenen Wasser (weiter draußen als die
   Canadair, weil die Hafenmole für ein Boot eine Wand ist und es dort sonst nicht wegkäme).
-  Es liegt immer auf der Wasseroberfläche und nickt mit der Dünung; gelenkt wird mit dem linken
-  Stick, der Schub arbeitet wie bei den Fliegern als Zielgeschwindigkeit (rund 86 km/h bei Vollgas),
-  und **A/C** fährt rückwärts. **Land ist eine Wand**: es rammt nicht und sinkt nicht, es kommt
-  einfach nicht weiter — schräg an einer Küste fährt man entlang, statt festzukleben.
+  Es liegt mit **1,5 m Tiefgang im Wasser** (nicht darauf — sonst sähe man die Schrauben) und nickt
+  mit der Dünung; gelenkt wird mit dem linken Stick, der Schub arbeitet wie bei den Fliegern als
+  Zielgeschwindigkeit (rund 86 km/h bei Vollgas), und **A/C** fährt rückwärts. Weil eine laufende
+  Schraube auch im Stand Wasser aufs Ruder drückt, dreht es sich selbst dann, wenn es steht.
+  **Land und Strand sind eine Wand**: es rammt nicht und sinkt nicht, es kommt einfach nicht weiter
+  — schräg an einer Küste gleitet es daran entlang, statt festzukleben.
   **B = Wasserstrahl** nach vorn (2,5 s), der alles Brennende um den Zielpunkt des Strahls löscht:
   einen **Waldbrand am Ufer** genauso wie die **brennenden Wracks** abgestürzter KI-Flieger und die
-  Brände der KI-Canadairs. Zusammen reicht das gut 120 m weit — nach **hinten** löscht es nicht.
+  Brände der KI-Canadairs. Zusammen reicht das rund **160 m** weit — nach **hinten** löscht es nicht.
   Einen **Tank braucht es nicht**: das Boot schöpft aus dem Meer, unter dem es fährt. Höhenanzeige,
-  Gyro und Flugschatten sind beim Boot ausgeblendet, weil sie dort nichts zu sagen haben.
+  Gyro und Flugschatten sind beim Boot ausgeblendet, weil sie dort nichts zu sagen haben, und die
+  Kamera sitzt weiter hinten und höher (55 m / 14 m) als bei den Fliegern — aus der Flieger-Ansicht
+  sah man vom Boot fast nur den Aufbau.
 - **X-Wing** 🚀 — **Senkrechtstarter** und mit Abstand der schnellste: **Schallmauer schon bei 50 %**
   Schub, **Mach 2 bei Vollgas** (2470 km/h). Unter 30 % steuert der Schub nicht die Fahrt, sondern die
   Senkrechte:
@@ -160,6 +172,11 @@ die **ISS** — anfliegen, im selben Hangar landen, wieder hinausfliegen. Rundhe
 Schiffe einfliegen**. Nach dem Hinausfliegen bleibt das Andocken ein paar Sekunden gesperrt, sonst
 würde der Gastgeber einen sofort wieder einsaugen — er zieht ja mit. Die **Sonne** kann man nur
 **umkreisen** — eine unsichtbare Grenze stoppt nur die Bewegung zu ihr hin, seitlich fliegt man weiter.
+
+Die **ISS** ist mit 120 m das kleinste anfliegbare Ziel — gegen einen Todesstern von 20 km Radius
+verschwindet sie im Sternenfeld. Damit man sie findet, steht wie über Mondbasis und Rover eine
+**Leuchtsäule** über ihr, sie hat im Radar ihren **eigenen Blip**, und sie hält sich in der Nähe
+(sie wird schon ab 4 km Entfernung wieder in Sichtweite gesetzt).
 
 Im Weltall ist außerdem Verkehr: die **ISS** zieht in Erdnähe ihre Bahn, und **Space Shuttle** (9×),
 **Razor Crest** (6×), **Serenity** (2×), **USS Voyager** (2×) und **USS Enterprise-D** (2×) fliegen
