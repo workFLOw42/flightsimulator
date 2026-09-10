@@ -245,6 +245,20 @@ Flugverkehr in der Luft.
   Hindernisliste kannte nur Inseln, weil alles auf dem Meer nicht im Zellenraster steht. Sie flogen
   durch die Handelsschiffe *und* durch den Träger hindurch. Jetzt gilt für sie dasselbe wie an Land:
   Airliner ziehen hoch und weichen aus, Jets stürzen ab.
+- **…aber nicht in jedem Flugzustand — ein Jet flog weiter durchs Containerschiff.** Die Vermeidung
+  lief nur in fünf von zwölf fliegenden Zuständen. Der auffälligste war die **Träger-Platzrunde**
+  (`carrierLap`): dort kreist ein Jet auf **Deckhöhe (12 m)** und sah überhaupt keine Hindernisse,
+  während ein Containerschiff 47 m hoch ist. Ebenso fehlten `toFire`, `toTarget` und `landing` —
+  normale Reisestrecken, auf denen bloß nie gemessen wurde.
+  Die Platzrunde durfte man dabei **nicht** einfach dazunehmen: die Hindernisabfrage meldet für den
+  Träger genau die Deckhöhe, und die Gefahrenschwelle liegt 25 m darüber. Der Jet hätte seinen
+  **eigenen Träger** als Hindernis gesehen und wäre bei jedem Landeversuch abgestürzt (nachgerechnet,
+  bevor es eingebaut wurde). Sie bekommt deshalb eine eigene, engere Prüfung, die **nur die
+  Handelsschiffe** kennt und alle 30 m abtastet statt an drei Punkten — auf Deckhöhe zählt jeder
+  Meter, und die Lücken der normalen Abtastung sind bei 200 m/s bis zu 153 m breit, ein Schiff quer
+  aber nur rund 45 m. Erkannt wird jetzt ab 300 m Entfernung.
+  `toWater`, `dropFire` und `dropping` bleiben bewusst **aus**: dort fliegt die Maschine absichtlich
+  im Tiefflug (Wasser aufnehmen, abwerfen), Ausweichen würde die Mission zerstören.
 - **Auch das Feuerwehrboot und das Schlauchboot** kommen nicht durch ein Schiff hindurch — für sie
   gilt derselbe Rumpf wie für die Flugzeuge (25 s Vollgas frontal dagegen: 0 Bilder im Rumpf).
 - **Ein Schiff verdrängt, es blockiert nicht nur.** Das musste nachgebessert werden: die Schiffe
@@ -268,6 +282,18 @@ Flugverkehr in der Luft.
   das Schiff nicht als **bewegtes** Hindernis. Jetzt drückt der Rumpf in einem **8-m-Saum neben sich**
   mit nach außen auslaufender Kraft: **13 s** statt 115, **7,2 m** statt 25,5, Ende bei **62 %** statt
   91 %. Ab 14 m neben der Bordwand bleibt man unbehelligt — normale Vorbeifahrt stört das nicht.
+- **Das Feuerwehrboot prüfte nur seinen Mittelpunkt.** Nachgemeldet: „ich kann eindringen und werde
+  dann rausgeschoben, ich pralle nicht ab." Beides stimmte. Das Boot ist **16 m lang**, geprüft wurde
+  aber nur der Punkt in seiner Mitte — der **Bug** steckte deshalb gemessen **17,9 m** im Rumpf eines
+  Containerschiffs, bevor überhaupt etwas ansprach. Das Schlauchboot schaut über `DINGHY_LAND_R` seit
+  je 3 m voraus; dem viel längeren Boot fehlte das. Jetzt prüft es **8 m voraus** (halbe Rumpflänge),
+  und **auch die Küsten-Ausweichlogik** tut das — ohne sie blieben 6,7 m übrig, weil sie das Boot in
+  Lagen schob, in denen nur der Bug im Rumpf stand. Zusammen: **1,0 m** statt 17,9 m.
+- **Und es prallt jetzt ab, statt herauszugleiten.** Die Verdrängung setzte die Fahrt auf
+  „quer × Tempo × 0,6" — das Boot behielt 60 % seines Tempos in einer neuen Richtung und *glitt*
+  heraus. Jetzt wird nur der Anteil behandelt, der **in** die Bordwand zeigt: der wird weggenommen und
+  zu 35 % zurückgeworfen. Die Fahrt **längs** der Wand bleibt unberührt, man schrammt also weiter
+  entlang, statt quer weggedreht zu werden.
 
 ### Sie wackeln nach ihrer Größe
 Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro

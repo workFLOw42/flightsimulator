@@ -1174,6 +1174,10 @@ function seaShipWaterFor(sh, x, z){
 // es sich wie Wasserverdraengung anfuehlt und nicht wie eine zweite unsichtbare Wand.
 const SHIP_PUSH = 30;      // m/s, mit denen ein Rumpf ein Boot beiseite drückt (deutlich über Schiffstempo)
 const SHIP_WAKE = 8;       // m Saum AUSSERHALB der Sperrzone, in dem der Rumpf noch wegschiebt
+// Wie viel von der Fahrt gegen die Bordwand zurueckkommt. 0 = tote Wand (Fahrt einfach weg),
+// 1 = voll elastisch. 0,35 fuehlt sich wie ein Gummi-Schlauchboot an einer Stahlwand an: ein
+// merklicher Stoss, aber man wird nicht katapultiert.
+const BOAT_BOUNCE = 0.35;
 function pushOutOfSeaShip(pos, vel, dt){
   for(const sh of seaShips){
     if(!sh.group) continue;
@@ -1199,12 +1203,19 @@ function pushOutOfSeaShip(pos, vel, dt){
     const qx = Math.cos(sh.heading) * side, qz = Math.sin(sh.heading) * side;
     pos.x += qx * step;
     pos.z += qz * step;
-    // Fahrt mit hinausdrehen, sonst steuert man im nächsten Frame direkt wieder hinein. Nur INNEN:
-    // im Saum wuerde das Umlenken der Fahrt das Steuer aus der Hand nehmen, obwohl man noch im
-    // freien Wasser faehrt — dort schiebt der Rumpf nur, gelenkt wird weiter selbst.
+    // ABPRALLEN, nicht umlenken. Vorher wurde die Fahrt auf "quer * Tempo * 0,6" gesetzt: das Boot
+    // behielt 60 % seines Tempos, nur in eine andere Richtung — es GLITT heraus, statt anzustossen.
+    // Jetzt wird nur der Anteil der Fahrt behandelt, der IN die Bordwand zeigt: der wird
+    // weggenommen und zu BOAT_BOUNCE zurueckgeworfen. Die Fahrt LAENGS der Wand bleibt unberuehrt,
+    // man schrammt also weiter entlang, statt quer weggedreht zu werden. Nur INNEN: im Saum wuerde
+    // ein Eingriff in die Fahrt das Steuer aus der Hand nehmen, obwohl man noch im freien Wasser
+    // faehrt — dort schiebt der Rumpf nur, gelenkt wird weiter selbst.
     if(vel && drin){
-      const spd = Math.hypot(vel.x, vel.z);
-      if(spd > 0.5){ vel.x = qx * spd * 0.6; vel.z = qz * spd * 0.6; }
+      const ein = vel.x*qx + vel.z*qz;      // <0 = fährt gegen die Ausschubrichtung, also in die Wand
+      if(ein < 0){
+        vel.x -= qx * ein * (1 + BOAT_BOUNCE);
+        vel.z -= qz * ein * (1 + BOAT_BOUNCE);
+      }
     }
     return drin;
   }
@@ -5569,6 +5580,13 @@ function thrStep(dir){
 // (Umkehrschub auf A/C fährt also rückwärts — bei einem Boot ist das richtig so).
 // Land ist eine Wand: es rammt nicht und sinkt nicht, es kommt einfach nicht weiter.
 const BOAT_YAW = 0.9;        // Wendigkeit am Ruder (rad/s bei voller Fahrt)
+// So weit VOR dem Mittelpunkt wird auf Hindernisse geprueft — der halbe Rumpf, denn dort ist der Bug.
+// Ohne das prueft ein 16-m-Boot nur seinen MITTELPUNKT: der Bug steckte gemessen 17,9 m im Rumpf
+// eines Containerschiffs, bevor ueberhaupt etwas ansprach, und wurde dann seitlich hinausgedrueckt.
+// Genau das sah aus wie "ich dringe ein und werde rausgeschoben, ich pralle nicht ab". Mit 8 m
+// Vorausschau bleiben davon 1,0 m (C:/tmp/diag_boot4.js). Das Schlauchboot macht das ueber
+// DINGHY_LAND_R schon lange; dem laengeren Boot fehlte es.
+const BOAT_LOOK = 8;         // m Vorausschau (halbe Bootslaenge)
 const BOAT_ROLL = 0.25;      // wie stark es sich in die Kurve legt (rein optisch)
 // Wie stark das Boot mit der Dünung nickt. Angehoben (0,5 -> 1,0): bei den größeren Wellen soll man
 // dem 16-m-Boot ansehen, dass es arbeitet. Die Neigung, die es dabei erfährt, kommt aus der
@@ -5602,9 +5620,16 @@ const BOAT_DRAFT = 1.1;
 //     obwohl 13 von 24 Richtungen frei waren. Daher eine Mindestschrittweite und die
 //     Nasenrichtung als Rückfall, wenn das Boot steht.
 // pos/vel werden IN PLACE verändert; fwd ist die Nasenrichtung (Rückfall, wenn das Boot steht).
-function coastSlide(pos, vel, fwd, dt){
+// look ist die Vorausschau (halbe Rumpflaenge): geprueft wird nicht der Mittelpunkt, sondern der
+// Punkt so weit in Ausweichrichtung weiter. Ohne das schob coastSlide das Boot in Lagen, in denen
+// der BUG im Rumpf steckte, obwohl der Mittelpunkt frei war — am stehenden Schiff blieben so 6,7 m
+// Eindringung uebrig, selbst wenn die Fahrt schon vorausschaute (C:/tmp/diag_boot4.js). Mit dem
+// Versatz sind es 1,0 m. Ohne Angabe (Schlauchboot, das nur 2,1 m Vorschiff hat) bleibt es beim
+// alten Verhalten.
+function coastSlide(pos, vel, fwd, dt, look){
   const spd0 = Math.hypot(vel.x, vel.z);
   const sp = Math.max(spd0 * dt, 0.05);                  // mind. 5 cm pro Frame -> klemmt nie
+  const reach = sp + (look || 0);                        // so weit voraus wird gepeilt
   let ux, uz;
   if(spd0 > 1e-6){ ux = vel.x/spd0; uz = vel.z/spd0; }                   // Fahrtrichtung
   else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                       // steht: Nasenrichtung
@@ -5613,7 +5638,7 @@ function coastSlide(pos, vel, fwd, dt){
     const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
     for(const sgn of [1, -1]){
       const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
-      if(!isOpenWater(pos.x + dx*sp, pos.z + dz*sp)) continue;
+      if(!isOpenWater(pos.x + dx*reach, pos.z + dz*reach)) continue;
       pos.x += dx*sp; pos.z += dz*sp;
       // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
       // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
@@ -5671,10 +5696,12 @@ function stepBoat(dt, inp){
   // (siehe buildIsland). Ohne isOnBeach fuhr das Boot gut 30 m weit über den Strand, was aussah,
   // als führe es an Land.
   const nx = state.pos.x + state.vel.x*dt, nz = state.pos.z + state.vel.z*dt;
-  if(isOpenWater(nx, nz)){ state.pos.x = nx; state.pos.z = nz; }
+  // Geprueft wird der BUG (BOAT_LOOK voraus), nicht der Mittelpunkt: sonst faehrt das 16-m-Boot mit
+  // dem halben Rumpf in ein Schiff, bevor die Sperre anspricht — siehe BOAT_LOOK.
+  if(isOpenWater(nx + fwd.x*BOAT_LOOK, nz + fwd.z*BOAT_LOOK)){ state.pos.x = nx; state.pos.z = nz; }
   else {
     // Blockiert -> an der Kueste abgleiten (dieselbe Logik nutzt das Schlauchboot, siehe coastSlide).
-    coastSlide(state.pos, state.vel, fwd, dt);
+    coastSlide(state.pos, state.vel, fwd, dt, BOAT_LOOK);
   }
   // Steckt es (doch) in einem Schiffsrumpf, quer hinausschieben. Das kann passieren, obwohl die
   // Fahrt geprueft wird: die Schiffe FAHREN, ein Rumpf kann sich also ueber ein stillliegendes Boot
@@ -6785,6 +6812,14 @@ function stepMission(e, dt){
     default: {   // Mustang & AlphaJet: reisen + (Jet/Mustang) Träger-Touch-and-Go
       if(e.state==='carrierLap'){
         stepCarrier(e, dt);
+        // Auf der Platzrunde faehrt der Jet auf Deckhoehe — dort steht kein Traeger im Weg (er
+        // kreist ja darum), aber sehr wohl ein 47 m hohes Containerschiff. Genau dort flog er
+        // hindurch, weil die allgemeine Hindernisvermeidung in diesem Zustand nicht laeuft (und
+        // nicht laufen darf, siehe AI_AVOID_STATES). Also hier eigens nachsehen.
+        const {fx:cfx, fz:cfz} = aiForward(e);
+        const shTop = aiShipAhead(e.group.position.x, e.group.position.z, cfx, cfz,
+                                  Math.max(140, e.spd*1.7), e.group.position.y);
+        if(shTop){ e.carrier=null; e.info=null; e.rt=null; e.heading=e.group.rotation.y; aiCrash(e, shTop); break; }
         e.timer-=dt; if(e.timer<=0){ e.carrier=null; e.info=null; e.rt=null; e.heading=e.group.rotation.y; e.state='cruise'; e.dst=null; }
         break;
       }
@@ -6990,8 +7025,37 @@ function aiObstacleTopAt(x, z, margin){
   }
   return Math.max(ISLAND_Y + top, seaTop);   // Welt-Y der Hindernisspitze
 }
-// Nur in Reise-/Anflug-Reisezuständen aktiv (nicht beim Landen/Rollen/Tieflug-Missionen).
-const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1 };
+// In welchen Zustaenden weicht eine KI-Maschine Hindernissen aus. Am Boden (loading, boarding,
+// unload, depart) und im Absturz braucht es das nicht.
+// Erweitert um toFire, toTarget und landing: das sind normale Reisestrecken, auf denen bloss nie
+// gemessen wurde. carrierLap steht NICHT hier, obwohl der Jet dort durch Schiffe flog — auf der
+// Platzrunde liegt er auf DECKHOEHE (12 m), und aiObstacleTopAt meldet fuer den Traeger genau diese
+// Hoehe. Die Bedingung topY + 25 > py waere damit immer wahr, der Jet saehe seinen EIGENEN Traeger
+// als Hindernis und stuerzte bei jedem Landeversuch ab (nachgerechnet, C:/tmp/diag_lap.js).
+// Die Platzrunde bekommt deshalb eine eigene, engere Pruefung: aiShipAhead() sieht nur die
+// HANDELSSCHIFFE, nicht den Traeger, unter dem sie kreist.
+// toWater, dropFire und dropping bleiben bewusst AUS: dort fliegt die Maschine absichtlich im
+// Tiefflug (Wasser aufnehmen, abwerfen), und Ausweichen wuerde die Mission zerstoeren.
+const AI_AVOID_STATES = { toLoad:1, toBoard:1, toFar:1, cruise:1, cooldown:1,
+                          toFire:1, toTarget:1, landing:1 };
+// Steht auf der Strecke voraus ein HANDELSSCHIFF (kein Traeger, keine Insel)? Fuer die
+// Traeger-Platzrunde, wo alles andere ignoriert werden muss. Gibt die Hoehe des Aufbaus oder 0.
+// Getastet wird dichter als in aiAvoidObstacles: auf Deckhoehe zaehlt jeder Meter, und die Luecken
+// dort (bis 153 m bei Tempo 200) sind breiter als ein Schiff quer ist.
+function aiShipAhead(x, z, fx, fz, look, py){
+  if(typeof seaShips === 'undefined') return 0;
+  for(let dd = 30; dd <= look; dd += 30){
+    const tx = x + fx*dd, tz = z + fz*dd;
+    for(const sh of seaShips){
+      if(!sh.group) continue;
+      const rx = tx - sh.x, rz = tz - sh.z;
+      const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+      const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+      if(Math.abs(lx) < sh.hw + 22 && Math.abs(lz) < sh.hl + 22 && sh.top + 25 > py) return sh.top;
+    }
+  }
+  return 0;
+}
 
 // ---- Triebwerksausfall ueber dem Meer ----
 // Grund: Abstuerze passierten nur an Hindernissen, und die stehen alle an Land — fuer das

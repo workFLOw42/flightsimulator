@@ -1,7 +1,7 @@
 # TODO — Flugspiel
 
 Offene Punkte. Erledigtes austragen, nicht abhaken lassen.
-Stand: 10.09.2026 — die beiden Schlauchboot-Punkte vom 09.09. sind erledigt.
+Stand: 10.09.2026, nach der zweiten Runde am Meer.
 
 ---
 
@@ -31,18 +31,29 @@ Mehr Wellenhöhe wäre der falsche Hebel: kürzere Wellen fallen durchs 62,5-m-R
 
 ---
 
-## Erledigt am 10.09.2026
+## Erledigt am 10.09.2026 (zweite Runde)
 
-1. **Rettungs-Schlauchboote liefen optisch voll Wasser.** Ursache war *nicht* der vermutete fehlende
-   `tOff` — der war längst drin. Es war die **Gitter-Interpolation**: zwischen den Stützpunkten
-   (62,5 m) ist das Wasser flach, die sichtbare Fläche steht im Wellenberg bis **1,005 m höher** als
-   die Wellenformel. Das eigene Boot war deshalb trocken (es sitzt in der Gittermitte, wo ein
-   Stützpunkt liegt), die treibenden nicht. Behoben mit `seaMeshY()`; nasse Böden 44,5 % → **0 %**.
+3. **KI-Jet flog weiter durch das Containerschiff.** Die Hindernisvermeidung lief nur in 5 von 12
+   fliegenden Zuständen. Vor allem fehlte die **Träger-Platzrunde**, wo ein Jet auf Deckhöhe (12 m)
+   kreist und gar nichts sah. Sie durfte aber nicht einfach dazu: der Jet hätte seinen **eigenen
+   Träger** als Hindernis gesehen und wäre bei jeder Landung abgestürzt (vorher nachgerechnet). Jetzt
+   eigene Prüfung `aiShipAhead()`, die nur Handelsschiffe kennt und alle 30 m tastet — Erkennung ab
+   300 m. Zusätzlich `toFire`, `toTarget` und `landing` ergänzt.
 
-2. **Frontal in ein Schiff zog es bis zur Schiffsmitte.** Auch hier lagen beide Verdachte daneben: die
-   Sperre greift einwandfrei (0,0 m Eindringung aus allen Winkeln), und der „kürzeste Weg hinaus" ist
-   **schlechter** (Eindringung 1,9 → 14,5 m). Der Grund war **Gleiten an der Zonengrenze**, während das
-   Schiff darunter durchfährt: 115 s an der Wand, 25,5 m Wanderung. Behoben mit einem **8-m-Saum**, in
-   dem der Rumpf schon neben sich wegdrückt: 13 s, 7,2 m, Ende bei 62 % statt 91 % der halben Länge.
+4. **Feuerwehrboot drang ein und wurde herausgeschoben, statt abzuprallen.** Beide Teile stimmten.
+   Es prüfte nur seinen **Mittelpunkt**, obwohl es 16 m lang ist — der Bug steckte 17,9 m im Rumpf,
+   bevor etwas ansprach. Jetzt 8 m Vorausschau, **auch in der Ausweichlogik** (ohne die blieben 6,7 m):
+   **1,0 m**. Und die Verdrängung **lenkte** die Fahrt nur um (60 % Tempo blieb), jetzt wird der Anteil
+   gegen die Wand weggenommen und zu 35 % zurückgeworfen — die Fahrt längs der Wand bleibt unberührt.
 
-Beide Befunde stehen ausführlich im README („Schiffe auf dem Meer", „Ins Wasser: das Schlauchboot").
+## Erledigt am 10.09.2026 (erste Runde)
+
+1. **Rettungs-Schlauchboote liefen optisch voll Wasser.** Nicht der vermutete `tOff`, sondern die
+   **Gitter-Interpolation**: die sichtbare Fläche steht im Wellenberg bis **1,005 m höher** als die
+   Wellenformel. Behoben mit `seaMeshY()`; nasse Böden 44,5 % → **0 %**.
+
+2. **Frontal in ein Schiff zog es bis zur Schiffsmitte.** Nicht die Sperre (die greift) und auch nicht
+   der „kürzeste Weg hinaus" (der ist schlechter), sondern **Gleiten an der Zonengrenze**. Behoben mit
+   einem **8-m-Saum**: 13 s statt 115 s an der Wand, Ende bei 62 % statt 91 % der halben Länge.
+
+Alle Befunde stehen ausführlich im README („Schiffe auf dem Meer", „Ins Wasser: das Schlauchboot").
