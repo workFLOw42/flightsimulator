@@ -96,6 +96,10 @@ durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
   **B = Wasserstrahl** nach vorn (2,5 s), der alles Brennende um den Zielpunkt des Strahls löscht:
   einen **Waldbrand am Ufer** genauso wie die **brennenden Wracks** abgestürzter KI-Flieger und die
   Brände der KI-Canadairs. Zusammen reicht das rund **160 m** weit — nach **hinten** löscht es nicht.
+  Er kommt aus der **Bugkanone**, und zwar seit einer Korrektur wirklich von dort: vorher begann er
+  4 m vor der Bootsmitte auf 7,1 m über dem Kiel — das Boot ist aber nur 6,4 m hoch, der Strahl
+  entstand also **über dem Mast**, mitten in der Luft. Am gebauten Modell ausgemessen sitzt die Kanone
+  6,4 m vor der Mitte (1,6 m hinter der Bugspitze) und 4,12 m über dem Kiel.
   Es klingt nach **Motorboot**: ein tiefes Bollern, das synthetisch erzeugt wird (die sechs Sounds im
   Spiel sind alle Flugzeugmotoren, und ein Bootssample hätte die Datei vergrößert). Rückwärts klingt
   es genauso — die Schraube dreht ja nur andersherum.
@@ -366,6 +370,13 @@ frei. Genau so ein Schiff war auf einem Screenshot zu sehen.
   Nach der Korrektur bleiben über **864 Fahrten** (4 Schiffe × 9 Kurse × 12 Anfahrtsrichtungen ×
   vorwärts/rückwärts, je 30 s Vollgas mitten auf den Rumpf zu) **alle** im freien Wasser — vorher
   landeten 252 davon bis auf der Mittellinie.
+- **Am Strand hing man fest — verursacht von der Umriss-Prüfung.** Die neun Punkte müssen *alle* im
+  Wasser liegen, und am Ufer ist das nie erfüllt: zeigt der Bug ins Wasser, steckt das Heck im Sand.
+  Gemessen war bis **8 m vom Strandrand keine von 24 Richtungen** frei, das Boot stand bewegungslos.
+  Die Prüfung ist für **Schiffe** richtig (kein Teil des Boots darf im Stahl stecken), für den Strand
+  aber falsch — dort soll man anlegen *und* wieder wegkommen. Beides ist jetzt getrennt: Schiffe prüfen
+  den ganzen Umriss, Land und Strand nur den Bug. Nach der Trennung kommt das Boot aus jeder Startlage
+  frei, auch von 8 m *im* Sand (nach 15 s rund 320 m vom Ufer).
 - **Diagnose im Spiel (Taste J).** Weil ein gemeldetes Durchfahren in über 1.200 simulierten Anfahrten
   *nicht* reproduzierbar war, zeigt das HUD auf Wunsch die Lage zum nächsten Schiff: quer und längs,
   jeweils gegen die Grenze, dazu „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu unterscheiden,
@@ -515,10 +526,22 @@ Jetzt gibt es einen zweiten, **ovalen** Schatten für alles, was kein Flugzeug i
 Die Maße liegen bewusst rund 15 % über den echten Umrissen: ein Schatten ist nie so scharf wie das
 Objekt, und knapp zu klein sah aus, als schwebte das Fahrzeug.
 
-Das **vordere Stück fehlt** (ein Kreissektor, kein Vollkreis). Der Schatten wird mit `depthTest:false`
-gezeichnet, liegt also immer vor allem anderen — auch vor dem eigenen Rumpf, wo er vorne sichtbar auf
-dem Boot lag. `depthTest` einzuschalten ist keine Option: dann flackert er gegen das animierte Wasser,
-genau dafür ist es aus. Also beginnt die Fläche erst hinter dem Bug.
+**Das Objekt verdeckt seinen Schatten selbst.** Er lag zunächst *über* dem Boot und über den Füßen des
+Astronauten — Ursache war `depthTest:false` plus `renderOrder 999`: damit wird eine Fläche immer zuletzt
+und über allem gezeichnet. Ein ausgespartes vorderes Viertel half dagegen, sah aber als V-Kerbe
+künstlich aus. Jetzt ist `depthTest` **an**, und der Tiefenpuffer erledigt es richtig: sichtbar bleibt
+der Schatten seitlich und hinter dem Rumpf, davor verdeckt ihn das Boot.
+
+Damit er über Wasser nicht abgeschnitten wird, liegt er auf dem **höchsten Wellenpunkt** unter seiner
+Fläche — nicht auf dem an seiner Mitte. Die Scheibe ist waagerecht, die Wasserfläche darunter geneigt:
+auf den Mittelwert gelegt tauchte der Rand bis 0,47 m ein und flackerte. Nachgemessen an 200.430
+Randpunkten liegt jetzt **kein einziger** unter Wasser, und der Abstand bleibt mit 0,32 m im Mittel
+klein genug, dass die alte Parallaxe (bis 5,59 m) nicht zurückkommt.
+
+Die Scheibe zu **neigen** wäre eleganter gewesen und ist verworfen: mit meiner Euler-Rechnung tauchten
+45,5 % der Randpunkte ein statt 28 %, und die Längsachse stand bei 90° Kurs um 88° verdreht. Die
+Reihenfolge `ZYX` mischt die drei Winkel anders, als es aussieht — gegen three.js nachgemessen und
+wieder ausgebaut.
 
 Beim Astronauten ist das mehr als Zierde: der Schatten bleibt am **Boden** stehen und wird beim
 Springen größer und blasser. Erst dadurch sieht man, wie hoch er kommt — und auf dem Mond kommt er
