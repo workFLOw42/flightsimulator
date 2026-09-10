@@ -377,11 +377,13 @@ frei. Genau so ein Schiff war auf einem Screenshot zu sehen.
   aber falsch — dort soll man anlegen *und* wieder wegkommen. Beides ist jetzt getrennt: Schiffe prüfen
   den ganzen Umriss, Land und Strand nur den Bug. Nach der Trennung kommt das Boot aus jeder Startlage
   frei, auch von 8 m *im* Sand (nach 15 s rund 320 m vom Ufer).
-- **Diagnose im Spiel (Taste J).** Weil ein gemeldetes Durchfahren in über 1.200 simulierten Anfahrten
-  *nicht* reproduzierbar war, zeigt das HUD auf Wunsch die Lage zum nächsten Schiff: quer und längs,
-  jeweils gegen die Grenze, dazu „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu unterscheiden,
-  ob eine Hülle zu klein ist (dann steht „frei", obwohl man sichtbar im Stahl sitzt) oder ob die Sperre
-  nicht greift (dann steht „IM RUMPF") — die beiden Fälle brauchen ganz verschiedene Fixes.
+- **Diagnose im Spiel (früher Taste J, inzwischen ausgebaut).** Weil ein gemeldetes Durchfahren in
+  über 1.200 simulierten Anfahrten *nicht* reproduzierbar war, zeigte das HUD auf Wunsch die Lage zum
+  nächsten Schiff: quer und längs, jeweils gegen die Grenze, dazu „frei" oder „IM RUMPF". Damit war im
+  Spiel selbst zu unterscheiden, ob eine Hülle zu klein ist (dann steht „frei", obwohl man sichtbar im
+  Stahl sitzt) oder ob die Sperre nicht greift (dann steht „IM RUMPF") — die beiden Fälle brauchen ganz
+  verschiedene Fixes. **Sie hat ihren Zweck erfüllt** (siehe die zwei Vorzeichen weiter oben) und ist
+  mitsamt der Taste wieder heraus — J dient jetzt nur noch dem Umsehen nach links.
 
 ### Sie wackeln nach ihrer Größe
 Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro
@@ -730,6 +732,42 @@ wieder in die Inselwelt. Das HUD zeigt links, wo man ist (🚀 Weltall, 🌙 Mon
 über dem Kraterboden. **Reset (R / Start)** bringt immer zur Erde zurück. Eine **Feuerwehr** gibt es
 im Weltall und auf dem Mond nicht — dort endet ein Absturz einfach mit dem Neustart auf der Erde.
 
+## 🚀 Raketenstarts auf den Inseln
+Auf **jeder zweiten Insel, die keine Stadt ist**, steht eine **Ariane 6** auf ihrer Startrampe.
+Kommt man ihr **näher als 500 m**, **startet sie**: Triebwerk an, Rauch, und sie steigt
+beschleunigt (9 m/s², bis 900 m/s) davon. Ab der Weltraumgrenze ist sie weg — und **dort trifft
+man sie wieder**, denn im Weltall zieht sie als eines der Raumschiffe ihre Bahn wie Shuttle oder
+Falcon. Auf der leeren Rampe **wächst nach 45 Sekunden die nächste** nach.
+
+**Wo sie steht, ist nicht geraten.** Der Platz wird auf einem Ring bei 62 % des Inselradius in 16
+Richtungen gesucht, mit gewürfeltem Startwinkel, und muss **Landebahn, Hafen und jedes Haus** um
+mindestens 12 m frei lassen. Von 154 geprüften Inseln fand **jede** einen Platz.
+
+**Städte bleiben raketenfrei** — dort steht das Turmraster zu dicht.
+
+### Das Modell musste erst spielbar werden
+Die Ariane 6 kam mit **133.750 Dreiecken** und 5,5 MB. Bei rund einem Dutzend gleichzeitig
+sichtbaren Inseln wäre das nicht tragbar. Also **Vertex-Clustering**: alle Punkte in einem
+0,3-m-Raster zu einem zusammenfassen, entartete Dreiecke wegwerfen. Ergebnis **19.378 Dreiecke**
+bei 53 cm Silhouettenfehler — an einer 62 m hohen Rakete unsichtbar, und damit in derselben
+Größenordnung wie die anderen Modelle (Container 22.178, X-Wing 37.889).
+
+**Die Rampe steckte mit im Modell.** Die Silhouette war 10 m breit, die echte Ariane 6 hat aber nur
+5,4 m Durchmesser — im GLB war der **Startturm mit modelliert**. Über die Geometrie sauber getrennt
+(die Rakete liegt innerhalb 3,2 m Radius über die volle Höhe, Turm und Rampe sitzen außen und enden
+bei 23 m) und in **zwei Modelle** zerlegt: die Rakete fliegt, die Rampe bleibt stehen.
+
+**Beides hat eine Kollisionshülle** (am Modell ausgemessen: Rakete 62 m hoch bei 3,05 m Halbmaß,
+Rampe 22,73 m bei 5,00 m). Sie sitzt in derselben Prüfung wie Häuser und Hafen — damit gilt sie in
+einem Zug für den **Absturz des Fliegers, die Bootsfahrt, die Schritte des Astronauten und das
+Ausweichen der KI**. Beim Steigen **wandert die Hülle mit** der Rakete nach oben.
+
+### Eine Falle, die fast zugeschnappt wäre
+Für den Würfel „welche Insel bekommt eine Rakete" brauchte es einen **freien Salt**. Naheliegend
+wäre 77 gewesen — und das wäre **falsch** gewesen: die Salts im Spiel sind **Bereiche**, keine
+Einzelwerte. Die Wolkenkratzer-Städte zählen `70 + idx` bis **idx = 128** hoch und belegen damit
+real 70..198, `300 + idx` sogar bis 428. Ein Salt 77 hätte mitten in den Türmen gelegen und deren
+Zufall mit dem der Rakete verkoppelt. Jetzt sind es **900 und 901**, sicher jenseits aller Bereiche.
 ## ✈️ Flugverkehr in der Luft (läuft immer)
 Der Himmel lebt: eine **Flotte von ~11 KI-Fliegern** reist mit dir durch die Welt und fliegt **dieselben
 echten Missionen wie du** (keine bloße Deko) — **ohne Kollision mit dir**. Fliegt einer zu weit weg,
@@ -803,6 +841,7 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Liberty-Frachter | **AlanTinka** |
 | Containerschiff | **RM02** |
 | Großsegler | **Liaval** |
+| Ariane 6 (ESA) | **Clarence365** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
 

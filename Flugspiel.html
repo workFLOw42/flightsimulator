@@ -158,6 +158,8 @@
 <script src="destroyer_glb.js"></script>
 <script src="voyager_glb.js"></script>
 <script src="enterprise_glb.js"></script>
+<script src="rocket_glb.js"></script>
+<script src="pad_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -599,6 +601,21 @@ function hitsBuilding(x, y, z, skipHarbor, exceptShip) {
     // Hafen: solide Struktur am Inselrand -> Treffer bis ~20 m Höhe (Kräne/Masten)
     const hb = harborLocal(pcx+dx, pcz+dz);
     if(!skipHarbor && y - ISLAND_Y < harborHeight + 3 && Math.hypot(lx - hb.x, lz - hb.z) < HARBOR_SIZE*0.45) return true;
+    // Startrampe und Rakete: zwei gestapelte Zylinder um denselben Mittelpunkt. Die Rampe steht
+    // immer (sie bleibt beim Start stehen), die Rakete nur, solange sie nicht weggeflogen ist.
+    // Das gehört genau hierher, in dieselbe Zellenschleife wie Häuser und Hafen: damit gilt die
+    // Hülle in einem Zug für den Absturz des Fliegers, die Bootsfahrt, die Schritte des
+    // Astronauten UND das Ausweichen der KI — die fragen alle über hitsBuilding.
+    const rl = rocketLocal(pcx+dx, pcz+dz);
+    if(rl){
+      const dr = Math.hypot(lx - rl.x, lz - rl.z);
+      const ay = y - ISLAND_Y;
+      if(dr < PAD_R && ay < PAD_H) return true;                    // in den Startturm
+      const rs = rocketState.get((pcx+dx) + ',' + (pcz+dz));
+      const steht = !rs || rs.phase !== 'gone';                    // ohne Eintrag: sie steht
+      const basis = rs ? rs.y : 0;                                 // beim Steigen wandert sie mit
+      if(steht && dr < ROCKET_R && ay > basis - 2 && ay < basis + ROCKET_H) return true;
+    }
   }
   // Fahrende Handelsschiffe: feste Hindernisse wie ein Berg (siehe hitsShip). Sie stehen nicht im
   // Zellenraster, deshalb hier separat — dafuer gilt es damit ueberall, wo auch Haeuser gelten:
@@ -770,6 +787,43 @@ function buildIsland(cx, cz) {
     g.userData.harbor = h;   // fürs spätere Ersetzen, falls GLB später fertig lädt
   }
 
+  // ---- Startrampe mit Rakete (auf jeder zweiten Nicht-Stadt-Insel) ----
+  const rl = rocketLocal(cx, cz);
+  if(rl){
+    const rs = rocketStateFor(cx, cz);
+    if(padTemplate){
+      const p = padTemplate.clone(true);
+      p.position.set(rl.x, ISLAND_Y, rl.z);
+      g.add(p);
+    }
+    // Die Rakete kommt nur ins Bild, wenn sie noch nicht weg ist. Ihre Gruppe wird gemerkt, damit
+    // updateRockets sie beim Steigen heben kann, ohne die ganze Insel neu zu bauen.
+    if(rocketTemplate && rs.phase !== 'gone'){
+      const r = rocketTemplate.clone(true);
+      r.position.set(rl.x, ISLAND_Y + rs.y, rl.z);
+      g.add(r);
+      g.userData.rocket = r;
+      // Flamme und Rauch unter dem Heck liegen fertig bereit und werden beim Start nur
+      // eingeschaltet. Sie erst dann anzulegen würde mitten im Steigflug sichtbar ruckeln.
+      const fg = new THREE.Group();
+      for(let i = 0; i < 5; i++){
+        const fl = new THREE.Mesh(new THREE.ConeGeometry(1.4 + Math.random()*0.8, 9 + Math.random()*5, 6), flameMat);
+        fl.rotation.x = Math.PI;                       // Spitze nach unten, aus der Düse heraus
+        fl.position.set((Math.random()-0.5)*2.4, -4, (Math.random()-0.5)*2.4);
+        fg.add(fl);
+      }
+      for(let i = 0; i < 4; i++){
+        const sm = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random()*2.5, 6, 5), smokeMat);
+        sm.position.set((Math.random()-0.5)*9, -2 - Math.random()*4, (Math.random()-0.5)*9);
+        fg.add(sm);
+      }
+      fg.visible = false;
+      r.add(fg);
+      r.userData.flame = fg;
+    }
+    g.userData.rocketCell = cx + ',' + cz;
+  }
+
   g.position.set(wx, 0, wz);
   return g;
 }
@@ -782,6 +836,76 @@ function harborLocal(cx, cz){
   return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang + Math.PI/2 };
 }
 
+// ---- Raketen-Startplatz auf der Insel ----------------------------------------------------
+// Auf jeder zweiten Insel, die KEINE Stadt ist, steht eine Ariane 6 auf ihrer Startrampe.
+// Beide Modelle sind ausgemessen (C:/tmp/mess_rp.js):
+//   Rakete: 62,00 m hoch, Durchmesser 6,0 m (Halbmaß 3,05), Fuß steht bereits auf y = 0
+//   Rampe:  22,73 m hoch, Grundriss 10 x 10 m (Halbmaß 5,00), Unterkante bei y = 0,51
+const ROCKET_H    = 62;      // Rakete: gemessene Höhe
+const ROCKET_R    = 3.5;     // Kollisionsradius Rakete (gemessen 3,05 + Puffer)
+const PAD_H       = 22.73;   // Rampe/Turm: gemessene Höhe
+const PAD_R       = 5.5;     // Kollisionsradius Rampe (gemessen 5,00 + Puffer)
+const ROCKET_CLR  = 12;      // so viel freien Platz braucht das Gespann auf der Insel
+const LAUNCH_DIST = 500;     // näher als das kommt man nicht, ohne dass sie startet
+const REGROW_T    = 45;      // Sekunden, bis auf der leeren Rampe die nächste Rakete steht
+// Die Würfel-Salts sind 900 und 901. WICHTIG, weil es beim ersten Versuch schiefgegangen wäre:
+// die Salts im Spiel sind BEREICHE, keine Einzelwerte. "70 + idx" der Stadt-Türme zählt bis
+// idx = 128 hoch (gemessen in C:/tmp/platz.js) und belegt real 70..198, "300 + idx" bis 428.
+// Ein naheliegendes 77 hätte also mitten in den Türmen gelegen und deren Zufall mit dem der
+// Rakete verkoppelt — 900 und 901 liegen sicher jenseits aller Bereiche.
+const _rockCache = new Map();
+function rocketLocal(cx, cz){
+  const key = cx + ',' + cz;
+  if(_rockCache.has(key)) return _rockCache.get(key);
+  const r = _rocketLocalCalc(cx, cz);
+  _rockCache.set(key, r);
+  return r;
+}
+function _rocketLocalCalc(cx, cz){
+  const info = islandInfo(cx, cz);
+  if(!info) return null;                             // kein Land -> keine Rampe
+  if(cellRnd(cx, cz, 99) < 0.10) return null;        // Wolkenkratzer-Stadt bleibt raketenfrei
+  if(cellRnd(cx, cz, 900) >= 0.5) return null;       // nur jede zweite der übrigen Inseln
+  const rwLen = Math.min(260, info.radius * 1.4);    // Landebahn wie in buildIsland
+  const hb = harborLocal(cx, cz);
+  const list = islandBuildings(cx, cz) || [];
+  // Auf einem Ring bei 62 % des Radius in 16 Richtungen suchen, Startwinkel gewürfelt — sonst
+  // stände die Rakete auf jeder Insel an derselben Stelle. Deterministisch: dieselbe Insel gibt
+  // beim Wiederbetreten dieselbe Antwort, sonst spränge die Rakete beim Nachladen der Zelle.
+  const a0 = cellRnd(cx, cz, 901) * Math.PI * 2;
+  for(let i = 0; i < 16; i++){
+    const a = a0 + i * Math.PI * 2 / 16;
+    const rr = info.radius * 0.62;
+    const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+    // Landebahn frei halten (24 m breit in X, rwLen lang in Z, mittig)
+    if(Math.abs(x) < 12 + ROCKET_CLR && Math.abs(z) < rwLen/2 + ROCKET_CLR) continue;
+    if(Math.hypot(x - hb.x, z - hb.z) < HARBOR_SIZE*0.45 + ROCKET_CLR) continue;   // Hafen frei
+    let frei = true;
+    for(const b of list){
+      // Halbbreite wie in islandBuildings geschätzt: b.hw wird erst von buildIsland
+      // zurückgeschrieben, diese Funktion läuft aber davor (buildIsland fragt sie ja).
+      const hw = (b.type === 'hill') ? (30 + b.r1*50)
+                                     : Math.max(5 + b.r1*11, 5 + b.r2*9)/2;
+      if(Math.hypot(x - b.x, z - b.z) < hw + ROCKET_CLR){ frei = false; break; }
+    }
+    if(!frei) continue;
+    return { x, z };
+  }
+  return null;   // nichts frei -> diese Insel bleibt leer (bei 154 geprüften nie vorgekommen)
+}
+// Der Startzustand liegt AUSSERHALB der Inselgruppe, in einer eigenen Map. Grund: Zellen werden
+// beim Wegfliegen abgeräumt und später neu gebaut (updateIslands). Läge er in der Gruppe, stünde
+// die Rakete nach einer Runde ums Eck wieder unversehrt da, obwohl sie gerade gestartet ist.
+//   phase 'stand'  = steht auf der Rampe
+//   phase 'launch' = steigt (y = Höhe über der Rampe, v = Steiggeschwindigkeit)
+//   phase 'gone'   = weg, t zählt bis zur nächsten Rakete herunter
+const rocketState = new Map();
+function rocketStateFor(cx, cz){
+  const key = cx + ',' + cz;
+  let s = rocketState.get(key);
+  if(!s){ s = { phase:'stand', y:0, v:0, t:0 }; rocketState.set(key, s); }
+  return s;
+}
 // Bezugspunkt für alles, was die Welt nachzieht: Boden-Kacheln, exakte Bodenhöhe, Meer, Inseln.
 // Normalerweise der Flieger — während der EVA aber der ASTRONAUT, denn dann steht der Flieger still.
 // Ohne das richtete sich die Welt am Flieger aus, während man weglief: die Kachel unter den Füßen war
@@ -1163,6 +1287,73 @@ function clearSeaShips(){
   for(const sh of seaShips) if(sh.group) scene.remove(sh.group);
   seaShips.length = 0;
 }
+// ---- Raketenstarts auf den Inseln --------------------------------------------------------
+// Eine Rakete startet, sobald man ihr auf unter LAUNCH_DIST nahe kommt. Sie steigt beschleunigt,
+// und ab der Weltraumgrenze ist sie weg — dort begegnet man ihr als eines der Raumschiffe
+// (SHIP_DEFS-Eintrag 'rocket'), genau wie Shuttle oder Falcon. Auf der leeren Rampe wächst nach
+// REGROW_T Sekunden die nächste, damit die Insel nicht für immer kahl bleibt.
+const ROCKET_A    = 9;       // m/s^2 — die echte Ariane 6 zieht anfangs ähnlich an
+const ROCKET_VMAX = 900;     // m/s Deckel, sonst springt sie in einem Frame durchs halbe Bild
+function updateRockets(dt){
+  if(locale !== 'earth') return;      // Startrampen gibt es nur auf den Inseln
+  const F = worldFocus();
+  for(const [key, isl] of islandCells){
+    if(!isl || !isl.userData.rocketCell) continue;
+    const [cx, cz] = key.split(',').map(Number);
+    const rl = rocketLocal(cx, cz);
+    if(!rl) continue;
+    const rs = rocketStateFor(cx, cz);
+    const r = isl.userData.rocket;
+    if(rs.phase === 'stand'){
+      // Auslöser ist die Annäherung, gemessen in der Waagerechten zum Fuß der Rakete. So startet
+      // sie auch, wenn man hoch darüber hinwegfliegt — dann sieht man sie von oben hochkommen.
+      const d = Math.hypot(F.x - (isl.position.x + rl.x), F.z - (isl.position.z + rl.z));
+      // Ohne geladenes Modell NICHT starten: buildIsland setzt rocketCell schon, solange die GLBs
+      // noch laden. Sonst meldete das Spiel "Raketenstart" fuer eine Rakete, die niemand sieht —
+      // und die Rampe blieb danach fuer immer leer, weil der Zustand schon weitergelaufen ist.
+      if(d < LAUNCH_DIST && r){
+        rs.phase = 'launch'; rs.v = 0;
+        if(r && r.userData.flame) r.userData.flame.visible = true;
+        showBig('Raketenstart');
+      }
+      continue;
+    }
+    if(rs.phase === 'launch'){
+      // Ist die Insel inzwischen abgeraeumt und neu gebaut worden, waehrend die Rakete stieg, dann
+      // gibt es ihre Gruppe nicht mehr (buildIsland setzt userData.rocket nur bei phase != gone,
+      // und beim Neubau steht sie wieder unten). Sie zaehlt dann als weggeflogen — sonst blieb der
+      // Zustand fuer immer auf 'launch' haengen und auf der Rampe wuchs nie wieder eine nach.
+      if(!r){ rs.phase = 'gone'; rs.t = REGROW_T; continue; }
+      rs.v = Math.min(ROCKET_VMAX, rs.v + ROCKET_A * dt);
+      rs.y += rs.v * dt;
+      if(r){
+        r.position.y = ISLAND_Y + rs.y;
+        // Flamme flackern lassen, wie es die Brände auf den Inseln auch tun (siehe fire.flames)
+        const fg = r.userData.flame;
+        if(fg) for(const fl of fg.children) fl.scale.y = 0.7 + Math.random()*0.6;
+      }
+      // Ab der Weltraumgrenze ist sie draußen. Sie wird ENTFERNT, nicht nur unsichtbar gemacht:
+      // sonst bliebe ihre Geometrie in der Szene, und über rocketState stünde ihre
+      // Kollisionshülle weiter im Weg.
+      if(rs.y > SPACE_Y){
+        rs.phase = 'gone'; rs.t = REGROW_T;
+        if(r){ isl.remove(r); isl.userData.rocket = null; }
+      }
+      continue;
+    }
+    // 'gone': die Rampe steht leer, bis die nächste Rakete bereit ist.
+    rs.t -= dt;
+    if(rs.t <= 0){
+      rs.phase = 'stand'; rs.y = 0; rs.v = 0;
+      // Nur DIESE eine Zelle neu bauen. refreshIslands würde alle Inseln in Sicht neu erzeugen
+      // und dabei sichtbar stocken.
+      scene.remove(isl);
+      const ni = buildIsland(cx, cz);
+      if(ni) scene.add(ni);
+      islandCells.set(key, ni);
+    }
+  }
+}
 function updateShipsSea(dt){
   if(locale !== 'earth') return;
   if(!seaShips.length) spawnSeaShips();
@@ -1222,8 +1413,8 @@ function updateShipsSea(dt){
 // Rumpf; bei Kurs 0 und 180 Grad stimmt es zufaellig. Genau deshalb sah es "random" aus — es hing
 // daran, wie das Schiff gerade lag, und liess sich an einem stehenden Testschiff nie reproduzieren.
 // Wer das hier anfasst, rechnet es gegen three.js nach: beide Varianten sehen plausibel aus, und der
-// Unterschied faellt nur im Spiel auf. Dasselbe Muster steht in pushOutOfSeaShip, shipDiagText,
-// aiObstacleTopAt und aiShipAhead — alle fuenf muessen gleich rechnen.
+// Unterschied faellt nur im Spiel auf. Dasselbe Muster steht in pushOutOfSeaShip, aiObstacleTopAt
+// und aiShipAhead — alle vier muessen gleich rechnen.
 function hitsSeaShip(x, y, z, except){
   for(const sh of seaShips){
     if(!sh.group || sh === except) continue;
@@ -3433,6 +3624,38 @@ function preloadHarbor(){
   }, (err)=>{ console.warn('Harbor-GLB Ladefehler:', err); });
 }
 
+// Rakete und Startrampe für die Inseln. Beide werden aufrecht gebraucht (Y ist die Längsachse,
+// Fuß auf y = 0), deshalb ein eigener Ladeweg neben dem der Raumschiffe: die legen ihre Modelle
+// in die Waagerechte, weil sie durchs Weltall fliegen. Dieselbe Rakete kommt dort separat noch
+// einmal vor (SHIP_DEFS, Eintrag 'rocket'), damit man ihr im Orbit wieder begegnet.
+let rocketTemplate = null, padTemplate = null;
+function preloadRocketPad(){
+  if(!THREE.GLTFLoader) return;
+  const jobs = [
+    { data: window.ROCKET_GLB, ziel:'rocket' },
+    { data: window.PAD_GLB,    ziel:'pad'    },
+  ];
+  for(const j of jobs){
+    if(!j.data) continue;
+    const gl = new THREE.GLTFLoader();
+    const b64 = j.data.split(',')[1];
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    gl.parse(bytes.buffer, '', (gltf)=>{
+      const obj = gltf.scene;
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj);
+      const c = new THREE.Vector3(); box.getCenter(c);
+      // waagerecht zentrieren und den Fuß auf y = 0 setzen. Die Rampe ist gemessen 0,51 m über
+      // dem Ursprung modelliert — ohne das Absenken schwebte sie sichtbar über dem Gras.
+      obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box.min.y;
+      const wrap = new THREE.Group(); wrap.add(obj);
+      if(j.ziel === 'rocket') rocketTemplate = wrap; else padTemplate = wrap;
+      refreshIslands();   // schon gebaute Inseln neu bauen -> sie bekommen ihre Rakete sofort
+    }, (err)=>{ console.warn('Rakete/Rampe-GLB Ladefehler (' + j.ziel + '):', err); });
+  }
+}
+
 // ============================================================
 //  Weltraum: Übergang Himmel -> Weltall, Erdkugel, Mond
 // ============================================================
@@ -4818,6 +5041,12 @@ const SHIP_DEFS = [
   // Im Modell liegt die Längsachse auf X (ausgemessen: 359,8 × 82,1 × 270,1 roh) — also um 90°
   // drehen, damit die Nase wie bei allen anderen auf -Z zeigt.
   { key:'falcon',     glb:()=>window.FALCON_GLB,     len:40,  rot:[0, Math.PI/2, 0],  count:4 },
+  // Die Ariane 6 von den Inseln — sie steigt dort ins All und zieht hier oben weiter ihre Bahn.
+  // Sie ist AUFRECHT modelliert (Längsachse Y, 62 m gemessen), alle anderen liegen waagerecht mit
+  // der Nase auf -Z. Deshalb -90 Grad um X: sonst flöge sie mit der Spitze nach oben seitwärts
+  // durchs Bild. len bleibt 62 — das ist ihre echte Höhe, und preloadShips skaliert auf die
+  // größte Achse, also genau darauf.
+  { key:'rocket',     glb:()=>window.ROCKET_GLB,     len:62,  rot:[-Math.PI/2, 0, 0], count:3 },
 ];
 const ships = [];
 function preloadShips(){
@@ -5585,9 +5814,6 @@ function resetPlane() {
 
 // ---------- Eingaben ----------
 const keys = {};
-// Schalter fuer die Schiffs-Diagnose (Taste J, Anzeige siehe shipDiagText weiter unten). Steht
-// HIER und nicht bei der Anzeige: `let` wird nicht gehoistet, und der Tastendruck kommt im Code vorher.
-let shipDiag = false;
 addEventListener('keydown', e => {
   keys[e.code]=true;
   if(e.code==='KeyR') resetPlane();
@@ -5595,8 +5821,8 @@ addEventListener('keydown', e => {
   if(e.code==='KeyM') cycleModel();
   if(e.code==='KeyX') state.throttle = 0;
   if(e.code==='KeyB') buttonB();          // Canadair: Wasser · AlphaJet: Schleudersitz
-  // T (Aufgaben) ist entfallen. J liegt jetzt auf der Schiffs-Diagnose (siehe shipDiagText).
-  if(e.code==='KeyJ'){ shipDiag = !shipDiag; showBig(shipDiag ? 'Diagnose an' : 'Diagnose aus'); }
+  // T (Aufgaben) und J (Schiffs-Diagnose) sind entfallen. J dient jetzt nur noch dem Umsehen
+  // nach links (siehe lookX weiter unten) — der Diagnose-Schalter ist raus.
 
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
   if(e.code==='KeyN') toggleSound();      // Ton an/aus (Standard: aus)
@@ -6550,37 +6776,6 @@ function repeatSym(sym, count, max){
   const n = Math.max(0, Math.min(max === undefined ? 99 : max, isFinite(nRaw) ? nRaw : 0));
   return sym.repeat(n);
 }
-// Diagnose-Anzeige, mit J umschaltbar. Sie nennt das naechste Schiff und die Lage des Fahrzeugs in
-// SEINEM Koordinatensystem — quer und laengs, jeweils gegen die Grenze. Damit ist im Spiel sofort zu
-// sehen, ob ein Durchfahren daran liegt, dass die Huelle zu klein ist (dann steht dort "frei",
-// obwohl man sichtbar im Stahl sitzt) oder dass die Sperre nicht greift (dann steht "IM RUMPF").
-// Die Unterscheidung ist der ganze Zweck: sie sagt, an welcher der beiden Stellen der Fehler sitzt.
-// (shipDiag selbst steht weiter oben, beim Tastatur-Handler — let wird nicht gehoistet.)
-function shipDiagText(){
-  if(!shipDiag) return '';
-  const p = eva ? (eva.boat ? eva.boat.position : eva.group.position) : state.pos;
-  let nah = null, best = 1e9, drin = false;
-  for(const sh of seaShips){
-    if(!sh.group) continue;
-    const rx = p.x - sh.x, rz = p.z - sh.z;
-    const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
-    const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
-    const gx = shipHalfWidthAt(sh, lz) + 4, gz = sh.hl + 4;
-    const istDrin = Math.abs(lx) < gx && Math.abs(lz) < gz;
-    // Ein Schiff, in dem man steckt, hat immer Vorrang vor einem naeheren daneben.
-    const rang = istDrin ? -1000 + Math.min(gx - Math.abs(lx), gz - Math.abs(lz))
-                         : Math.max(Math.abs(lx) - gx, Math.abs(lz) - gz);
-    if(rang < best){ best = rang; drin = istDrin;
-      nah = { key: sh.key, lx, lz, gx, gz,
-              tief: istDrin ? Math.min(gx - Math.abs(lx), gz - Math.abs(lz))
-                            : Math.max(Math.abs(lx) - gx, Math.abs(lz) - gz) }; }
-  }
-  if(!nah) return '<br>Diagnose: kein Schiff geladen';
-  const lage = drin ? 'IM RUMPF, ' + nah.tief.toFixed(1) + ' m tief'
-                    : 'frei, ' + nah.tief.toFixed(1) + ' m Abstand';
-  return '<br>Diagnose ' + nah.key + ': quer ' + nah.lx.toFixed(1) + '/' + nah.gx.toFixed(1)
-       + '  laengs ' + nah.lz.toFixed(1) + '/' + nah.gz.toFixed(1) + '  ' + lage;
-}
 function updateHUD(){
   // Im Weltall gibt es keine sinnvolle Höhe -> Zeile ausblenden. Auf dem Mond zählt die Höhe
   // ÜBER DEM KRATERBODEN (der schwankt um ±60 m).
@@ -6670,11 +6865,7 @@ function updateHUD(){
     nav = '🚀' + ((aim && aim.def.sym) ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
   } else if(GROUNDS[locale]){ const hb = bodyOf(locale); nav = hb ? hb.def.sym : '🌙'; }
   else if(locale === 'death') nav = '🛰️';
-  // Diagnose (J) haengt hinten dran. innerHTML statt textContent, weil der Text ein <br> enthaelt;
-  // beides kommt aus dem Spiel selbst, es wird nichts von aussen eingesetzt.
-  const diag = (typeof shipDiagText === 'function') ? shipDiagText() : '';
-  const roh = nav ? (nav + ' ' + s) : s;
-  if(diag) elStat.innerHTML = roh + diag; else elStat.textContent = roh;
+  elStat.textContent = nav ? (nav + ' ' + s) : s;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
@@ -7723,6 +7914,7 @@ function loop(now){
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
+  updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
   // Die Wartezeit ist nötig, weil beim App-Start noch weitere Modelle nachladen (siehe oben).
   if(wantHangarStart && hangarObj && MODEL_NAMES[currentModel] === 'XWing' && locale === 'earth'
@@ -7761,6 +7953,7 @@ preloadDinghy();       // Schlauchboot — Rettung fuer alles, was sonst im Wass
 preloadSeaShips();     // Handelsschiffe: Kreuzfahrer, Liberty, Container, Grosssegler
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
+preloadRocketPad();    // Ariane 6 und Startrampe (auf jeder zweiten Nicht-Stadt-Insel)
 preloadSpace();        // Sternenkuppel, Erdkugel, Mondkugel, Mond-Kraterlandschaft
 placeAtStart(MODEL_NAMES[currentModel]);   // Startmodell (X-Wing) auf der Landebahn aufstellen
 startCurtain(20);      // schwarz, bis der Hangar bereit ist (siehe wantHangarStart im Loop)

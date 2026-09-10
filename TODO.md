@@ -1,7 +1,7 @@
 # TODO — Flugspiel
 
 Offene Punkte. Erledigtes austragen, nicht abhaken lassen.
-Stand: 10.09.2026, nach der sechsten Runde.
+Stand: 10.09.2026, nach der siebten Runde (Raketen).
 
 ---
 
@@ -94,3 +94,64 @@ die nicht funktioniert hat:
     aus der Bugkanone, am Modell ausgemessen (6,4 m vor der Mitte, 4,12 m über dem Kiel).
 
 Alle Befunde stehen ausführlich im README.
+
+## Erledigt am 10.09.2026 (siebte Runde: Raketen)
+
+17. **Ariane 6 auf jeder zweiten Nicht-Stadt-Insel** (Wunsch) — sie steht auf ihrer Startrampe,
+    startet bei Annäherung unter 500 m, steigt beschleunigt (9 m/s², Deckel 900 m/s) und ist ab der
+    Weltraumgrenze weg. Nach 45 s wächst die nächste nach. Städte bleiben frei.
+18. **Im Weltall fliegt sie mit** — als ganz normaler `SHIP_DEFS`-Eintrag, damit die vorhandene
+    Bahnlogik (`updateShips`/`placeShip`) sie ohne eine Zeile eigener Steuerung herumziehen lässt.
+    Nase in Flugrichtung geprüft: 0° Abweichung in vier Richtungen.
+19. **Modell spielbar gemacht** — 133.750 → **19.378 Dreiecke** per Vertex-Clustering (0,3-m-Raster),
+    53 cm Silhouettenfehler an einer 62-m-Rakete. Die **Ariane 5** (355.212 Dreiecke, 15,4 MB) war
+    dafür zu schwer und ist verworfen.
+20. **Startturm von der Rakete getrennt** — er war im GLB mit modelliert (Silhouette 10 m breit bei
+    5,4 m echtem Durchmesser). Trennung über die Geometrie: Rakete innerhalb 3,2 m Radius über die
+    volle Höhe, Turm außen und nur bis 23 m. Zwei Modelle: `rocket_glb.js`, `pad_glb.js`.
+21. **Kollisionshüllen für beide** (Wunsch) — in derselben Prüfung wie Häuser und Hafen, damit sie in
+    einem Zug für Flieger-Absturz, Bootsfahrt, Astronaut UND KI-Ausweichen gelten. Beim Steigen
+    wandert die Hülle mit. Zehn Fälle durchgerechnet, alle richtig.
+22. **Taste J (Schiffs-Diagnose) ausgebaut** (Wunsch) — sie hatte ihren Zweck erfüllt (sie fand die
+    zwei Vorzeichen, siehe Punkt 13). Mit der Taste ist auch `shipDiagText` heraus, sonst wäre toter
+    Code stehen geblieben, der sich nie mehr einschalten lässt. **J dient jetzt nur noch dem
+    Umsehen nach links** — das war schon vorher so und bleibt.
+
+### Die Falle bei den Salts (fast zugeschnappt)
+Für „welche Insel bekommt eine Rakete" brauchte es einen freien `cellRnd`-Salt. 77 sah frei aus und
+wäre **falsch** gewesen: die Salts im Code sind **Bereiche**, keine Einzelwerte. Die Stadt-Türme
+zählen `70 + idx` bis **idx = 128** hoch und belegen real 70..198, `300 + idx` bis 428. Ein 77 hätte
+mitten darin gelegen und den Zufall der Türme mit dem der Rakete verkoppelt. Jetzt **900 und 901**.
+
+**Lehre:** bei `cellRnd`-Salts nicht nach der nackten Zahl greifen, sondern ausrechnen, wie weit die
+`+ i`-Bereiche wirklich laufen.
+
+---
+
+## Offen: Wunschliste aus der siebten Runde
+
+Alles noch nicht angefangen, in der Reihenfolge, in der es genannt wurde:
+
+**1. Ein- und Aussteigen, Fahrzeuge wechseln.** Auf jeder Nicht-Stadt-Insel steht ein X-Wing. Im
+gelandeten normalen Flugzeug öffnet **B** die Kanzel: man läuft als Astronaut heraus, geht zum X-Wing
+und steigt dort mit **B** ein — oder wieder ins Flugzeug zurück. Auf **Mond** wechselt man zwischen
+**Lunar Rover** und X-Wing, auf **Mars** zwischen **Mars-Rover** und X-Wing. Das Fahrzeug **spawnt
+immer 30 m rechts neben dem gelandeten X-Wing**.
+  - Damit fällt der **Follow-Modus des Rovers** weg: man läuft entweder selbst oder fährt.
+  - Damit fällt auch der **orange Kegel** weg, weil es egal ist, wo man landet.
+  - **Beide Rover fahren maximal 100 km/h.**
+  - **Radar zu Fuß:** X-Wing weiß, Mars-Rover orange, Lunar Rover blau. **Im Rover:** nur der X-Wing.
+    Auf der Erde braucht es das nicht — dort steht auf jeder Insel einer, und auf dem Träger am Rand
+    (außerhalb der Landebahn).
+
+**2. Neuer Flughafen auf den Inseln.** `airport_by_nermin.glb` als Modell: dort parken alle Flugzeuge
+mit genug Abstand, damit klar ist, in welches man einsteigt. Wer einsteigt, **respawnt auf der
+Landebahn**.
+
+**3. Jetpack im Weltall.** Da man im Weltall-Hangar schon aussteigen kann: auch **ins Weltall
+hinauslaufen** und dort per Jetpack schweben — **Steuerung wie beim X-Wing**.
+
+**4. Weitere Modelle liegen bereit** (noch nicht eingebaut):
+  - `submarine_by_Helindu.glb` — U-Boot
+  - `killer_whale_by_Trouvaille.glb` — Killerwal
+  - `mondfahrzeug_lunar_rover_by_Deutsches Museum  Digital.glb` — Lunar Rover (für Punkt 1)
