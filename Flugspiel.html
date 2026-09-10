@@ -198,6 +198,8 @@ const SEA_SIZE = 6000;
 // liegt, leistet ohnehin seaSurfaceY und nicht die Auflösung; sie macht nur die Wellen ringsum
 // glatter.
 const SEA_SEG = 96;
+// Abstand zweier Stuetzpunkte (62,5 m). Zwischen ihnen ist das Wasser flach — siehe seaMeshY.
+const SEA_STEP = SEA_SIZE / SEA_SEG;
 const seaGeo = new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, SEA_SEG, SEA_SEG);
 seaGeo.rotateX(-Math.PI/2);
 const ground = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
@@ -232,17 +234,40 @@ function waveY(x, z, tOff){
        + Math.sin(z*0.028 + st*0.9)*AMP*0.35
        + Math.sin((x+z)*0.05 + st*1.8)*AMP*0.15;
 }
+// Die Hoehe der Flaeche, die man WIRKLICH SIEHT. Und die ist NICHT waveY: das Meeresgitter kennt
+// die Welle nur an seinen Stuetzpunkten (62,5 m Abstand, SEA_SIZE/SEA_SEG) und spannt dazwischen
+// flache Dreiecke. Im Wellenberg schneidet diese Sehne den Bogen ab, im Tal liegt sie darunter —
+// die sichtbare Flaeche steht also bis zu 1,005 m HOEHER als waveY am selben Punkt (gemessen gegen
+// das echte three.js-Mesh mit 18.432 Dreiecken, C:/tmp/fix1.js).
+// Ein Boot, das seine Hoehe aus waveY nimmt, liegt damit im Wellenberg bis zu einem Meter zu tief:
+// bei 44,5 % aller Stichproben stand der Innenboden unter Wasser, der Astronaut also im Meer.
+// Deshalb rechnet diese Funktion genau die Dreiecke nach, die das Gitter aufspannt (Abweichung zum
+// echten Mesh: 0,000000000 m). PlaneGeometry legt die Diagonale von (x0,z1) nach (x1,z0) — mit
+// einem 2x2-Gitter nachgesehen, nicht geraten (C:/tmp/boot1c.js).
+// NUR fuer Dinge, die auf dem Wasser LIEGEN. updateSea selbst muss weiter waveY nehmen: es SETZT
+// die Stuetzpunkte, dort ist waveY die Wahrheit — und bei 9.409 Punkten waere das auch zu teuer.
+function seaMeshY(dx, dz, tOff){
+  const i = Math.floor(dx/SEA_STEP), j = Math.floor(dz/SEA_STEP);
+  const x0 = i*SEA_STEP, z0 = j*SEA_STEP;
+  const u = (dx-x0)/SEA_STEP, v = (dz-z0)/SEA_STEP;
+  const h00 = waveY(x0, z0, tOff),          h10 = waveY(x0+SEA_STEP, z0, tOff);
+  const h01 = waveY(x0, z0+SEA_STEP, tOff), h11 = waveY(x0+SEA_STEP, z0+SEA_STEP, tOff);
+  // Welches der zwei Dreiecke der Zelle? Die Diagonale laeuft von (0,1) nach (1,0).
+  if(u + v <= 1) return h00 + (h10-h00)*u + (h01-h00)*v;
+  return h11 + (h01-h11)*(1-u) + (h10-h11)*(1-v);
+}
 // ACHTUNG bei der Rechenbasis: updateSea speist waveY mit den GITTER-LOKALEN Koordinaten
 // (seaBaseX/seaBaseZ), und das Gitter wandert mit dem Flieger mit (ground.position = state.pos).
 // Die Wasserhöhe, die man SIEHT, hängt also nicht an der Weltposition, sondern am Platz im Gitter.
 // Wer mit Weltkoordinaten rechnet, liegt um bis zu 3,18 m daneben (gemessen) — das ist die halbe
 // Bordwand des Boots. Deshalb diese Funktion für alles, was auf dem sichtbaren Wasser liegen soll:
 // dx/dz sind der Abstand zur Gittermitte, also zum Flieger.
-function seaSurfaceY(dx, dz, tOff){ return waveY(dx || 0, dz || 0, tOff); }
+// Rechnet ueber seaMeshY, nicht ueber waveY: gefragt ist die Hoehe der SICHTBAREN Flaeche.
+function seaSurfaceY(dx, dz, tOff){ return seaMeshY(dx || 0, dz || 0, tOff); }
 // Dasselbe fuer eine WELTposition: rechnet sie erst in Gitter-Koordinaten um. Alles, was auf dem
 // Wasser liegt und nicht der Flieger selbst ist (Schlauchboote, treibende Wracks), braucht das —
 // sonst rechnet man versehentlich in Weltkoordinaten und liegt bis zu 3,18 m daneben.
-function seaYAt(x, z, tOff){ return waveY(x - ground.position.x, z - ground.position.z, tOff); }
+function seaYAt(x, z, tOff){ return seaMeshY(x - ground.position.x, z - ground.position.z, tOff); }
 let seaTime = 0;
 const _c = new THREE.Color();
 // Inseln, die das Meeresgitter gerade überdecken — EINMAL pro Frame gesammelt statt für jeden der
@@ -1123,26 +1148,50 @@ function seaShipWaterFor(sh, x, z){
   return !isOnLand(x, z) && !isOnBeach(x, z) && !isOnCarrier(x, z)
          && !hitsBuilding(x, ISLAND_Y+2, z, false, sh);
 }
-// Steckt (x,z) in einem Schiff? Dann quer aus dem Rumpf hinausschieben und true zurückgeben.
-// Nötig, weil die Küsten-Ausweichlogik (coastSlide) nur nach VORNE sucht (±120° um die Fahrtrichtung):
-// mitten im Rumpf findet sie dort nirgends Wasser und bewegt gar nichts — gemessen saß ein Boot
-// 10 Sekunden bewegungslos in der Schiffsmitte, während das Schiff darüber hinwegfuhr. Genau das sah
-// aus, als führe man durch das Schiff hindurch.
-// Geschoben wird QUER heraus: bei 16 m Halbbreite gegen 125 m halbe Länge ist das der kurze Weg.
-// Ein Schiff verdrängt also, statt zu blockieren — physikalisch ist das auch das Richtige.
+// Ein Rumpf schiebt ein Boot beiseite — INNEN wie AUSSEN. Beides ist noetig, und zwar aus zwei
+// ganz verschiedenen Gruenden:
+//
+// INNEN (steckt im Rumpf): sonst sitzt das Boot fest. coastSlide sucht nur nach VORNE (±120° um die
+// Fahrtrichtung) und findet mitten im Rumpf nirgends Wasser — gemessen sass ein Boot 10 Sekunden
+// bewegungslos in der Schiffsmitte, waehrend das Schiff darueber hinwegfuhr. Das sah aus, als fuehre
+// man durch das Schiff hindurch. Geschoben wird QUER heraus: bei 16 m Halbbreite gegen 125 m halbe
+// Laenge ist das der kurze Weg.
+//   NICHT den "kuerzesten Weg" in alle vier Richtungen nehmen — das war mein erster Gedanke und ist
+//   MESSBAR SCHLECHTER (C:/tmp/boot3.js): nach vorn hinausschieben heisst in Fahrtrichtung schieben,
+//   und da kommt der Rumpf hinterher. Die Eindringung stieg bei der Liberty von 1,9 auf 14,5 m,
+//   beim Containerschiff von 3,9 auf 27,2 m.
+//
+// AUSSEN (die Bugwelle, SHIP_WAKE): das ist der Grund fuers "es zieht mich bis zur Schiffsmitte".
+// Die Sperre in updateDinghy haelt naemlich einwandfrei — bei Anfahrt auf die Flanke kommt das Boot
+// aus KEINEM Winkel in den Rumpf (gemessen 0,0 m Eindringung, C:/tmp/boot6.js). Was man sieht, ist
+// GLEITEN an der Zonengrenze: coastSlide haelt das Boot dort fest, der Spieler gibt weiter Gas
+// dagegen, und das Schiff faehrt darunter durch — das Boot wandert relativ zum Schiff nach hinten.
+// coastSlide kann das nicht verhindern: es sucht Wasser relativ zur WELT und kennt das Schiff nicht
+// als BEWEGTES Hindernis. Gemessen an der Liberty: 115 s an der Bordwand, 25,5 m Wanderung, Ende bei
+// 91 % der halben Laenge — also querab der Mitte, genau wie berichtet.
+// Mit dem Saum drueckt der Rumpf schon NEBEN sich, wie eine Bugwelle: 13 s statt 115 s, 7,2 m statt
+// 25,5 m, Ende bei 62 % statt 91 % (C:/tmp/fix2.js). Die Kraft laeuft nach aussen sanft aus, damit
+// es sich wie Wasserverdraengung anfuehlt und nicht wie eine zweite unsichtbare Wand.
 const SHIP_PUSH = 30;      // m/s, mit denen ein Rumpf ein Boot beiseite drückt (deutlich über Schiffstempo)
+const SHIP_WAKE = 8;       // m Saum AUSSERHALB der Sperrzone, in dem der Rumpf noch wegschiebt
 function pushOutOfSeaShip(pos, vel, dt){
   for(const sh of seaShips){
     if(!sh.group) continue;
     const rx = pos.x - sh.x, rz = pos.z - sh.z;
     const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
     const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;          // Lage im Schiffssystem
-    if(Math.abs(lx) >= sh.hw + 4 || Math.abs(lz) >= sh.hl + 4) continue;   // nicht in diesem Schiff
+    const gx = sh.hw + 4, gz = sh.hl + 4;                  // Grenzen der Sperrzone
+    // Laengs muss es neben dem Rumpf liegen; quer zaehlt der Saum mit.
+    if(Math.abs(lz) >= gz || Math.abs(lx) >= gx + SHIP_WAKE) continue;
+    const drin = Math.abs(lx) < gx;
     // Zur näheren Bordwand hinaus. Genau auf der Mittellinie (lx = 0) gibt es keine Richtung —
     // dann nach Steuerbord, damit es überhaupt eine gibt.
     const side = lx >= 0 ? 1 : -1;
-    const need = (sh.hw + 6) - Math.abs(lx);               // so weit fehlt es bis nach draußen
-    const step = Math.min(need, SHIP_PUSH * dt);
+    // Innen: bis nach draussen schieben. Aussen im Saum: mit nach aussen abnehmender Kraft — direkt
+    // an der Bordwand am staerksten, am Saumrand null.
+    const step = drin
+      ? Math.min((gx + 2) - Math.abs(lx), SHIP_PUSH * dt)
+      : SHIP_PUSH * 0.5 * (1 - (Math.abs(lx) - gx) / SHIP_WAKE) * dt;
     // Querrichtung des Schiffs in Weltkoordinaten. Die Hin-Drehung oben rechnet
     // lx = rx*cos(-h) - rz*sin(-h), lx ist also die Projektion auf (cos h, SIN h). Mit -sin h
     // (mein erster Versuch) schob es diagonal: das Boot pendelte zwischen quer -0,24 und 0,00 und
@@ -1150,12 +1199,14 @@ function pushOutOfSeaShip(pos, vel, dt){
     const qx = Math.cos(sh.heading) * side, qz = Math.sin(sh.heading) * side;
     pos.x += qx * step;
     pos.z += qz * step;
-    // Fahrt mit hinausdrehen, sonst steuert man im nächsten Frame direkt wieder hinein.
-    if(vel){
+    // Fahrt mit hinausdrehen, sonst steuert man im nächsten Frame direkt wieder hinein. Nur INNEN:
+    // im Saum wuerde das Umlenken der Fahrt das Steuer aus der Hand nehmen, obwohl man noch im
+    // freien Wasser faehrt — dort schiebt der Rumpf nur, gelenkt wird weiter selbst.
+    if(vel && drin){
       const spd = Math.hypot(vel.x, vel.z);
       if(spd > 0.5){ vel.x = qx * spd * 0.6; vel.z = qz * spd * 0.6; }
     }
-    return true;
+    return drin;
   }
   return false;
 }

@@ -255,6 +255,19 @@ Flugverkehr in der Luft.
   so fährt man scheinbar *durch* ein Schiff. Jetzt drückt der Rumpf ein Boot mit 30 m/s **quer**
   heraus (der kurze Weg: 16 m Halbbreite gegen 125 m halbe Länge). Aus der Schiffsmitte ist man damit
   in 0,65 s frei.
+- **Und es verdrängt auch daneben — die Bugwelle.** Nachgemeldet: „frontal in die Liberty gefahren,
+  dann erst **in der Mitte des Schiffes** seitlich hinausgedrängt." Zwei naheliegende Verdächtige waren
+  es *nicht*. Die Sperre greift einwandfrei: bei Anfahrt auf die Flanke kommt ein Boot aus **keinem**
+  Winkel in den Rumpf (0,0 m Eindringung). Und den „kürzesten Weg hinaus" auch nach vorn zu nehmen ist
+  **messbar schlechter** — nach vorn schieben heißt in Fahrtrichtung schieben, und da kommt der Rumpf
+  hinterher: die Eindringung stieg bei der Liberty von 1,9 auf **14,5 m**, beim Container auf 27,2 m.
+  Der wahre Grund ist **Gleiten an der Zonengrenze**: die Küstenlogik hält das Boot an der Bordwand,
+  man gibt weiter Gas dagegen, und das Schiff fährt darunter durch — das Boot wandert mit. Gemessen an
+  der Liberty: **115 s** an der Wand, **25,5 m** Wanderung, Ende bei **91 %** der halben Länge, also
+  querab der Mitte. Die Küstenlogik kann das nicht sehen, sie sucht Wasser relativ zur *Welt* und kennt
+  das Schiff nicht als **bewegtes** Hindernis. Jetzt drückt der Rumpf in einem **8-m-Saum neben sich**
+  mit nach außen auslaufender Kraft: **13 s** statt 115, **7,2 m** statt 25,5, Ende bei **62 %** statt
+  91 %. Ab 14 m neben der Bordwand bleibt man unbehelligt — normale Vorbeifahrt stört das nicht.
 
 ### Sie wackeln nach ihrer Größe
 Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro
@@ -273,6 +286,12 @@ Schiff. Kurze Rümpfe folgen der Welle, lange überbrücken mehrere und liegen r
 Bei den langen Schiffen laufen die Wellen dadurch **sichtbar am Rumpf hoch und runter** — die
 Wasserlinie wandert, statt dass das ganze Schiff mitschaukelt. Beim Containerschiff steigt das Wasser
 um 2,30 m an der Bordwand, während es sich selbst nur 0,65 m hebt.
+
+Die Neigungen in der Tabelle sind die Werte gegen die **Wellenformel**. Seit alles Schwimmende auf der
+**gesehenen** Fläche liegt (siehe unten), sind sie in Wirklichkeit **rund halb so groß** — Feuerwehrboot
+1,73° statt 4,24°, Schlauchboot 2,07° statt 5,21°, und der Hub eines treibenden Boots 4,06 m statt
+5,44 m. Das ist die ehrliche Neigung dessen, was man sieht: flache Dreiecke sind nun einmal weniger
+steil als die Welle, die sie annähern. Die **Staffelung** von klein nach groß bleibt unverändert.
 
 Die **Wellen selbst** sind größer geworden: Hub 2,19 m → **4,10 m**. Kürzer machen ließ sie sich
 nicht — das Meeresgitter hat 62,5 m Punktabstand, darstellbar sind erst Wellen ab etwa 250 m Länge,
@@ -390,6 +409,18 @@ darum nur **zu Fuß**, nicht im Boot).
   **0,42 m**: Antrieb 0,31 m unter Wasser, Innenboden noch 4 cm trocken, Wulst ragt 1,51 m heraus.
   Dass die Füße gelegentlich nass werden, ist bei einem Schlauchboot in Ordnung — anders als bei einem
   Feuerwehrboot, dessen ganzes Deck dann unter Wasser läge.
+- **Die Rettungsboote liefen voll — und zwar nur sie.** Der Tiefgang war richtig, das eigene Boot lag
+  trocken. Der Unterschied ist nicht das Treiben, sondern der **Ort**: das eigene Boot sitzt immer in
+  der **Mitte des Meeresgitters** (das folgt dem Astronauten), und dort liegt ein Stützpunkt. Die
+  Rettungsboote treiben irgendwo dazwischen — und zwischen den Stützpunkten ist das Wasser **flach**.
+  Das Gitter kennt die Welle nur alle 62,5 m und spannt Dreiecke dazwischen; im Wellenberg schneidet
+  diese Sehne den Bogen ab. Die Fläche, die man **sieht**, steht deshalb bis zu **1,005 m höher** als
+  die Wellenformel am selben Punkt (gemessen gegen das echte Mesh mit 18.432 Dreiecken). Ein Boot, das
+  seine Höhe aus der Formel nimmt, liegt damit bis zu einem Meter zu tief — bei **44,5 %** aller
+  Stichproben stand der Innenboden unter Wasser. Jetzt rechnet alles Schwimmende die Gitterdreiecke
+  nach (Abweichung zum echten Mesh: **0,000000000 m**), und der Boden bleibt in **100 %** der Fälle
+  trocken. Das Meeresgitter selbst rechnet weiter mit der Formel — es *setzt* die Stützpunkte, dort ist
+  sie die Wahrheit, und bei 9.409 Punkten wäre das Nachrechnen auch zu teuer.
 
 ### Zwei Fallen beim Einbau (beide ausgemessen)
 - **Der Trägerrumpf ist 4 m breiter als das Deck.** Direkt neben der Deckkante ist also Bordwand,
