@@ -1,75 +1,90 @@
 # TODO — Flugspiel
 
 Offene Punkte. Erledigtes austragen, nicht abhaken lassen.
-Stand: 10.09.2026, nach der dritten Runde am Meer.
+Stand: 10.09.2026, nach der vierten Runde.
 
 ---
 
-## Offen
+## 1. Durchfahren durch das Containerschiff — teils behoben, Rest offen
 
-Nichts.
+Gemeldet am 10.09. mehrfach, mit Screenshot: das Feuerwehrboot war **mitten im Containerschiff**,
+Kamera mit drin, und das Schiffsmodell ist innen hohl (deshalb sah man Wasser im Rumpf).
+
+**Was daran behoben ist** (beides gemessen, siehe README):
+- Geprüft wurde nur **ein Punkt** 8 m vor der Bootsmitte. In 5,4 % aller Lagen steckt die Bootsmitte
+  im Rumpf, während dieser Punkt frei liegt — daraus fuhr das Boot ungehindert weiter. Jetzt werden
+  neun Punkte geprüft (Bug/Mitte/Heck × drei Querlagen).
+- Die Ausweichlogik prüfte einen Punkt 8 m voraus, verschob das Boot aber nur um einen Frameschritt.
+  Die Lage, in der es wirklich landete, war ungeprüft. Jetzt wird die tatsächliche Ziellage geprüft.
+- Die Grenze folgt jetzt der Rumpfform (24 Scheiben) statt einem Rechteck.
+
+Über 1.280 simulierte Anfahrten kommt die Bootsmitte danach höchstens **3 %** in den Rumpf (vorher
+28 %), und **kein** Fall erreicht die Rumpfmitte.
+
+**Was offen ist:** genau dieser Durchbruch ließ sich in der Simulation **nie** reproduzieren — in
+keiner der 1.280 Anfahrten, auch nicht mit dem alten Code. Es fehlt also noch eine Ursache, die mein
+Nachbau nicht abbildet. Kandidaten, die noch nicht geprüft sind:
+
+- **Bildrate.** Bei einem großen `dt` (Ruckler, Tab-Wechsel) legt das Boot pro Frame mehr als die
+  Vorausschau zurück. `dt` ist auf 0,05 s geklemmt, das sind bei 24 m/s 1,2 m — reicht nicht für 8 m,
+  aber die Klemme greift nur im Loop, nicht bei einem Sprung in `seaTime`.
+- **Zwei Schiffe gleichzeitig.** Die Ausweichlogik sucht Wasser gegen *alle* Schiffe, die Verdrängung
+  behandelt aber nur das **erste** getroffene (`return` in der Schleife). Zwischen zwei Rümpfen könnte
+  das ein Verhalten geben, das mein Test mit einem Schiff nicht sieht.
+- **Der Weg über die EVA.** Steigt man im Schlauchboot aus und wieder ins Feuerwehrboot ein, während
+  ein Schiff darüber steht, wird die Position gesetzt statt gefahren — dabei greift keine Sperre.
+
+**Zum Nachsehen ist die Taste J eingebaut** (Diagnose im HUD): sie zeigt für das nächste Schiff die
+Lage quer und längs gegen die Grenze und sagt „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu
+unterscheiden, ob die Hülle zu klein ist (steht „frei", obwohl man im Stahl sitzt → Hüllenproblem)
+oder ob die Sperre nicht greift (steht „IM RUMPF" → Fahrlogik). Das ist die Information, die noch
+fehlt, um den Rest gezielt zu beheben statt weiter zu raten.
 
 ---
 
-## Zur Kenntnis: das Nicken ist jetzt schwächer
+## 2. Kamera fährt durch alles
 
-Keine offene Aufgabe, aber es fällt beim Spielen auf und soll nicht als Fehler durchgehen.
-
-Seit alles Schwimmende auf der **gesehenen** Wasserfläche liegt (statt auf der Wellenformel), nickt
-es **rund halb so stark**: Feuerwehrboot 4,24° → **1,73°**, Schlauchboot 5,21° → **2,07°**, und der
-Hub eines treibenden Boots 5,44 → **4,06 m**. Das ist rechnerisch richtig — die flachen
-Gitterdreiecke *sind* weniger steil als die Welle, die sie annähern.
-
-Wenn es zu ruhig wirkt, ist der Weg **nicht**, zur Wellenformel zurückzugehen (dann laufen die
-Rettungsboote wieder voll), sondern `BOAT_BOB` und `DINGHY_BOB` anzuheben. Ausgerechnet für exakt
-die alte Wirkung: `BOAT_BOB` 1 → **2,45**, `DINGHY_BOB` 1,2 → **3,01**. Nicht eingebaut, weil das
-eine Geschmacksfrage ist und im Spiel entschieden werden sollte, nicht am Rechner.
+Die Kamera hat als einzige Kollision die Klemme „nicht unter y = 2". Sie hängt rund 30 m hinter dem
+Fahrzeug und steckt beim Vorbeifahren an einem 300-m-Frachter regelmäßig im Rumpf — gemessen bei bis
+zu **50 %** der Kurse, wenn das Boot längsseits fährt. Sie wird jetzt herangezogen, bis sie frei ist
+(nur gegen **Schiffe**, siehe README). Inseln, Berge, Häuser und der Trägerrumpf fehlen noch: dort
+schaut man weiterhin von innen durch die Wand.
 
 ---
 
-## Was die Schiffe an Kollision noch NICHT können
+## Zur Kenntnis: das Nicken ist schwächer
 
-Kein Fehler, aber gut zu wissen, bevor jemand darauf stößt:
+Seit alles Schwimmende auf der **gesehenen** Wasserfläche liegt, nickt es rund halb so stark
+(Feuerwehrboot 4,24° → 1,73°). Das ist rechnerisch richtig — flache Gitterdreiecke sind weniger steil
+als die Welle. Wenn es zu ruhig wirkt: `BOAT_BOB` 1 → **2,45**, `DINGHY_BOB` 1,2 → **3,01**
+(ausgerechnet für exakt die alte Wirkung). Nicht eingebaut, weil das eine Geschmacksfrage ist.
 
-- Die Hülle ist ein **Rechteck** um den Rumpf an der Wasserlinie. Ein spitzer Bug füllt dieses
-  Rechteck nicht aus — an der Bugspitze sperrt es also etwas früher als der Rumpf reicht. Gemessen ist
-  der Rumpf an der Wasserlinie zu 14 % (Kreuzfahrtschiff) bis 49 % (Liberty) formfüllend.
-- **Überbauten** über der Wasserlinie zählen für Boote nicht: ein überhängender Kran oder eine Rah
-  ragt über die Bootshülle hinaus, ohne zu blockieren. Für die **Flieger** gilt weiter die volle Höhe.
+---
+
+## Was die Schiffskollision bewusst nicht kann
+
+- **Überbauten** über der Wasserlinie zählen für Boote nicht: ein überhängender Kran ragt über die
+  Bootshülle hinaus, ohne zu blockieren. Für die Flieger gilt weiter die volle Höhe.
 - Die Schiffe **kollidieren nicht untereinander** — sie werden nur beim Aussetzen auf Abstand gesetzt
-  (`SHIP_CLEAR` = 260 m). Über drei Minuten gemessen kam das nie vor, ausgeschlossen ist es nicht.
+  (`SHIP_CLEAR` = 260 m).
+- Das Halbbreiten-Profil hat **24 Scheiben**; bei einem 300-m-Schiff sind das 12 m pro Scheibe. Feiner
+  als jedes Boot lang ist, aber die Bugspitze ist damit gestuft, nicht stufenlos.
 
 ---
 
-## Erledigt am 10.09.2026 (dritte Runde)
+## Erledigt am 10.09.2026
 
-5. **Barriere lag teils komplett neben dem Schiff.** Die Hülle kam aus der Gesamt-Bounding-Box (mit
-   Masten, Rahen, Kränen); der Rumpf liegt darin asymmetrisch. Segler: Barriere z ±49 m, Rumpf nur
-   −18,2…+34,7 → hinten 30,8 m unsichtbare Wand, vorn 14,3 m. Jetzt aus dem **Rumpfband** an der
-   Wasserlinie mit Mittenversatz (`cx`/`cz`) — überall exakt 4,00 m Puffer, bei allen vier Schiffen.
-
-6. **Von vorne fuhr man trotzdem durch — verursacht von Fix 4.** Die 8-m-Vorausschau machte das
-   Ausweichen blind (12 Richtungen → nur 4 statt 8 frei), das Boot blieb stehen und wurde überfahren.
-   Ausweichsuche läuft jetzt zweimal: mit Vorausschau, dann ohne (Notausgang). Aus 7 Winkeln × 4
-   Schiffen: kein Durchfahren mehr, höchstens 2,53 m Kontakt am Bug.
-
-7. **Schiffe schwebten in der Luft.** Sie wurden bis 3,5 km ausgesetzt und lebten bis 5,2 km, das
-   Meeresgitter reicht aber nur 3 km (und ist quadratisch). 45,9 % aller Plätze hatten kein Wasser
-   darunter. Jetzt 2,4 / 2,9 km — beides innerhalb des Gitters.
-
-8. **Schatten für Boote und den Astronauten** (Wunsch, keine Fehlermeldung). Der alte Schatten ist ein
-   Flugzeug-Umriss und war beim Boot abgeschaltet; jetzt gibt es zusätzlich einen ovalen. Beim
-   Astronauten wächst er mit der Sprunghöhe — dadurch sieht man erst, wie hoch er kommt.
-
-## Erledigt am 10.09.2026 (Runden 1 und 2)
-
-1. **Rettungsboote liefen voll** — nicht `tOff`, sondern die Gitter-Interpolation (bis 1,005 m).
-   Behoben mit `seaMeshY()`; nasse Böden 44,5 % → 0 %.
-2. **Durchziehen bis zur Schiffsmitte** — Gleiten an der Zonengrenze, nicht die Sperre. 8-m-Saum.
-3. **KI-Jet durch das Containerschiff** — `carrierLap` sah keine Hindernisse. Eigene Prüfung
+1. **Rettungsboote liefen voll** — Gitter-Interpolation (bis 1,005 m), nicht `tOff`. `seaMeshY()`.
+2. **Durchziehen bis zur Schiffsmitte** — Gleiten an der Zonengrenze. 8-m-Saum (Bugwelle).
+3. **KI-Jet durch das Containerschiff** — `carrierLap` sah keine Hindernisse; eigene Prüfung
    `aiShipAhead()`, weil der Jet sonst seinen eigenen Träger als Hindernis gesehen hätte.
-4. **Feuerwehrboot drang ein statt abzuprallen** — es prüfte nur seinen Mittelpunkt (16 m langes
-   Boot!). `BOAT_LOOK` = 8 m, und die Verdrängung wirft jetzt zurück statt umzulenken.
+4. **Feuerwehrboot drang ein statt abzuprallen** — es prüfte nur seinen Mittelpunkt. `BOAT_LOOK`.
+5. **Barriere lag neben dem Schiff** — Hülle kam aus der Gesamtbox mit Masten. Jetzt Rumpfband + `cx`/`cz`.
+6. **Von vorne durchgefahren** — meine eigene Vorausschau machte das Ausweichen blind. Zwei Durchgänge.
+7. **Schiffe schwebten in der Luft** — sie fuhren jenseits des Meeresgitters. Radien 2,4 / 2,9 km.
+8. **Schatten für Boote und Astronaut** (Wunsch) — ovaler Schatten, wächst mit der Sprunghöhe.
+9. **Schatten wanderte** — er lag auf fester Höhe statt auf der Welle (bis 5,59 m Differenz).
+10. **Falcon flog seitwärts** — `setFromUnitVectors` ließ den Roll frei (im Mittel 45,3° gekippt).
+    Jetzt `lookAt` mit definiertem Oben.
 
-Alle Befunde stehen ausführlich im README („Schiffe auf dem Meer", „Schatten für alles, was tief
-unterwegs ist", „Ins Wasser: das Schlauchboot").
+Alle Befunde stehen ausführlich im README.

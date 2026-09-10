@@ -1014,6 +1014,7 @@ function preloadSeaShips(){
       const hullMin = new THREE.Vector3( 1e30,  1e30,  1e30);
       const hullMax = new THREE.Vector3(-1e30, -1e30, -1e30);
       const _hv = new THREE.Vector3();
+      const hullPts = [];                     // Rumpfpunkte im Band, fuer das Profil weiter unten
       wrap.traverse((o)=>{
         if(!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
         const pa = o.geometry.attributes.position;
@@ -1022,11 +1023,49 @@ function preloadSeaShips(){
           if(_hv.y < -2 || _hv.y > 3) continue;         // nur das Band um die Wasserlinie
           if(_hv.x<hullMin.x)hullMin.x=_hv.x; if(_hv.x>hullMax.x)hullMax.x=_hv.x;
           if(_hv.z<hullMin.z)hullMin.z=_hv.z; if(_hv.z>hullMax.z)hullMax.z=_hv.z;
+          hullPts.push(_hv.x, _hv.z);
         }
       });
       // Nichts im Band gefunden (darf nicht vorkommen — ein fehlendes Hindernis waere aber schlimmer
       // als ein zu grosses) -> auf die Gesamtbox zurueckfallen.
       const okHull = hullMin.x < hullMax.x && hullMin.z < hullMax.z;
+      // HALBBREITEN-PROFIL: die Grenze folgt der Rumpfform statt einem Rechteck. Der Rumpf wird in
+      // SHIP_SLICES Scheiben laengs geteilt, je Scheibe die groesste halbe Breite. Am spitzen Bug
+      // wird die Sperre damit schmal, wie der Rumpf selbst — gemessen sind am Rechteck 20 bis 26 %
+      // der Sperrzone ueberfluessig (C:/tmp/form.js).
+      // Zwei Dinge sind wichtig:
+      //  - Leere Scheiben werden aus den Nachbarn GEFUELLT. Die Vertexdichte ist ungleich, einzelne
+      //    Scheiben treffen gar keinen Punkt — ohne Fuellen waere dort ein Loch im Rumpf, durch das
+      //    man hindurchfaehrt. Das ist genau die Falle bei diesem Ansatz.
+      //  - Jede Scheibe bekommt das MAXIMUM ihrer Nachbarschaft, nie weniger als der Rumpf breit ist.
+      //    Zu breit ist harmlos (etwas Wasser gesperrt), zu schmal laesst einen durch den Stahl.
+      let prof = null;
+      if(okHull){
+        const pz0 = hullMin.z, pzL = hullMax.z - hullMin.z;
+        const raw = new Float32Array(SHIP_SLICES);
+        for(let i=0;i<hullPts.length;i+=2){
+          const px = hullPts[i], pz = hullPts[i+1];
+          let s = Math.floor((pz - pz0) / pzL * SHIP_SLICES);
+          if(s < 0) s = 0; else if(s >= SHIP_SLICES) s = SHIP_SLICES - 1;
+          const w = Math.abs(px - (hullMax.x + hullMin.x)/2);
+          if(w > raw[s]) raw[s] = w;
+        }
+        // Leere Scheiben aus den naechsten belegten Nachbarn fuellen (siehe oben).
+        prof = new Float32Array(SHIP_SLICES);
+        for(let s=0;s<SHIP_SLICES;s++){
+          if(raw[s] > 0){ prof[s] = raw[s]; continue; }
+          let l = -1, r = -1;
+          for(let k=s-1;k>=0;k--) if(raw[k] > 0){ l = raw[k]; break; }
+          for(let k=s+1;k<SHIP_SLICES;k++) if(raw[k] > 0){ r = raw[k]; break; }
+          prof[s] = Math.max(l, r, 0);
+        }
+        // Und jede Scheibe auf das Maximum mit ihren direkten Nachbarn ziehen: so entsteht keine
+        // Einschnuerung zwischen zwei Stuetzstellen, durch die eine Bootsnase schluepfen koennte.
+        const glatt = new Float32Array(SHIP_SLICES);
+        for(let s=0;s<SHIP_SLICES;s++)
+          glatt[s] = Math.max(prof[Math.max(0,s-1)], prof[s], prof[Math.min(SHIP_SLICES-1,s+1)]);
+        prof = glatt;
+      }
       shipHalf[def.key] = okHull ? {
         // Halbmasse UND Mittenversatz: der Rumpf sitzt nicht zwangslaeufig um 0. Ohne den Versatz
         // laege die Huelle wieder auf der falschen Seite (Segler: Rumpfmitte bei z = +8,3).
@@ -1034,6 +1073,7 @@ function preloadSeaShips(){
         hw: (hullMax.x - hullMin.x)/2,
         cz: (hullMax.z + hullMin.z)/2,
         cx: (hullMax.x + hullMin.x)/2,
+        prof,
         top: box4.max.y } : {
         hl: Math.max(Math.abs(box4.min.z), Math.abs(box4.max.z)),
         hw: Math.max(Math.abs(box4.min.x), Math.abs(box4.max.x)),
@@ -1068,6 +1108,7 @@ function refreshSeaShip(sh){
   // zwangslaeufig der Modellursprung. Alles, was in Schiffskoordinaten rechnet, muss ihn abziehen.
   sh.cz = h ? (h.cz || 0) : 0;
   sh.cx = h ? (h.cx || 0) : 0;
+  sh.prof = h ? (h.prof || null) : null;      // Halbbreiten-Profil (siehe shipHalf), null = Rechteck
   sh.top = h ? h.top : sh.len*0.08;
 }
 // Ist der Platz für ein Schiff dieser Länge frei? Ein 300 m langes Schiff braucht viel Wasser:
@@ -1180,7 +1221,8 @@ function hitsSeaShip(x, y, z, except){
     const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
     // Mittenversatz abziehen: die Huelle sitzt um die RUMPFmitte, nicht um den Modellursprung.
     const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
-    if(Math.abs(lx) < sh.hw + 4 && Math.abs(lz) < sh.hl + 4) return true;
+    // Breite an DIESER Laengsstelle (Rumpfform, nicht Rechteck) — siehe shipHalfWidthAt.
+    if(Math.abs(lz) < sh.hl + 4 && Math.abs(lx) < shipHalfWidthAt(sh, lz) + 4) return true;
   }
   return false;
 }
@@ -1215,6 +1257,20 @@ function seaShipWaterFor(sh, x, z){
 // Mit dem Saum drueckt der Rumpf schon NEBEN sich, wie eine Bugwelle: 13 s statt 115 s, 7,2 m statt
 // 25,5 m, Ende bei 62 % statt 91 % (C:/tmp/fix2.js). Die Kraft laeuft nach aussen sanft aus, damit
 // es sich wie Wasserverdraengung anfuehlt und nicht wie eine zweite unsichtbare Wand.
+// In so viele Laengsscheiben wird ein Rumpf fuer sein Halbbreiten-Profil geteilt. 24 trifft bei einem
+// 300-m-Schiff rund 12 m pro Scheibe — feiner als jedes Boot lang ist, also kann keines dazwischen
+// durchrutschen, und die Bugform ist gut abgebildet.
+const SHIP_SLICES = 24;
+// Halbe Rumpfbreite an der Laengsstelle lz (beide im Schiffssystem, um die Rumpfmitte). Das ist die
+// Antwort auf "die Grenze 1:1 an den Rumpf knuepfen": statt eines Rechtecks folgt sie der Form.
+// Ohne Profil (GLB noch nicht geladen) gilt weiter die volle Halbbreite — lieber zu viel gesperrt
+// als ein unsichtbares Loch.
+function shipHalfWidthAt(sh, lz){
+  if(!sh.prof) return sh.hw;
+  let s = Math.floor((lz + sh.hl) / (2*sh.hl) * SHIP_SLICES);
+  if(s < 0) s = 0; else if(s >= SHIP_SLICES) s = SHIP_SLICES - 1;
+  return sh.prof[s];
+}
 const SHIP_PUSH = 30;      // m/s, mit denen ein Rumpf ein Boot beiseite drückt (deutlich über Schiffstempo)
 const SHIP_WAKE = 8;       // m Saum AUSSERHALB der Sperrzone, in dem der Rumpf noch wegschiebt
 // Wie viel von der Fahrt gegen die Bordwand zurueckkommt. 0 = tote Wand (Fahrt einfach weg),
@@ -1228,7 +1284,7 @@ function pushOutOfSeaShip(pos, vel, dt){
     const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
     // Lage im Schiffssystem, bezogen auf die RUMPFmitte (Versatz siehe shipHalf)
     const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
-    const gx = sh.hw + 4, gz = sh.hl + 4;                  // Grenzen der Sperrzone
+    const gx = shipHalfWidthAt(sh, lz) + 4, gz = sh.hl + 4;   // Grenzen: Breite nach der Rumpfform
     // Laengs muss es neben dem Rumpf liegen; quer zaehlt der Saum mit.
     if(Math.abs(lz) >= gz || Math.abs(lx) >= gx + SHIP_WAKE) continue;
     const drin = Math.abs(lx) < gx;
@@ -2339,9 +2395,12 @@ function updateOvalShadow(){
   }
   if(alt > SHADOW_MAXALT){ ovalShadow.visible = false; return; }
   const onLand = isOnLand(px, pz), onCar = isOnCarrier(px, pz);
-  // Auflagehoehe: Traegerdeck, Insel oder Wasser. Ueber Wasser ueber die Wellenberge legen, damit
-  // der Schatten nicht in einer Welle verschwindet (dieselbe Ueberlegung wie bei planeShadow).
-  const surf = onCar ? fordDeckY : (onLand ? ISLAND_Y : 1.4);
+  // Auflagehoehe. Ueber Wasser die WELLENHOEHE AN DIESER STELLE — nicht ein fester Wert.
+  // Mit den festen 1,4 m lag der Schatten bis zu 5,59 m ueber dem Boot (gemessen), und weil er mit
+  // depthTest:false immer davor gezeichnet wird, erschien diese Hoehendifferenz als VERSATZ, der
+  // sich mit dem Kamerawinkel aendert: "der Schatten wandert selbstaendig, und von der Seite
+  // wandert er anders". Auf der Wellenhoehe liegt er wirklich unter dem Boot.
+  const surf = onCar ? fordDeckY : (onLand ? ISLAND_Y : seaYAt(px, pz));
   ovalShadow.visible = true;
   ovalShadow.position.set(px, surf + 0.15, pz);
   // Nach rotation.x = -PI/2 dreht rotation.z IN der Bodenebene, und zwar mit +yaw. Vorzeichen und
@@ -4595,9 +4654,24 @@ function updatePads(dt){
 // die +Z-Achse zum Ziel (anders als bei Kameras), und alle Modelle hier sind auf „Nase = -Z"
 // vorgedreht — mit lookAt fliegen sie rückwärts.
 const _NOSE = new THREE.Vector3(0,0,-1);
+// Nase in Flugrichtung — MIT definiertem Oben. setFromUnitVectors nimmt die KUERZESTE Drehung,
+// und die laesst den Roll frei: das Schiff kippt beliebig um seine Laengsachse. Gemessen ueber
+// 10.500 Flugrichtungen waren das im Mittel 45,3 Grad, bei ueber der Haelfte mehr als 25 Grad und
+// im schlimmsten Fall 180. Beim Millennium Falcon faellt genau das auf, weil er eine flache Scheibe
+// ist: gekippt sieht er aus, als flieche er seitwaerts mit der rechten Seite voraus — so gemeldet.
+// Mit lookAt bleibt das Deck waagerecht: Roll im Mittel 1,8 Grad, die Nase trifft die Flugrichtung
+// exakt (0,00 Grad Abweichung, nachgemessen).
+// lookAt richtet die +Z-Achse auf das Ziel — mit Ziel = +dir landet unsere -Z-Nase korrekt auf dir
+// (mit -dir stand sie genau rueckwaerts; beides durchgerechnet, nicht geraten).
+// Bei Flug fast senkrecht ist "oben" nicht definiert -> dann eine andere Bezugsachse.
+const _faceM = new THREE.Matrix4(), _faceUp = new THREE.Vector3(0,1,0),
+      _faceAlt = new THREE.Vector3(0,0,1), _faceZero = new THREE.Vector3(0,0,0),
+      _faceDir = new THREE.Vector3();
 function faceAlong(obj, dir){
   if(dir.lengthSq() < 1e-9) return;
-  obj.quaternion.setFromUnitVectors(_NOSE, dir.clone().normalize());
+  _faceDir.copy(dir).normalize();
+  _faceM.lookAt(_faceZero, _faceDir, Math.abs(_faceDir.y) > 0.98 ? _faceAlt : _faceUp);
+  obj.quaternion.setFromRotationMatrix(_faceM);
 }
 
 // ---------- Star Destroyer: der Flugzeugträger des Weltalls ----------
@@ -5448,6 +5522,9 @@ function resetPlane() {
 
 // ---------- Eingaben ----------
 const keys = {};
+// Schalter fuer die Schiffs-Diagnose (Taste J, Anzeige siehe shipDiagText weiter unten). Steht
+// HIER und nicht bei der Anzeige: `let` wird nicht gehoistet, und der Tastendruck kommt im Code vorher.
+let shipDiag = false;
 addEventListener('keydown', e => {
   keys[e.code]=true;
   if(e.code==='KeyR') resetPlane();
@@ -5455,7 +5532,8 @@ addEventListener('keydown', e => {
   if(e.code==='KeyM') cycleModel();
   if(e.code==='KeyX') state.throttle = 0;
   if(e.code==='KeyB') buttonB();          // Canadair: Wasser · AlphaJet: Schleudersitz
-  // T (Aufgaben) und J (Flugverkehr) sind entfallen: der Verkehr laeuft immer, Aufgaben sind ausgebaut.
+  // T (Aufgaben) ist entfallen. J liegt jetzt auf der Schiffs-Diagnose (siehe shipDiagText).
+  if(e.code==='KeyJ'){ shipDiag = !shipDiag; showBig(shipDiag ? 'Diagnose an' : 'Diagnose aus'); }
 
   if(e.code==='KeyH') toggleHelp();       // Tastaturbelegung ein/aus (Standard: aus)
   if(e.code==='KeyN') toggleSound();      // Ton an/aus (Standard: aus)
@@ -5690,6 +5768,24 @@ const BOAT_YAW = 0.9;        // Wendigkeit am Ruder (rad/s bei voller Fahrt)
 // Vorausschau bleiben davon 1,0 m (C:/tmp/diag_boot4.js). Das Schlauchboot macht das ueber
 // DINGHY_LAND_R schon lange; dem laengeren Boot fehlte es.
 const BOAT_LOOK = 8;         // m Vorausschau (halbe Bootslaenge)
+const BOAT_HALF_W = 2.2;     // halbe Bootsbreite (Modell: 4,35 m, ausgemessen)
+// Prueft den GANZEN Bootsumriss auf freies Wasser, nicht nur einen Punkt. Ein einzelner Punkt vor
+// dem Bug genuegt naemlich nicht: gemessen haben 5,4 % aller Lagen die Bootsmitte im Schiffsrumpf,
+// waehrend dieser Punkt schon wieder im Freien liegt (Nase quer zur Bordwand hinaus, oder ueber die
+// Bugspitze hinweg). Die Sperre gab die Fahrt dann frei — mitten im Stahl, und von dort ging es
+// ungehindert weiter durch das ganze Schiff.
+// Geprueft werden Bug, Mitte und Heck, jeweils auf der Mittellinie und an beiden Seiten. Damit ist
+// keine Lage mehr "frei", in der irgendein Teil des Boots in einem Rumpf steckt.
+function boatWaterFree(cx, cz, fx, fz){
+  const sx = -fz, sz = fx;                                  // quer zur Fahrtrichtung
+  for(let i = -1; i <= 1; i++){                             // Heck, Mitte, Bug
+    const lx = cx + fx*BOAT_LOOK*i, lz = cz + fz*BOAT_LOOK*i;
+    for(let j = -1; j <= 1; j++){                           // backbord, Mitte, steuerbord
+      if(!isOpenWater(lx + sx*BOAT_HALF_W*j, lz + sz*BOAT_HALF_W*j)) return false;
+    }
+  }
+  return true;
+}
 const BOAT_ROLL = 0.25;      // wie stark es sich in die Kurve legt (rein optisch)
 // Wie stark das Boot mit der Dünung nickt. Angehoben (0,5 -> 1,0): bei den größeren Wellen soll man
 // dem 16-m-Boot ansehen, dass es arbeitet. Die Neigung, die es dabei erfährt, kommt aus der
@@ -5740,13 +5836,25 @@ function coastSlide(pos, vel, fwd, dt, look){
   if(spd0 > 1e-6){ ux = vel.x/spd0; uz = vel.z/spd0; }                   // Fahrtrichtung
   else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                       // steht: Nasenrichtung
          ux = fwd.x/fl; uz = fwd.z/fl; }
-  // Zuerst mit Vorausschau, dann ohne (siehe oben) — der zweite Durchgang ist der Notausgang.
-  for(const reach of (look ? [sp + look, sp] : [sp])){
+  // Zwei Durchgaenge: erst streng (Ziellage UND ein Stueck voraus muessen frei sein), dann als
+  // Notausgang nur die Ziellage. Ohne den zweiten Durchgang wird das Ausweichen blind, sobald man
+  // frontal vor einem langen Rumpf steht (von 12 Richtungen nur noch 4 frei, C:/tmp/sack.js) — dann
+  // wird das Boot bewegungslos ueberfahren.
+  // WICHTIG ist, dass immer die TATSAECHLICHE Ziellage geprueft wird (pos + d*sp). Vorher wurde nur
+  // ein Punkt reach voraus geprueft, im Vorausschau-Durchgang also 8 m weiter, als das Boot sich
+  // bewegt. Die Lage, in der es dann wirklich landete, war ungeprueft: gemessen schob coastSlide es
+  // so in den Rumpf eines Kreuzfahrtschiffs und dort Frame um Frame weiter, obwohl die
+  // Umrisspruefung besetzt meldete (Trace C:/tmp/v8.js).
+  for(const weit of (look ? [look, 0] : [0])){
     for(const deg of [20, 40, 60, 80, 100, 120]){
       const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
       for(const sgn of [1, -1]){
         const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
-        if(!isOpenWater(pos.x + dx*reach, pos.z + dz*reach)) continue;
+        // Die Lage, in der das Boot nach diesem Schritt WIRKLICH liegt:
+        const zx = pos.x + dx*sp, zz2 = pos.z + dz*sp;
+        if(look ? !boatWaterFree(zx, zz2, dx, dz) : !isOpenWater(zx, zz2)) continue;
+        // und, wenn moeglich, auch noch ein Stueck weiter in dieselbe Richtung
+        if(weit > 0 && !boatWaterFree(pos.x + dx*(sp+weit), pos.z + dz*(sp+weit), dx, dz)) continue;
         pos.x += dx*sp; pos.z += dz*sp;
         // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
         // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
@@ -5805,9 +5913,9 @@ function stepBoat(dt, inp){
   // (siehe buildIsland). Ohne isOnBeach fuhr das Boot gut 30 m weit über den Strand, was aussah,
   // als führe es an Land.
   const nx = state.pos.x + state.vel.x*dt, nz = state.pos.z + state.vel.z*dt;
-  // Geprueft wird der BUG (BOAT_LOOK voraus), nicht der Mittelpunkt: sonst faehrt das 16-m-Boot mit
-  // dem halben Rumpf in ein Schiff, bevor die Sperre anspricht — siehe BOAT_LOOK.
-  if(isOpenWater(nx + fwd.x*BOAT_LOOK, nz + fwd.z*BOAT_LOOK)){ state.pos.x = nx; state.pos.z = nz; }
+  // Geprueft wird der GANZE Rumpf (Bug, Mitte, Heck, beide Seiten) — siehe boatWaterFree. Ein
+  // einzelner Punkt vor dem Bug liess das Boot aus 5,4 % aller Lagen mitten durch den Stahl fahren.
+  if(boatWaterFree(nx, nz, fwd.x, fwd.z)){ state.pos.x = nx; state.pos.z = nz; }
   else {
     // Blockiert -> an der Kueste abgleiten (dieselbe Logik nutzt das Schlauchboot, siehe coastSlide).
     coastSlide(state.pos, state.vel, fwd, dt, BOAT_LOOK);
@@ -6181,6 +6289,8 @@ function stepPhysics(dt, inp){
 // bildratenunabhängiges Nachziehen. Der Loop schreibt es hier hinein, bevor er updateCamera ruft.
 let dtCam = 1/60;
 const _camOff = new THREE.Vector3(), _camDes = new THREE.Vector3();
+// Hilfsvektoren fuer die Kamera-Kollision (wiederverwendet, damit pro Frame kein Muell entsteht)
+const _camFix = new THREE.Vector3(), _camTry = new THREE.Vector3();
 function updateCamera(){
   // Draußen unterwegs: Kamera hinter dem Astronauten, leicht von oben — und mit dem rechten Stick
   // frei um ihn herum schwenkbar (siehe evaOrbit/evaPitch). Losgelassen gleitet sie von allein
@@ -6300,6 +6410,27 @@ function updateCamera(){
   // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
   // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
   if(locale === 'earth' && desired.y < 2) desired.y = 2;
+  // Die Kamera darf nicht IN einem Schiffsrumpf sitzen. Sie hatte bisher gar keine Kollision, und
+  // weil sie rund 30 m hinter dem Fahrzeug haengt, steckte sie beim Vorbeifahren an einem 300-m-
+  // Frachter regelmaessig darin: gemessen bei bis zu 50 % der Kurse, wenn das Boot laengsseits
+  // faehrt. Man sah dann von INNEN roten Stahl und hielt es fuer "ich fahre durch das Schiff",
+  // obwohl das Boot draussen im Wasser blieb — auf dem Screenshot war rings um das Boot ja Wasser.
+  // Loesung: die Kamera in solchen Faellen naeher heranholen, bis sie im Freien ist. Das ist die
+  // uebliche Loesung fuer Verfolgerkameras und stoert nicht: naeher dran ist immer eine gueltige Sicht.
+  if(locale === 'earth' && typeof hitsSeaShip === 'function'){
+    const ref = eva ? eva.group.position : state.pos;
+    _camFix.copy(desired).sub(ref);
+    const full = _camFix.length();
+    if(full > 1 && hitsSeaShip(desired.x, desired.y, desired.z)){
+      // In Achtelschritten heranziehen, bis frei. Der letzte Rueckfall ist die Fahrzeugposition
+      // selbst — dort ist die Kamera notfalls "im" Fahrzeug, aber niemals in einem fremden Rumpf.
+      for(let s = 7; s >= 1; s--){
+        _camTry.copy(ref).addScaledVector(_camFix, s/8);
+        if(!hitsSeaShip(_camTry.x, _camTry.y, _camTry.z)){ desired.copy(_camTry); break; }
+        if(s === 1) desired.copy(ref);
+      }
+    }
+  }
   camera.up.copy(upV);
   // Nachgezogen wird der ABSTAND zum Flieger, nicht die absolute Position. Zieht man die Position
   // nach, wächst der Rückstand mit der Fahrt und mit sinkender Bildrate — bei Mach 2 waren es rund
@@ -6344,6 +6475,37 @@ function repeatSym(sym, count, max){
   const nRaw = Math.round(count);
   const n = Math.max(0, Math.min(max === undefined ? 99 : max, isFinite(nRaw) ? nRaw : 0));
   return sym.repeat(n);
+}
+// Diagnose-Anzeige, mit J umschaltbar. Sie nennt das naechste Schiff und die Lage des Fahrzeugs in
+// SEINEM Koordinatensystem — quer und laengs, jeweils gegen die Grenze. Damit ist im Spiel sofort zu
+// sehen, ob ein Durchfahren daran liegt, dass die Huelle zu klein ist (dann steht dort "frei",
+// obwohl man sichtbar im Stahl sitzt) oder dass die Sperre nicht greift (dann steht "IM RUMPF").
+// Die Unterscheidung ist der ganze Zweck: sie sagt, an welcher der beiden Stellen der Fehler sitzt.
+// (shipDiag selbst steht weiter oben, beim Tastatur-Handler — let wird nicht gehoistet.)
+function shipDiagText(){
+  if(!shipDiag) return '';
+  const p = eva ? (eva.boat ? eva.boat.position : eva.group.position) : state.pos;
+  let nah = null, best = 1e9, drin = false;
+  for(const sh of seaShips){
+    if(!sh.group) continue;
+    const rx = p.x - sh.x, rz = p.z - sh.z;
+    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
+    const gx = shipHalfWidthAt(sh, lz) + 4, gz = sh.hl + 4;
+    const istDrin = Math.abs(lx) < gx && Math.abs(lz) < gz;
+    // Ein Schiff, in dem man steckt, hat immer Vorrang vor einem naeheren daneben.
+    const rang = istDrin ? -1000 + Math.min(gx - Math.abs(lx), gz - Math.abs(lz))
+                         : Math.max(Math.abs(lx) - gx, Math.abs(lz) - gz);
+    if(rang < best){ best = rang; drin = istDrin;
+      nah = { key: sh.key, lx, lz, gx, gz,
+              tief: istDrin ? Math.min(gx - Math.abs(lx), gz - Math.abs(lz))
+                            : Math.max(Math.abs(lx) - gx, Math.abs(lz) - gz) }; }
+  }
+  if(!nah) return '<br>Diagnose: kein Schiff geladen';
+  const lage = drin ? 'IM RUMPF, ' + nah.tief.toFixed(1) + ' m tief'
+                    : 'frei, ' + nah.tief.toFixed(1) + ' m Abstand';
+  return '<br>Diagnose ' + nah.key + ': quer ' + nah.lx.toFixed(1) + '/' + nah.gx.toFixed(1)
+       + '  laengs ' + nah.lz.toFixed(1) + '/' + nah.gz.toFixed(1) + '  ' + lage;
 }
 function updateHUD(){
   // Im Weltall gibt es keine sinnvolle Höhe -> Zeile ausblenden. Auf dem Mond zählt die Höhe
@@ -6434,7 +6596,11 @@ function updateHUD(){
     nav = '🚀' + ((aim && aim.def.sym) ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
   } else if(GROUNDS[locale]){ const hb = bodyOf(locale); nav = hb ? hb.def.sym : '🌙'; }
   else if(locale === 'death') nav = '🛰️';
-  elStat.textContent = nav ? (nav + ' ' + s) : s;
+  // Diagnose (J) haengt hinten dran. innerHTML statt textContent, weil der Text ein <br> enthaelt;
+  // beides kommt aus dem Spiel selbst, es wird nichts von aussen eingesetzt.
+  const diag = (typeof shipDiagText === 'function') ? shipDiagText() : '';
+  const roh = nav ? (nav + ' ' + s) : s;
+  if(diag) elStat.innerHTML = roh + diag; else elStat.textContent = roh;
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------

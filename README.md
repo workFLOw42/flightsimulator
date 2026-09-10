@@ -318,6 +318,31 @@ frei. Genau so ein Schiff war auf einem Screenshot zu sehen.
   darüber hinweg. Deshalb läuft die Ausweichsuche jetzt **zweimal**: erst mit Vorausschau, dann ohne
   (Notausgang). Lieber knapp am Rumpf entlangschrammen als bewegungslos überfahren werden. Nachgemessen
   aus 7 Anfahrtwinkeln × 4 Schiffen: **kein Durchfahren mehr**, höchstens 2,53 m Kontakt am Bug.
+- **Die Grenze folgt jetzt der Rumpfform, nicht einem Rechteck.** Auf die Frage „kann man die
+  Objektgrenze nicht einfach 1:1 an den Rumpf knüpfen?" — ja, und so ist es jetzt: der Rumpf wird
+  längs in **24 Scheiben** geteilt und je Scheibe die halbe Breite gespeichert. Die Prüfung fragt
+  danach „ist |quer| kleiner als die Breite **an dieser Längsstelle**". Am spitzen Bug wird die Sperre
+  damit schmal wie der Rumpf selbst; am Rechteck waren **20 bis 26 %** der Sperrzone überflüssig.
+  Die Falle bei diesem Ansatz sind **leere Scheiben**: die Vertexdichte der Modelle ist ungleich,
+  einzelne Scheiben treffen gar keinen Punkt. Ungefüllt wäre dort ein Loch, durch das man hindurchfährt
+  — deshalb werden sie aus den Nachbarn gefüllt und jede Scheibe aufs Maximum ihrer Nachbarschaft
+  gezogen. Nachgemessen hat danach kein Profil eine Breite von 0.
+- **Und geprüft wird der ganze Bootsumriss, nicht ein Punkt.** Das war die eigentliche Lücke beim
+  gemeldeten „ich fahre immer noch durch das Containerschiff": geprüft wurde nur *ein* Punkt 8 m vor
+  der Bootsmitte. Gemessen haben **5,4 %** aller Lagen die Bootsmitte im Rumpf, während dieser eine
+  Punkt schon wieder im Freien liegt — Nase quer zur Bordwand hinaus, oder über die Bugspitze hinweg.
+  Die Sperre gab die Fahrt dann frei, mitten im Stahl, und von dort ging es ungehindert weiter.
+  Jetzt werden **neun Punkte** geprüft: Bug, Mitte und Heck, jeweils auf der Mittellinie und an beiden
+  Seiten. Dasselbe gilt für die Ausweichlogik, und dort zusätzlich: sie prüft jetzt die **tatsächliche
+  Ziellage** (wohin das Boot in diesem Frame kommt), nicht mehr einen Punkt 8 m weiter voraus — die
+  Lage, in der es wirklich landete, war vorher ungeprüft.
+  Über **1.280 Anfahrten** (4 Schiffe × 4 Kurse × 20 Richtungen × 2 Abstände × vor/rückwärts) kommt
+  die Bootsmitte danach höchstens **3 %** in den Rumpf hinein; vorher waren es 28 %.
+- **Diagnose im Spiel (Taste J).** Weil ein gemeldetes Durchfahren in über 1.200 simulierten Anfahrten
+  *nicht* reproduzierbar war, zeigt das HUD auf Wunsch die Lage zum nächsten Schiff: quer und längs,
+  jeweils gegen die Grenze, dazu „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu unterscheiden,
+  ob eine Hülle zu klein ist (dann steht „frei", obwohl man sichtbar im Stahl sitzt) oder ob die Sperre
+  nicht greift (dann steht „IM RUMPF") — die beiden Fälle brauchen ganz verschiedene Fixes.
 
 ### Sie wackeln nach ihrer Größe
 Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro
@@ -418,6 +443,33 @@ Beim Containerschiff geht die volle Tiefe nicht: sein Rumpf ist nur bis −4,38 
 Ziellänge skaliert −8,58), tiefer würde man in ein Loch sehen. 2,86 % nutzen ihn fast vollständig aus.
 Vorher lag er bei 1,46 % und **schwebte sichtbar** — der ganze rote Unterwasserrumpf war zu sehen.
 
+## 🚀 Die Raumschiffe flogen halb gekippt
+
+Gemeldet: „der Millennium Falcon fliegt seitwärts, die rechte Seite ist jetzt vorne."
+
+Die Ausrichtung des Modells war dabei **richtig** — am Umriss nachgesehen zeigen die beiden Mandibeln
+(die Bug-Gabel) nach vorn. Der Fehler lag daran, **wie** die Schiffe in ihre Flugrichtung gedreht
+wurden: mit `setFromUnitVectors`, und das liefert die *kürzeste* Drehung von der Nase zur
+Flugrichtung. Die lässt den **Roll frei** — das Schiff kippt beliebig um seine Längsachse.
+
+Über 10.500 zufällige Flugrichtungen gemessen:
+
+| | vorher | jetzt |
+|---|---|---|
+| Roll im Mittel | **45,3°** | 1,6° |
+| mehr als 25° gekippt | **51,2 %** der Richtungen | — |
+| schlimmster Fall | 179,9° | (nur bei Senkrechtflug) |
+| Nase trifft die Flugrichtung | ja | ja (0,00° Abweichung) |
+
+Bei einem länglichen Schiff fällt das kaum auf, beim Falcon dagegen sofort: er ist eine **flache
+Scheibe**, und um 90° gekippt sieht sie aus wie ein Schiff, das seitwärts fliegt. Jetzt wird über
+`Matrix4.lookAt` mit definiertem Oben gedreht, das Deck bleibt waagerecht.
+
+Zwei Details, beide durchgerechnet statt geraten: `lookAt` richtet die **+Z**-Achse aufs Ziel, unsere
+Nase ist aber −Z — mit dem Ziel *entgegen* der Flugrichtung stand das Schiff genau rückwärts, mit dem
+Ziel **in** Flugrichtung stimmt es. Und bei fast senkrechtem Flug ist „oben" nicht definiert, dort
+braucht es eine andere Bezugsachse.
+
 ## 🌑 Schatten für alles, was tief unterwegs ist
 
 Der Höhen-Schatten (sichtbar ab 20 m) war ein **Flugzeug**-Umriss: zwei gekreuzte Ellipsen für Rumpf
@@ -441,6 +493,12 @@ Zwei Kleinigkeiten, die beim Einbau auffielen und ausgemessen wurden:
 - Die Drehachse ist `rotation.z`, nicht `.y` — die Kreisfläche ist ja schon um X gekippt. Und das
   **Vorzeichen** ist positiv: mit `-yaw` stand der Bootsschatten quer zur Fahrt. Beides mit echtem
   three.js nachgesehen statt hergeleitet.
+- **Der Schatten lag auf fester Höhe und wanderte dadurch.** Gemeldet: „der Schatten wandert
+  selbständig, und wenn ich von der Seite schaue, wandert er anders." Er saß auf konstanten 1,55 m,
+  das Boot schwankt aber mit der Welle — gemessen lag er bis zu **5,59 m** über dem Boot. Weil er mit
+  `depthTest:false` immer davor gezeichnet wird, erscheint diese Höhendifferenz als **Versatz im Bild**,
+  und der ändert sich mit dem Blickwinkel: genau das „Wandern". Jetzt liegt er auf der **Wellenhöhe an
+  seiner Stelle**, die Differenz zum Boot ist konstant 1,25 m (= Tiefgang, also genau die Wasserlinie).
 - Der neue Schatten braucht ein **eigenes Material**. Beide setzen ihre Deckkraft nach der Höhe; mit
   einem gemeinsamen Material hätte der eine den anderen mitverstellt.
 
