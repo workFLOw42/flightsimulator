@@ -128,21 +128,102 @@ mitten darin gelegen und den Zufall der Türme mit dem der Rakete verkoppelt. Je
 
 ---
 
-## Offen: Wunschliste aus der siebten Runde
+## Wunschliste aus der siebten Runde
 
-Alles noch nicht angefangen, in der Reihenfolge, in der es genannt wurde:
+**1. Ein- und Aussteigen, Fahrzeuge wechseln — ERLEDIGT.** Auf jeder Nicht-Stadt-Insel steht ein
+geparkter X-Wing (Ring bei 45 % des Inselradius, 16 Richtungen, Salt 902/903), auf dem Träger einer
+am Deckrand. Zu Fuß hin, **B** — man sitzt drin und steht startklar auf der Landebahn. Auf Mond und
+Mars steht 30 m rechts neben dem gelandeten X-Wing ein Fahrzeug (Mars: Perseverance, Mond: Apollo
+Lunar Rover), **B** steigt ein und aus. Gefahren wird wie im Flugzeug: rechter Stick gibt Schub in
+**10-%-Stufen** (`thrStep`), linker Stick lenkt nur, A fährt rückwärts. Follow-Modus und orange
+Leuchtsäule sind entfallen.
 
-**1. Ein- und Aussteigen, Fahrzeuge wechseln.** Auf jeder Nicht-Stadt-Insel steht ein X-Wing. Im
-gelandeten normalen Flugzeug öffnet **B** die Kanzel: man läuft als Astronaut heraus, geht zum X-Wing
-und steigt dort mit **B** ein — oder wieder ins Flugzeug zurück. Auf **Mond** wechselt man zwischen
-**Lunar Rover** und X-Wing, auf **Mars** zwischen **Mars-Rover** und X-Wing. Das Fahrzeug **spawnt
-immer 30 m rechts neben dem gelandeten X-Wing**.
-  - Damit fällt der **Follow-Modus des Rovers** weg: man läuft entweder selbst oder fährt.
-  - Damit fällt auch der **orange Kegel** weg, weil es egal ist, wo man landet.
-  - **Beide Rover fahren maximal 100 km/h.**
-  - **Radar zu Fuß:** X-Wing weiß, Mars-Rover orange, Lunar Rover blau. **Im Rover:** nur der X-Wing.
-    Auf der Erde braucht es das nicht — dort steht auf jeder Insel einer, und auf dem Träger am Rand
-    (außerhalb der Landebahn).
+Gebaut als `eva.rover` — ein Sub-Modus **innerhalb** von `eva`, nach dem Vorbild von `eva.boat`
+(Schlauchboot): eigene Physik (`updateRover`), eigener Kamerafaktor, eigene HUD-Anzeige, eigener
+Eingabezweig. Der Alternativweg über `MODEL_NAMES`/`PLANE_SPECS` wäre mit `cycleModel` kollidiert
+(der Rover stände in der M-Reihenfolge) und mit `evaAllowed`s `if(isBoat()) return false`.
+
+  - **Lunar Rover gebaut:** 30,1 MB / 464.116 Dreiecke → **34.440 Dreiecke / 2,37 MB** per
+    Vertex-Clustering (3 cm Raster), 3,7 cm Silhouettenfehler. Im Browser nachgemessen
+    3,09 × 1,77 × 1,78 m — der echte Apollo-LRV ist 3,10 m lang. Bewusst feiner gerastert als bei
+    der Rakete (0,3 m): den Rover sieht man von einem Meter Entfernung, die Rakete war 62 m hoch.
+  - **Sieben der neun Materialien hatten keinen `baseColorFactor`** — die Farbe steckte allein in
+    8 MB PNG-Texturen, die beim Clustern verlorengehen. Die PNGs wurden dekodiert
+    (Filter-Rückrechnung nach RFC 2083 + sRGB→linear); jedes Material hat jetzt seine echte
+    Mittelfarbe: Chassis #8b8b88, Räder #6a4b33 (Mondstaub), FrontParts #393424, Antenne #b7b7b7.
+  - **Radar zu Fuß** über `footTargets()`: X-Wing weiß, Mars-Rover orange, Lunar Rover blau. Im
+    Rover nur der weiße X-Wing. `updateRadar` verarbeitete schon Arrays (`spaceTargets`), es war
+    also nur die Quelle zu erweitern.
+  - **Mondbasis-Boden:** der Rover kennt ihn, ohne dass dafür etwas zu tun war. `updateRover` setzt
+    seine Höhe über `vehicleGroundY` → `surfaceY`, und `surfaceY` fragt `basePlatformNear` **vor**
+    allem anderen ab. Er fährt also auf der Fläche statt im Krater darunter.
+
+### Zwei Fehler, die erst der Browsertest zeigte
+
+1. **Auf dem Mond stand kein Fahrzeug.** `placeGroundBase` hatte `if(locale === "moon") { Basis }
+   else if(locale === "mars" || locale === "moon") { Fahrzeug }` — der zweite Zweig ist für `moon`
+   **unerreichbar**. `roverSpot.moon` blieb null, das Radar zeigte einen Blip statt zwei. Jetzt ein
+   eigenes `if`: Basis und Fahrzeug sind zwei unabhängige Dinge.
+2. **Das Fahrzeug stand 47–105 m entfernt statt 30 m,** und der Abstand wuchs jeden Frame.
+   `placeGroundBase` läuft in **jedem** Frame, also auch im Anflug — der Spot wurde gesetzt,
+   während der X-Wing noch mit über 6 m pro Frame weiterflog, und blieb dann liegen (Neusetzen erst
+   ab 400 m). Jetzt wird er erst gesetzt, wenn der X-Wing wirklich **steht**.
+
+### Eine Fehldiagnose, die die Messung widerlegt hat
+Ein Testskript meldete, der fahrende Rover stehe 3 m unter der Marsfläche. Als Ursache hatte ich die
+Toleranz in `surfaceY` vermutet (`tol = eva ? 1.5 : 5`, während der Rover 1,39 m pro Frame fährt) und
+sie für den Rover auf 5 m gesetzt, dazu `stepGroundExact` auf das volle Tastkreuz umgestellt.
+**Beides war falsch und ist zurückgenommen:** nachgemessen lag die Messstelle maximal 1,39 m
+entfernt (im Mittel 0,14 m), also durchgehend innerhalb der Toleranz — die Änderung bewirkte nichts.
+Und der Versatz existierte nicht: an der Stelle des Rovers gilt `surfaceY` = `groundHitY` =
+`vehicleGroundY` = −27,07 m, und `updateRover` setzt ihn auf genau diesen Wert. Das Testskript hatte
+die Höhe vor dem Physikschritt abgelesen, also einen Frame zu früh.
+
+**Lehre:** ein `if(eva)` bedeutet nicht mehr „zu Fuß“ — seit es Sub-Modi gibt (`eva.boat`,
+`eva.rover`), muss jede solche Stelle prüfen, **welches** davon gilt. Fehler 1 saß genau darin.
+Aber: erst messen, dann ändern. Zwei dieser Stellen waren richtig, wie sie waren.
+
+### Verifiziert
+- **8.065 Inseln** über 14.641 Zellen simuliert: 7.218 bekommen einen X-Wing, 39 finden keinen Platz
+  (0,54 %), **null** Kollisionen mit Landebahn, Hafen, Häusern oder Raketenrampe; engster Abstand zu
+  einem Bauwerk genau die geforderten 26,0 m; Platzierung deterministisch.
+- **Browser (Playwright), 0 Konsolenfehler:** Lunar Rover lädt mit 3,09 × 1,77 × 1,78 m; auf einer
+  Insel aussteigen → zum X-Wing → **B** → steht auf der Landebahn; auf Mond und Mars Abstand **genau
+  30,00 m**, Blips korrekt (weiß+orange bzw. weiß+blau, im Rover nur weiß); Vollgas erreicht
+  **100,0 km/h nach 3,90 s** (gerechnet 3,97 s) und deckelt dort sauber; aussteigen und am X-Wing
+  wieder einsteigen geht auf beiden Himmelskörpern.
+- **Ausrollen:** Gas weg = Halt nach 1,79 s. Nicht der Rollwiderstand bremst, sondern die
+  Schubregelung (Zielgeschwindigkeit 0 mit den vollen 7 m/s²) — wie beim Feuerwehrboot.
+
+### Drei Zusatzwünsche derselben Runde
+- **Kollision → sofort trudeln statt Stall.** `state.falling` **war** schon das senkrechte Trudeln,
+  aber die Stall-Logik stand davor und griff im Frame nach dem Treffer trotzdem: der Treffer setzt
+  `vel` auf 0, damit ist die Fahrt unter `vStall`. Man sah einen Strömungsabriss (Nase auf −75°,
+  Dauer-Zittern am Controller) und **dann** den Sturz. Jetzt schließt `!state.falling` das aus — im
+  Sturz gibt es auch sachlich keinen Auftrieb, der abreißen könnte.
+- **Ariane landet und startet senkrecht.** Im GLB steht sie aufrecht (Längsachse Y, 62 m),
+  `SHIP_DEFS` legt sie mit `rot [-PI/2,0,0]` auf die Seite — richtig fürs **Weltall**, wo jedes
+  Schiff mit der Nase auf −Z zieht. Die Landeplätze klonen aber genau diese vorgedrehte Vorlage,
+  also **lag** sie mit 34,00 m Länge auf dem Boden. Die Drehung wird jetzt nur für den Landeplatz
+  zurückgenommen (im Browser geprüft: 3,27 × **34,00** × 3,29 m, aufrecht). Ihr Aufsetz-Aufschlag
+  kommt dabei aus dem **Grundriss**, nicht aus der Höhe — 34 m × 0,45 wären 15,3 m gewesen, sie
+  hätte sichtbar geschwebt.
+- **Canadair versinkt nicht mehr in den Wellen.** Gemessen: das Modell steht mit der Unterkante auf
+  y = 0, sein Rumpf ist rund 3,3 m hoch — und die sichtbare Wasserfläche an seiner Stelle steigt bis
+  **+2,94 m**. Die Welle deckte ihn zu **89 %** zu. Mit einem festen `yOff` ist das nicht zu heilen:
+  im Wellenberg schlägt sie genauso darüber, im Tal schwebte es. Es muss **mitschwimmen**.
+  `CANADAIR_DRAFT = 0,55 m` (echter CL-215: 0,9 m bei 28,60 m Spannweite → 0,58 m im Modellmaßstab),
+  dazu Nicken aus der Dünung wie beim Feuerwehrboot (0,9° Spitze — das Boot hat 1,3°, gleiche
+  Größenordnung). Im Browser: **4,71 m Hub** auf dem Wasser, 0,30 m fest auf der Landebahn.
+
+  **Der Weg über `surfaceY` war falsch** (gebaut, gemessen, verworfen): `surfaceY` ist zugleich die
+  **Kontaktschwelle** der Landelogik. Schwingt sie mit der Welle, gilt der Flieger im Wellental als
+  abgehoben, fällt einen Frame und wird beim Wiederaufsetzen erneut auf harte Landung geprüft
+  (`vspeed > 55` — das Canadair fliegt bis 63). `state.pos` bleibt deshalb auf der Nulllinie, nur
+  die **Darstellung** wandert, und die Kamera folgt ihr über `planeCamRef()`. Der Nickwinkel
+  braucht dabei eine eigene Variable (`canaPitch`): rechnet man ihn jeden Frame frisch aus
+  `state.quat`, ist der Glättungsfaktor bei 60 fps nur 0,042 — angezeigt würden 4 % der
+  Wellenneigung, das Nicken wäre unsichtbar.
 
 **2. Neuer Flughafen auf den Inseln.** `airport_by_nermin.glb` als Modell: dort parken alle Flugzeuge
 mit genug Abstand, damit klar ist, in welches man einsteigt. Wer einsteigt, **respawnt auf der
@@ -155,3 +236,27 @@ hinauslaufen** und dort per Jetpack schweben — **Steuerung wie beim X-Wing**.
   - `submarine_by_Helindu.glb` — U-Boot
   - `killer_whale_by_Trouvaille.glb` — Killerwal
   - `mondfahrzeug_lunar_rover_by_Deutsches Museum  Digital.glb` — Lunar Rover (für Punkt 1)
+
+### Neu gemeldet
+
+**5. Landebahnen der Städte lagen nicht mittig — ERLEDIGT.** Das Turm-Raster lief
+`for(gx = -radius; gx <= radius; gx += 46)`. Der Startwert hängt am Inselradius, und der ist bei
+jeder Insel anders — die Landebahn bei x = 0 lag deshalb an einer beliebigen Stelle im Raster. Die
+Schneise wurde symmetrisch ausgeschnitten, aber die erste Turmreihe stand links und rechts
+unterschiedlich weit weg: über 360 Städte gemessen **290 schief (80,6 %)**, im schlimmsten Fall
+**40 m** Unterschied — beim Anflug sah die Bahn aus, als läge sie am Stadtrand. Jetzt wird das
+Raster von x = 0 aus nach beiden Seiten aufgebaut (`N = floor(radius/STEP)`), damit immer eine
+Rasterlinie genau auf 0 liegt: **0 von 360 schief**, Gasse 92 m breit bei 24 m Bahn. Die
+Salt-Bereiche bleiben frei (Türme 70..202 und 300..432, Rakete und X-Wing bei 900..903).
+
+**6. Im Hangar aussteigen und herumlaufen** — geht bereits (`evaAllowed` erlaubt
+`locale === "death"`). Das ist die Voraussetzung für Punkt 3, das Jetpack im Weltall.
+
+**7. Airport auf den Nicht-Stadt-Inseln** (`airport_by_nermin.glb`, 0,65 MB, 1.300 Dreiecke —
+winzig, keine Reduktion nötig). **Aber vermessen, und da liegt ein Problem:** er ist ein flaches
+Gelände von **3000 × 1577 m** mit nur **3,47 m hohen** Aufbauten. Die Inseln haben 150–330 m
+Radius. Skaliert man ihn auf 260 m Länge, sind die Terminals **0,30 m** hoch — niedriger als der
+Astronaut (1,8 m). Er lässt sich also nicht einfach hinstellen. Zwei Wege: nur das **Vorfeld**
+verwenden (die flache Fläche ist das Brauchbare, Parkplatz genug für alle Flugzeuge), oder
+**Aufbauten und Fläche getrennt skalieren** — dasselbe Verfahren wie bei Rakete und Startturm, die
+auch getrennt wurden. **Vor dem Bau zu entscheiden.**

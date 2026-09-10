@@ -188,14 +188,19 @@ Wasser kann man aber zu Fuß hinein — dort steht man dann im **Schlauchboot** 
   **Lässt man ihn los, gleitet die Kamera von allein wieder hinter den Astronauten**, damit man die
   Orientierung nicht verliert. Gelaufen wird weiter mit dem linken Stick: Blick und Laufrichtung sind
   unabhängig, das Umsehen dreht die Figur also nicht. Auf der Tastatur liegt es auf **I J K L**.
-- Das **Radar** zeigt draußen genau eine Sache: **wo dein Flugzeug steht**. Der Maßstab ist dabei ein
-  anderer als im Flug (500 m statt 2500 m füllen die Scheibe), denn zu Fuß sind ein paar Hundert Meter
-  weit. Brände zeigt es nicht — löschen kann man zu Fuß ohnehin nicht.
-- Auf dem **Mars** fährt der **Perseverance-Rover** beim Aussteigen **schräg vor dir** mit und bleibt
-  dabei, während du läufst — genau seitlich stand er fast außerhalb des Bildes. Seine Leuchtsäule ist
-  dann aus: es gibt nichts zu suchen. Seine Bodenhöhe wird über ein kleines Kreuz gemessen, nicht an
-  einem einzelnen Punkt: das Mars-Höhenraster hat nur alle 59 m einen Stützpunkt, und dazwischen sank
-  ein 10 m langes Fahrzeug sonst in den Hang ein.
+- Das **Radar** zeigt draußen, wo die Fahrzeuge stehen. Auf der Erde ist das dein Flugzeug, auf
+  **Mond und Mars bis zu drei Blips in eigenen Farben**: **weiß** der X-Wing, **orange** der
+  Mars-Rover, **blau** der Lunar Rover. Sitzt man im Rover, bleibt nur der weiße X-Wing übrig — man
+  fährt ja gerade das andere Fahrzeug. Der Maßstab ist ein anderer als im Flug (500 m statt 2500 m
+  füllen die Scheibe), denn zu Fuß sind ein paar Hundert Meter weit. Brände zeigt es nicht — löschen
+  kann man zu Fuß ohnehin nicht.
+- Auf **Mond und Mars** steht **30 m rechts neben dem gelandeten X-Wing ein Fahrzeug**, in das man
+  **einsteigen und wegfahren** kann (siehe eigenes Kapitel). Es **folgt nicht mehr**: früher setzte es
+  sich jeden Frame neben den Astronauten, war dabei aber reine Deko. Jetzt läuft man entweder selbst
+  oder fährt. Damit ist auch die **orange Leuchtsäule** weg, die auf einen gewürfelten Ankerpunkt
+  45–80 m weit zeigte — das Fahrzeug steht ja sichtbar daneben. Seine Bodenhöhe wird über ein kleines
+  Kreuz gemessen, nicht an einem einzelnen Punkt: das Höhenraster von Mond und Mars hat nur alle 59 m
+  einen Stützpunkt, und dazwischen sank ein mehrere Meter langes Fahrzeug sonst in den Hang ein.
 - Der **Astronaut hat die Arme angelegt**. Das Originalmodell schwebt mit ausgestreckten Armen; die
   Pose wurde umgerechnet, damit er wie ein Fußgänger aussieht (Spannweite von 262 auf 76 Einheiten,
   bei unveränderter Höhe und Tiefe).
@@ -666,12 +671,13 @@ Vier Ziele hängen dort draußen: der **Mond** (150 km), der **Todesstern** (250
 sich endlos fortsetzt — auf dem Mond der **Giordano-Bruno-Krater** mit einem Sechstel der Erdanziehung
 und einer **552 m großen Mondbasis**, auf dem Mars die **Aram-Chaos-Region** mit gut einem Drittel
 Anziehung und dem **Perseverance-Rover**. Auf dem Mond steht auf **jeder Kachel** eine Basis an einer
-festen Stelle, und der Rover setzt sich beim Landeanflug (10 % Schub) direkt **neben den Aufsetzpunkt**.
-Über beiden steht eine **Leuchtsäule**, damit man sie aus der Luft findet. Am Himmel steht dabei die Erde.
+festen Stelle; über ihr steht eine **hellblaue Leuchtsäule**, damit man sie aus der Luft findet. Die
+**Fahrzeuge** brauchen keine mehr: sie stehen immer **30 m rechts neben dem gelandeten X-Wing**, auf dem
+Mars der **Perseverance**, auf dem Mond der **Apollo Lunar Rover**. Am Himmel steht dabei die Erde.
 
 Man landet **auch auf der Basis selbst**: ihre Rampen und ihr Dach zählen als Boden, man setzt also
 dort auf, wo man darüber schwebt. Beim Anflug auf Mond oder Mars wird der Flieger so eingesetzt, dass
-Basis bzw. Rover **direkt vor ihm** liegen — man muss sie nicht erst suchen.
+die **Mondbasis direkt vor ihm** liegt — man muss sie nicht erst suchen.
 
 Beim Übergang ins Weltall geht der Schub automatisch auf **50 %**, damit man sich erst umsehen kann
 und nicht sofort in den Hyperraum rutscht.
