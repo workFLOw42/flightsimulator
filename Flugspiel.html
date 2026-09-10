@@ -937,8 +937,14 @@ const SHIP_TYPES = [
 // eines im Blickfeld.
 const SHIP_COUNT     = 7;
 const SHIP_SPAWN_MIN = 1200;    // näher als das taucht keines neu auf (kein Erscheinen vor der Nase)
-const SHIP_SPAWN_MAX = 3500;
-const SHIP_DESPAWN   = 5200;    // weiter weg wird es recycelt
+// Beide Werte waren GROESSER als das Meeresgitter reicht (SEA_SIZE/2 = 3.000 m), und das Gitter ist
+// quadratisch: quer zur Kante endet das Wasser schon bei 3.000 m. Gemessen (C:/tmp/edge.js) lagen
+// 45,9 % aller moeglichen Schiffsplaetze GANZ OHNE gerendertes Wasser — ein Schiff nimmt seine Hoehe
+// aus der Wellenformel und schwebte dort sichtbar in der Luft, mit dem gesamten schwarzen
+// Unterwasserrumpf frei. Genau das zeigte der Screenshot.
+// 2.400 m laesst auch quer zur Gitterkante Rand, 2.900 m gibt beim Recyceln Luft und bleibt drin.
+const SHIP_SPAWN_MAX = 2400;
+const SHIP_DESPAWN   = 2900;    // weiter weg wird es recycelt (bleibt INNERHALB des Meeresgitters)
 const SHIP_TURN      = 0.02;    // rad/s: ganz sachte Kursänderungen, ein Frachter dreht träge
 const SHIP_CLEAR     = 260;     // so weit muss ein Platz von Insel/Träger/anderen Schiffen frei sein
 // Wie stark ein Schiff auf die Dünung reagiert — abhängig von SEINER LÄNGE, nicht als fester Wert.
@@ -997,9 +1003,41 @@ function preloadSeaShips(){
       // Halbmaße aus den TATSÄCHLICHEN Grenzen, nicht aus der Größe: liegt die Box (etwa wegen einer
       // unsymmetrischen Aufbaustruktur) nicht genau um 0, deckt die größere Seite beides ab. Sonst
       // steht ein Teil des Schiffs außerhalb seiner eigenen Kollisionshülle.
-      shipHalf[def.key] = {
+      // Die Huelle kommt aus dem RUMPF AN DER WASSERLINIE, nicht aus der Gesamtbox. Die Gesamtbox
+      // enthaelt Masten, Rahen, Kraene und Bugspriet — und der Rumpf liegt darin ASYMMETRISCH.
+      // Gemessen (C:/tmp/offset.js) stand beim Grosssegler die Barriere bei z = +-49 m, der Rumpf
+      // aber nur bei z = -18,2 .. +34,7: hinten 30,8 m unsichtbare Wand, vorn 14,3 m. Genau das
+      // ergibt "von einer Seite kann ich durchfahren, auf der anderen ist weit davor Schluss".
+      // Quer war es dasselbe: Huelle +-18,1 m gegen einen 8,3 m breiten Rumpf (das sind die Rahen).
+      // Gemessen wird in einem Band um die Wasserlinie — dort, wo ein Boot faehrt. Was darueber
+      // aufragt, zaehlt weiter fuer die FLIEGER: dafuer bleibt top die volle Hoehe.
+      const hullMin = new THREE.Vector3( 1e30,  1e30,  1e30);
+      const hullMax = new THREE.Vector3(-1e30, -1e30, -1e30);
+      const _hv = new THREE.Vector3();
+      wrap.traverse((o)=>{
+        if(!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+        const pa = o.geometry.attributes.position;
+        for(let i=0;i<pa.count;i++){
+          _hv.fromBufferAttribute(pa, i); o.localToWorld(_hv);
+          if(_hv.y < -2 || _hv.y > 3) continue;         // nur das Band um die Wasserlinie
+          if(_hv.x<hullMin.x)hullMin.x=_hv.x; if(_hv.x>hullMax.x)hullMax.x=_hv.x;
+          if(_hv.z<hullMin.z)hullMin.z=_hv.z; if(_hv.z>hullMax.z)hullMax.z=_hv.z;
+        }
+      });
+      // Nichts im Band gefunden (darf nicht vorkommen — ein fehlendes Hindernis waere aber schlimmer
+      // als ein zu grosses) -> auf die Gesamtbox zurueckfallen.
+      const okHull = hullMin.x < hullMax.x && hullMin.z < hullMax.z;
+      shipHalf[def.key] = okHull ? {
+        // Halbmasse UND Mittenversatz: der Rumpf sitzt nicht zwangslaeufig um 0. Ohne den Versatz
+        // laege die Huelle wieder auf der falschen Seite (Segler: Rumpfmitte bei z = +8,3).
+        hl: (hullMax.z - hullMin.z)/2,
+        hw: (hullMax.x - hullMin.x)/2,
+        cz: (hullMax.z + hullMin.z)/2,
+        cx: (hullMax.x + hullMin.x)/2,
+        top: box4.max.y } : {
         hl: Math.max(Math.abs(box4.min.z), Math.abs(box4.max.z)),
         hw: Math.max(Math.abs(box4.min.x), Math.abs(box4.max.x)),
+        cz: 0, cx: 0,
         top: box4.max.y };
       // Schon fahrende Platzhalter dieses Typs gegen das echte Modell tauschen.
       for(const sh of seaShips) if(sh.key === def.key) refreshSeaShip(sh);
@@ -1026,6 +1064,10 @@ function refreshSeaShip(sh){
   const h = shipHalf[sh.key];
   sh.hl = h ? h.hl : sh.len/2;
   sh.hw = h ? h.hw : sh.len*0.07;
+  // Mittenversatz des Rumpfes im Schiffssystem (siehe shipHalf): die Kollisionsmitte ist NICHT
+  // zwangslaeufig der Modellursprung. Alles, was in Schiffskoordinaten rechnet, muss ihn abziehen.
+  sh.cz = h ? (h.cz || 0) : 0;
+  sh.cx = h ? (h.cx || 0) : 0;
   sh.top = h ? h.top : sh.len*0.08;
 }
 // Ist der Platz für ein Schiff dieser Länge frei? Ein 300 m langes Schiff braucht viel Wasser:
@@ -1136,7 +1178,8 @@ function hitsSeaShip(x, y, z, except){
     if(y > sh.top + 4) continue;                      // über den Aufbauten -> drüberfliegen ok
     const rx = x - sh.x, rz = z - sh.z;
     const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
-    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+    // Mittenversatz abziehen: die Huelle sitzt um die RUMPFmitte, nicht um den Modellursprung.
+    const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
     if(Math.abs(lx) < sh.hw + 4 && Math.abs(lz) < sh.hl + 4) return true;
   }
   return false;
@@ -1183,7 +1226,8 @@ function pushOutOfSeaShip(pos, vel, dt){
     if(!sh.group) continue;
     const rx = pos.x - sh.x, rz = pos.z - sh.z;
     const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
-    const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;          // Lage im Schiffssystem
+    // Lage im Schiffssystem, bezogen auf die RUMPFmitte (Versatz siehe shipHalf)
+    const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
     const gx = sh.hw + 4, gz = sh.hl + 4;                  // Grenzen der Sperrzone
     // Laengs muss es neben dem Rumpf liegen; quer zaehlt der Saum mit.
     if(Math.abs(lz) >= gz || Math.abs(lx) >= gx + SHIP_WAKE) continue;
@@ -2275,10 +2319,56 @@ function updatePax(dt){
 // Höhen-Schatten: sichtbar ab <=20 m. Folgt X/Z, dreht mit dem Kurs mit,
 // wird mit sinkender Höhe kleiner+dunkler (nah am Flieger = klein/scharf).
 const SHADOW_MAXALT = 20;
+// Der ovale Schatten fuer Boote und den Astronauten. Getrennt von updateShadow, weil die Bezugsgroessen
+// andere sind: nicht state.pos und der Flugzeugkurs, sondern die Position des Boots bzw. der Figur.
+// Beim Astronauten ist die Hoehe interessant (er huepft, auf dem Mond sechsmal so hoch) — der
+// Schatten bleibt am BODEN stehen und waechst, dadurch sieht man die Sprunghoehe erst richtig.
+function updateOvalShadow(){
+  let px, pz, alt, yawS, rx, rz;
+  if(eva && eva.boat){                       // im Schlauchboot: Umriss des Boots
+    px = eva.boat.position.x; pz = eva.boat.position.z; alt = 0;
+    yawS = eva.yaw; rx = DINGHY_LEN*0.30; rz = DINGHY_LEN*0.52;
+  } else if(eva){                            // zu Fuss: rund, klein
+    px = eva.group.position.x; pz = eva.group.position.z;
+    alt = Math.max(0, eva.group.position.y - evaFootY(px, pz));
+    yawS = eva.yaw; rx = 0.75; rz = 0.75;
+  } else {                                   // Feuerwehrboot: 16 m langer Rumpf
+    px = state.pos.x; pz = state.pos.z; alt = 0;
+    const f = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    yawS = Math.atan2(f.x, f.z) + Math.PI; rx = 2.6; rz = 8;
+  }
+  if(alt > SHADOW_MAXALT){ ovalShadow.visible = false; return; }
+  const onLand = isOnLand(px, pz), onCar = isOnCarrier(px, pz);
+  // Auflagehoehe: Traegerdeck, Insel oder Wasser. Ueber Wasser ueber die Wellenberge legen, damit
+  // der Schatten nicht in einer Welle verschwindet (dieselbe Ueberlegung wie bei planeShadow).
+  const surf = onCar ? fordDeckY : (onLand ? ISLAND_Y : 1.4);
+  ovalShadow.visible = true;
+  ovalShadow.position.set(px, surf + 0.15, pz);
+  // Nach rotation.x = -PI/2 dreht rotation.z IN der Bodenebene, und zwar mit +yaw. Vorzeichen und
+  // Achse mit echtem three.js nachgemessen (C:/tmp/rot.js) — mit -yaw stand das Boot quer zur Fahrt.
+  ovalShadow.rotation.z = yawS;
+  const f = alt / SHADOW_MAXALT;             // 0 (am Boden) .. 1 (20 m hoch)
+  const grow = 1 + f*0.8;
+  // Die LOKALE Y-Achse ist nach der X-Drehung die Laengsrichtung am Boden -> lang auf scale.y.
+  ovalShadow.scale.set(rx*grow, rz*grow, 1);
+  ovalShadowMat.opacity = 0.18 + 0.22*(1-f);
+}
 function updateShadow(){
   // Im Weltall gibt es keinen Boden, auf dem Mond keine Insel-Referenzhöhe -> Schatten aus.
-  // Beim Boot ebenso: es liegt AUF dem Wasser, ein Flügelschatten darunter wäre unsinnig.
-  if(locale !== 'earth' || isBoat()){ if(planeShadow) planeShadow.visible = false; return; }
+  if(locale !== 'earth'){
+    if(planeShadow) planeShadow.visible = false;
+    if(ovalShadow) ovalShadow.visible = false;
+    return;
+  }
+  // Boote und der Astronaut bekommen den OVALEN Schatten (der Flugzeug-Umriss passt dort nicht) —
+  // vorher hatten sie gar keinen. Er macht sichtbar, wo man auf dem Wasser steht, und laesst den
+  // Astronauten beim Huepfen nicht mehr schwerelos wirken.
+  if(isBoat() || eva){
+    planeShadow.visible = false;
+    updateOvalShadow();
+    return;
+  }
+  ovalShadow.visible = false;
   // Oberfläche: über Land = Inselhöhe, über Wasser = Meer (y=0)
   const overLand = isOnLand(state.pos.x, state.pos.z);
   const surfY = overLand ? ISLAND_Y : 0;
@@ -4915,6 +5005,19 @@ shWing.rotation.x = -Math.PI/2; shWing.scale.set(5.5, 1, 1.1); shWing.renderOrde
 planeShadow.add(shWing);
 planeShadow.visible = false;
 scene.add(planeShadow);
+// Zweiter Schatten fuer alles, was KEIN Flugzeug ist: die beiden Boote und der Astronaut zu Fuss.
+// Der Umriss oben ist ein Flugzeug (Rumpf- und Fluegelellipse gekreuzt) — unter einem Boot sah das
+// falsch aus, deshalb war der Schatten dort ganz abgeschaltet. Ein schlichtes Oval passt fuer beide:
+// laenglich in Fahrtrichtung beim Boot, rund beim Astronauten (die Skalierung setzt updateShadow).
+// EIGENES Material: shadowMat gehoert dem Flugzeug-Schatten, und beide setzen ihre Deckkraft nach
+// der Hoehe. Mit einem gemeinsamen Material wuerde der eine den anderen mitverstellen.
+const ovalShadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.3,
+  depthWrite:false, depthTest:false });
+const ovalShadow = new THREE.Mesh(new THREE.CircleGeometry(1, 24), ovalShadowMat);
+ovalShadow.rotation.x = -Math.PI/2;
+ovalShadow.renderOrder = 999;
+ovalShadow.visible = false;
+scene.add(ovalShadow);
 
 
 function buildModel(name) {
@@ -5620,31 +5723,37 @@ const BOAT_DRAFT = 1.1;
 //     obwohl 13 von 24 Richtungen frei waren. Daher eine Mindestschrittweite und die
 //     Nasenrichtung als Rückfall, wenn das Boot steht.
 // pos/vel werden IN PLACE verändert; fwd ist die Nasenrichtung (Rückfall, wenn das Boot steht).
-// look ist die Vorausschau (halbe Rumpflaenge): geprueft wird nicht der Mittelpunkt, sondern der
-// Punkt so weit in Ausweichrichtung weiter. Ohne das schob coastSlide das Boot in Lagen, in denen
-// der BUG im Rumpf steckte, obwohl der Mittelpunkt frei war — am stehenden Schiff blieben so 6,7 m
-// Eindringung uebrig, selbst wenn die Fahrt schon vorausschaute (C:/tmp/diag_boot4.js). Mit dem
-// Versatz sind es 1,0 m. Ohne Angabe (Schlauchboot, das nur 2,1 m Vorschiff hat) bleibt es beim
-// alten Verhalten.
+// look ist die Vorausschau (halbe Rumpflaenge). Sie wird in ZWEI Durchgaengen benutzt, und das ist
+// wichtig:
+//   Durchgang 1 peilt look voraus — so landet das Boot nicht in einer Lage, in der sein Mittelpunkt
+//     frei ist, aber der BUG im Rumpf steckt (ohne das blieben 6,7 m Eindringung).
+//   Durchgang 2 peilt nur den naechsten Schritt. Denn mit der Vorausschau ALLEIN wird das Ausweichen
+//     blind, sobald man frontal vor einem langen Rumpf steht: gemessen waren dort von 12 Richtungen
+//     nur noch 4 frei statt 8 (C:/tmp/sack.js). Das Boot fand keinen Ausweg, blieb stehen — und das
+//     Containerschiff fuhr darueber hinweg. So faehrt man "von vorne durch das ganze Schiff",
+//     waehrend es quer einwandfrei sperrt.
+// Lieber knapp am Rumpf entlangschrammen (Durchgang 2) als bewegungslos ueberfahren werden.
 function coastSlide(pos, vel, fwd, dt, look){
   const spd0 = Math.hypot(vel.x, vel.z);
   const sp = Math.max(spd0 * dt, 0.05);                  // mind. 5 cm pro Frame -> klemmt nie
-  const reach = sp + (look || 0);                        // so weit voraus wird gepeilt
   let ux, uz;
   if(spd0 > 1e-6){ ux = vel.x/spd0; uz = vel.z/spd0; }                   // Fahrtrichtung
   else { const fl = Math.hypot(fwd.x, fwd.z) || 1;                       // steht: Nasenrichtung
          ux = fwd.x/fl; uz = fwd.z/fl; }
-  for(const deg of [20, 40, 60, 80, 100, 120]){
-    const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
-    for(const sgn of [1, -1]){
-      const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
-      if(!isOpenWater(pos.x + dx*reach, pos.z + dz*reach)) continue;
-      pos.x += dx*sp; pos.z += dz*sp;
-      // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
-      // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
-      const keep = Math.max(spd0*0.85, 2);
-      vel.x = dx*keep; vel.z = dz*keep;
-      return true;
+  // Zuerst mit Vorausschau, dann ohne (siehe oben) — der zweite Durchgang ist der Notausgang.
+  for(const reach of (look ? [sp + look, sp] : [sp])){
+    for(const deg of [20, 40, 60, 80, 100, 120]){
+      const a = deg*Math.PI/180, ca = Math.cos(a), sa = Math.sin(a);
+      for(const sgn of [1, -1]){
+        const dx = ux*ca - uz*sa*sgn, dz = ux*sa*sgn + uz*ca;   // Richtung um ±deg gedreht
+        if(!isOpenWater(pos.x + dx*reach, pos.z + dz*reach)) continue;
+        pos.x += dx*sp; pos.z += dz*sp;
+        // Fahrt in die freie Richtung umlenken — etwas Tempo geht verloren, wie beim Schrammen an
+        // einer Mole, aber es gleitet weiter statt jeden Frame neu anzustoßen.
+        const keep = Math.max(spd0*0.85, 2);
+        vel.x = dx*keep; vel.z = dz*keep;
+        return true;
+      }
     }
   }
   // Selbst 120° Abweichung blockiert (echte Sackgasse, etwa eine enge Bucht): Fahrt abbauen, aber
@@ -7019,8 +7128,8 @@ function aiObstacleTopAt(x, z, margin){
       const rx = x - sh.x, rz = z - sh.z;
       const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
       const lx2 = rx*cs - rz*sn, lz2 = rx*sn + rz*cs;
-      if(Math.abs(lx2) < sh.hw + margin && Math.abs(lz2) < sh.hl + margin && sh.top > seaTop)
-        seaTop = sh.top;
+      if(Math.abs(lx2 - sh.cx) < sh.hw + margin && Math.abs(lz2 - sh.cz) < sh.hl + margin
+         && sh.top > seaTop) seaTop = sh.top;
     }
   }
   return Math.max(ISLAND_Y + top, seaTop);   // Welt-Y der Hindernisspitze
@@ -7051,7 +7160,8 @@ function aiShipAhead(x, z, fx, fz, look, py){
       const rx = tx - sh.x, rz = tz - sh.z;
       const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
       const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
-      if(Math.abs(lx) < sh.hw + 22 && Math.abs(lz) < sh.hl + 22 && sh.top + 25 > py) return sh.top;
+      if(Math.abs(lx - sh.cx) < sh.hw + 22 && Math.abs(lz - sh.cz) < sh.hl + 22
+         && sh.top + 25 > py) return sh.top;
     }
   }
   return 0;

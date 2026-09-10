@@ -230,8 +230,15 @@ Trotzdem angehoben, weil man ihnen öfter begegnen soll: Schwelle 0,10 → **0,1
 
 Die Größen stimmen **zueinander** und zu den echten Vorbildern; der Flugzeugträger im Spiel ist
 280 m lang, alles liegt also in derselben Größenordnung. Sieben Schiffe fahren gleichzeitig in einem
-Ring von 1,2 bis 3,5 km um den Spieler und werden nachgezogen, wenn man weiterfliegt — genau wie der
+Ring von 1,2 bis 2,4 km um den Spieler und werden nachgezogen, wenn man weiterfliegt — genau wie der
 Flugverkehr in der Luft.
+
+**Warum 2,4 km und nicht mehr:** dort endet das Wasser. Das Meeresgitter ist 6 km groß, reicht also
+3 km um den Spieler — und es ist **quadratisch**, quer zur Kante ist bei genau 3 km Schluss. Vorher
+wurden Schiffe bis 3,5 km ausgesetzt und erst bei 5,2 km recycelt: **45,9 %** aller möglichen
+Schiffsplätze hatten damit *gar kein* gerendertes Wasser unter sich. Ein Schiff nimmt seine Höhe aus
+der Wellenformel, schwebte dort also sichtbar in der Luft — mit dem ganzen schwarzen Unterwasserrumpf
+frei. Genau so ein Schiff war auf einem Screenshot zu sehen.
 
 - **Die Hülle ist ein Rechteck, kein Kreis.** Bei einem 300-m-Schiff wäre ein Kreis eine 300 m breite
   Sperrzone, durch die man nicht mehr seitlich vorbeifliegen könnte. Gerechnet wird deshalb im
@@ -294,6 +301,23 @@ Flugverkehr in der Luft.
   heraus. Jetzt wird nur der Anteil behandelt, der **in** die Bordwand zeigt: der wird weggenommen und
   zu 35 % zurückgeworfen. Die Fahrt **längs** der Wand bleibt unberührt, man schrammt also weiter
   entlang, statt quer weggedreht zu werden.
+- **Die Barriere lag teils komplett neben dem Schiff.** Gemeldet: „von einer Seite kann ich
+  durchfahren, auf der anderen ist weit davor Schluss." Ursache: die Hülle kam aus der **gesamten
+  Bounding-Box** — und die enthält Masten, Rahen, Kräne und Bugspriet, während der Rumpf darin
+  **asymmetrisch** liegt. Beim Großsegler stand die Barriere bei z = ±49 m, der Rumpf aber nur bei
+  z = −18,2…+34,7: **hinten 30,8 m unsichtbare Wand, vorn 14,3 m**. Quer dasselbe — Hülle ±18,1 m
+  gegen einen 8,3 m breiten Rumpf, das waren die Rahen.
+  Jetzt wird die Hülle aus dem **Rumpf an der Wasserlinie** vermessen (Band −2…+3 m, dort wo ein Boot
+  fährt) und **mit Mittenversatz** gespeichert. Nachgemessen sitzt sie auf allen vier Seiten exakt
+  4,00 m um den Rumpf — bei allen vier Schiffen. Für die **Flieger** zählt weiter die volle Höhe
+  inklusive Masten.
+- **Und von vorne fuhr man trotzdem durch — verursacht vom Fix davor.** Die 8-m-Vorausschau, die das
+  Eindringen quer behoben hat, machte das **Ausweichen** blind: steht man frontal vor einem 300-m-Rumpf,
+  liegt der 8 m entfernte Prüfpunkt in *jeder* Richtung noch im Schiff. Von 12 Ausweichrichtungen
+  blieben **4 statt 8** frei, das Boot fand keinen Ausweg, blieb stehen — und das Containerschiff fuhr
+  darüber hinweg. Deshalb läuft die Ausweichsuche jetzt **zweimal**: erst mit Vorausschau, dann ohne
+  (Notausgang). Lieber knapp am Rumpf entlangschrammen als bewegungslos überfahren werden. Nachgemessen
+  aus 7 Anfahrtwinkeln × 4 Schiffen: **kein Durchfahren mehr**, höchstens 2,53 m Kontakt am Bug.
 
 ### Sie wackeln nach ihrer Größe
 Wie stark ein Schiff in der Dünung arbeitet, hängt an **seiner Länge** — nicht an einem Wert pro
@@ -393,6 +417,32 @@ ist jetzt der Tiefgang des Vorbilds**, nicht eine am Modell gemessene Breite.
 Beim Containerschiff geht die volle Tiefe nicht: sein Rumpf ist nur bis −4,38 modelliert (auf die
 Ziellänge skaliert −8,58), tiefer würde man in ein Loch sehen. 2,86 % nutzen ihn fast vollständig aus.
 Vorher lag er bei 1,46 % und **schwebte sichtbar** — der ganze rote Unterwasserrumpf war zu sehen.
+
+## 🌑 Schatten für alles, was tief unterwegs ist
+
+Der Höhen-Schatten (sichtbar ab 20 m) war ein **Flugzeug**-Umriss: zwei gekreuzte Ellipsen für Rumpf
+und Flügel. Unter einem Boot sah das falsch aus, deshalb war er dort ganz **abgeschaltet** — und der
+Astronaut hatte nie einen.
+
+Jetzt gibt es einen zweiten, **ovalen** Schatten für alles, was kein Flugzeug ist:
+
+| | Form | Bezug |
+|---|---|---|
+| Feuerwehrboot | 5,2 × 16 m, längs zum Kurs | fährt immer auf der Wasserlinie |
+| Schlauchboot | 2,5 × 4,4 m, längs zum Kurs | dito |
+| Astronaut zu Fuß | rund, 1,5 m | wächst mit der **Sprunghöhe** |
+
+Beim Astronauten ist das mehr als Zierde: der Schatten bleibt am **Boden** stehen und wird beim
+Springen größer und blasser. Erst dadurch sieht man, wie hoch er kommt — und auf dem Mond kommt er
+sechsmal so hoch wie auf der Erde. Über Wasser liegt der Schatten 1,4 m hoch, damit ihn kein
+Wellenberg verdeckt (dieselbe Überlegung wie beim Flugzeug-Schatten).
+
+Zwei Kleinigkeiten, die beim Einbau auffielen und ausgemessen wurden:
+- Die Drehachse ist `rotation.z`, nicht `.y` — die Kreisfläche ist ja schon um X gekippt. Und das
+  **Vorzeichen** ist positiv: mit `-yaw` stand der Bootsschatten quer zur Fahrt. Beides mit echtem
+  three.js nachgesehen statt hergeleitet.
+- Der neue Schatten braucht ein **eigenes Material**. Beide setzen ihre Deckkraft nach der Höhe; mit
+  einem gemeinsamen Material hätte der eine den anderen mitverstellt.
 
 ## 🛟 Ins Wasser: das Schlauchboot
 

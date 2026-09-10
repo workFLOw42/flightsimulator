@@ -1,7 +1,7 @@
 # TODO — Flugspiel
 
 Offene Punkte. Erledigtes austragen, nicht abhaken lassen.
-Stand: 10.09.2026, nach der zweiten Runde am Meer.
+Stand: 10.09.2026, nach der dritten Runde am Meer.
 
 ---
 
@@ -18,42 +18,58 @@ Keine offene Aufgabe, aber es fällt beim Spielen auf und soll nicht als Fehler 
 Seit alles Schwimmende auf der **gesehenen** Wasserfläche liegt (statt auf der Wellenformel), nickt
 es **rund halb so stark**: Feuerwehrboot 4,24° → **1,73°**, Schlauchboot 5,21° → **2,07°**, und der
 Hub eines treibenden Boots 5,44 → **4,06 m**. Das ist rechnerisch richtig — die flachen
-Gitterdreiecke *sind* weniger steil als die Welle, die sie annähern. Vorher zeigte das Spiel eine
-Neigung, die das sichtbare Wasser gar nicht hatte.
+Gitterdreiecke *sind* weniger steil als die Welle, die sie annähern.
 
 Wenn es zu ruhig wirkt, ist der Weg **nicht**, zur Wellenformel zurückzugehen (dann laufen die
 Rettungsboote wieder voll), sondern `BOAT_BOB` und `DINGHY_BOB` anzuheben. Ausgerechnet für exakt
 die alte Wirkung: `BOAT_BOB` 1 → **2,45**, `DINGHY_BOB` 1,2 → **3,01**. Nicht eingebaut, weil das
 eine Geschmacksfrage ist und im Spiel entschieden werden sollte, nicht am Rechner.
 
-Mehr Wellenhöhe wäre der falsche Hebel: kürzere Wellen fallen durchs 62,5-m-Raster (siehe `AMP` in
-`Flugspiel.html`), mehr Segmente kosten zu viel (`updateSea` liegt bei 96 schon bei 8,3 ms von 16,7).
+---
+
+## Was die Schiffe an Kollision noch NICHT können
+
+Kein Fehler, aber gut zu wissen, bevor jemand darauf stößt:
+
+- Die Hülle ist ein **Rechteck** um den Rumpf an der Wasserlinie. Ein spitzer Bug füllt dieses
+  Rechteck nicht aus — an der Bugspitze sperrt es also etwas früher als der Rumpf reicht. Gemessen ist
+  der Rumpf an der Wasserlinie zu 14 % (Kreuzfahrtschiff) bis 49 % (Liberty) formfüllend.
+- **Überbauten** über der Wasserlinie zählen für Boote nicht: ein überhängender Kran oder eine Rah
+  ragt über die Bootshülle hinaus, ohne zu blockieren. Für die **Flieger** gilt weiter die volle Höhe.
+- Die Schiffe **kollidieren nicht untereinander** — sie werden nur beim Aussetzen auf Abstand gesetzt
+  (`SHIP_CLEAR` = 260 m). Über drei Minuten gemessen kam das nie vor, ausgeschlossen ist es nicht.
 
 ---
 
-## Erledigt am 10.09.2026 (zweite Runde)
+## Erledigt am 10.09.2026 (dritte Runde)
 
-3. **KI-Jet flog weiter durch das Containerschiff.** Die Hindernisvermeidung lief nur in 5 von 12
-   fliegenden Zuständen. Vor allem fehlte die **Träger-Platzrunde**, wo ein Jet auf Deckhöhe (12 m)
-   kreist und gar nichts sah. Sie durfte aber nicht einfach dazu: der Jet hätte seinen **eigenen
-   Träger** als Hindernis gesehen und wäre bei jeder Landung abgestürzt (vorher nachgerechnet). Jetzt
-   eigene Prüfung `aiShipAhead()`, die nur Handelsschiffe kennt und alle 30 m tastet — Erkennung ab
-   300 m. Zusätzlich `toFire`, `toTarget` und `landing` ergänzt.
+5. **Barriere lag teils komplett neben dem Schiff.** Die Hülle kam aus der Gesamt-Bounding-Box (mit
+   Masten, Rahen, Kränen); der Rumpf liegt darin asymmetrisch. Segler: Barriere z ±49 m, Rumpf nur
+   −18,2…+34,7 → hinten 30,8 m unsichtbare Wand, vorn 14,3 m. Jetzt aus dem **Rumpfband** an der
+   Wasserlinie mit Mittenversatz (`cx`/`cz`) — überall exakt 4,00 m Puffer, bei allen vier Schiffen.
 
-4. **Feuerwehrboot drang ein und wurde herausgeschoben, statt abzuprallen.** Beide Teile stimmten.
-   Es prüfte nur seinen **Mittelpunkt**, obwohl es 16 m lang ist — der Bug steckte 17,9 m im Rumpf,
-   bevor etwas ansprach. Jetzt 8 m Vorausschau, **auch in der Ausweichlogik** (ohne die blieben 6,7 m):
-   **1,0 m**. Und die Verdrängung **lenkte** die Fahrt nur um (60 % Tempo blieb), jetzt wird der Anteil
-   gegen die Wand weggenommen und zu 35 % zurückgeworfen — die Fahrt längs der Wand bleibt unberührt.
+6. **Von vorne fuhr man trotzdem durch — verursacht von Fix 4.** Die 8-m-Vorausschau machte das
+   Ausweichen blind (12 Richtungen → nur 4 statt 8 frei), das Boot blieb stehen und wurde überfahren.
+   Ausweichsuche läuft jetzt zweimal: mit Vorausschau, dann ohne (Notausgang). Aus 7 Winkeln × 4
+   Schiffen: kein Durchfahren mehr, höchstens 2,53 m Kontakt am Bug.
 
-## Erledigt am 10.09.2026 (erste Runde)
+7. **Schiffe schwebten in der Luft.** Sie wurden bis 3,5 km ausgesetzt und lebten bis 5,2 km, das
+   Meeresgitter reicht aber nur 3 km (und ist quadratisch). 45,9 % aller Plätze hatten kein Wasser
+   darunter. Jetzt 2,4 / 2,9 km — beides innerhalb des Gitters.
 
-1. **Rettungs-Schlauchboote liefen optisch voll Wasser.** Nicht der vermutete `tOff`, sondern die
-   **Gitter-Interpolation**: die sichtbare Fläche steht im Wellenberg bis **1,005 m höher** als die
-   Wellenformel. Behoben mit `seaMeshY()`; nasse Böden 44,5 % → **0 %**.
+8. **Schatten für Boote und den Astronauten** (Wunsch, keine Fehlermeldung). Der alte Schatten ist ein
+   Flugzeug-Umriss und war beim Boot abgeschaltet; jetzt gibt es zusätzlich einen ovalen. Beim
+   Astronauten wächst er mit der Sprunghöhe — dadurch sieht man erst, wie hoch er kommt.
 
-2. **Frontal in ein Schiff zog es bis zur Schiffsmitte.** Nicht die Sperre (die greift) und auch nicht
-   der „kürzeste Weg hinaus" (der ist schlechter), sondern **Gleiten an der Zonengrenze**. Behoben mit
-   einem **8-m-Saum**: 13 s statt 115 s an der Wand, Ende bei 62 % statt 91 % der halben Länge.
+## Erledigt am 10.09.2026 (Runden 1 und 2)
 
-Alle Befunde stehen ausführlich im README („Schiffe auf dem Meer", „Ins Wasser: das Schlauchboot").
+1. **Rettungsboote liefen voll** — nicht `tOff`, sondern die Gitter-Interpolation (bis 1,005 m).
+   Behoben mit `seaMeshY()`; nasse Böden 44,5 % → 0 %.
+2. **Durchziehen bis zur Schiffsmitte** — Gleiten an der Zonengrenze, nicht die Sperre. 8-m-Saum.
+3. **KI-Jet durch das Containerschiff** — `carrierLap` sah keine Hindernisse. Eigene Prüfung
+   `aiShipAhead()`, weil der Jet sonst seinen eigenen Träger als Hindernis gesehen hätte.
+4. **Feuerwehrboot drang ein statt abzuprallen** — es prüfte nur seinen Mittelpunkt (16 m langes
+   Boot!). `BOAT_LOOK` = 8 m, und die Verdrängung wirft jetzt zurück statt umzulenken.
+
+Alle Befunde stehen ausführlich im README („Schiffe auf dem Meer", „Schatten für alles, was tief
+unterwegs ist", „Ins Wasser: das Schlauchboot").
