@@ -98,7 +98,7 @@ Alle Befunde stehen ausführlich im README.
 ## Erledigt am 10.09.2026 (siebte Runde: Raketen)
 
 17. **Ariane 6 auf jeder zweiten Nicht-Stadt-Insel** (Wunsch) — sie steht auf ihrer Startrampe,
-    startet bei Annäherung unter 500 m, steigt beschleunigt (9 m/s², Deckel 900 m/s) und ist ab der
+    startet bei Annäherung unter 1,5 km, steigt beschleunigt (9 m/s², Deckel 900 m/s) und ist ab der
     Weltraumgrenze weg. Nach 45 s wächst die nächste nach. Städte bleiben frei.
 18. **Im Weltall fliegt sie mit** — als ganz normaler `SHIP_DEFS`-Eintrag, damit die vorhandene
     Bahnlogik (`updateShips`/`placeShip`) sie ohne eine Zeile eigener Steuerung herumziehen lässt.

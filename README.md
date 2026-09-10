@@ -734,7 +734,7 @@ im Weltall und auf dem Mond nicht — dort endet ein Absturz einfach mit dem Neu
 
 ## 🚀 Raketenstarts auf den Inseln
 Auf **jeder zweiten Insel, die keine Stadt ist**, steht eine **Ariane 6** auf ihrer Startrampe.
-Kommt man ihr **näher als 500 m**, **startet sie**: Triebwerk an, Rauch, und sie steigt
+Kommt man ihr **näher als 1,5 km**, **startet sie**: Triebwerk an, Rauch, und sie steigt
 beschleunigt (9 m/s², bis 900 m/s) davon. Ab der Weltraumgrenze ist sie weg — und **dort trifft
 man sie wieder**, denn im Weltall zieht sie als eines der Raumschiffe ihre Bahn wie Shuttle oder
 Falcon. Auf der leeren Rampe **wächst nach 45 Sekunden die nächste** nach.
