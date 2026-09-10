@@ -1213,12 +1213,23 @@ function updateShipsSea(dt){
 // Schiffs-Koordinatensystem (um -heading zurückgedreht), damit ein langes Schiff auch schräg als
 // Rechteck wirkt und nicht als Kreis: sonst wäre um ein 300-m-Schiff eine 300 m breite Sperrzone,
 // durch die man nicht mehr seitlich vorbeifliegen könnte.
+// ACHTUNG bei der Rueckdrehung ins Schiffssystem — hier steckte ein Vorzeichenfehler, der die
+// Kollision ALLER Schiffe an die falsche Stelle legte, und zwar kursabhaengig:
+//   RICHTIG:  cs = cos(heading), sn = sin(heading);  lx = rx*cs - rz*sn;  lz = rx*sn + rz*cs
+//   FALSCH war cos(-heading)/sin(-heading) bei sonst gleicher Rechnung. Das dreht um +heading statt
+//   um -heading: die Huelle wandert MIT dem Schiff, anstatt zurueckzurechnen.
+// Gemessen gegen echtes three.js (C:/tmp/rot2.js) lag die Huelle bei 90 Grad Kurs 204 m neben dem
+// Rumpf; bei Kurs 0 und 180 Grad stimmt es zufaellig. Genau deshalb sah es "random" aus — es hing
+// daran, wie das Schiff gerade lag, und liess sich an einem stehenden Testschiff nie reproduzieren.
+// Wer das hier anfasst, rechnet es gegen three.js nach: beide Varianten sehen plausibel aus, und der
+// Unterschied faellt nur im Spiel auf. Dasselbe Muster steht in pushOutOfSeaShip, shipDiagText,
+// aiObstacleTopAt und aiShipAhead — alle fuenf muessen gleich rechnen.
 function hitsSeaShip(x, y, z, except){
   for(const sh of seaShips){
     if(!sh.group || sh === except) continue;
     if(y > sh.top + 4) continue;                      // über den Aufbauten -> drüberfliegen ok
     const rx = x - sh.x, rz = z - sh.z;
-    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
     // Mittenversatz abziehen: die Huelle sitzt um die RUMPFmitte, nicht um den Modellursprung.
     const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
     // Breite an DIESER Laengsstelle (Rumpfform, nicht Rechteck) — siehe shipHalfWidthAt.
@@ -1281,7 +1292,7 @@ function pushOutOfSeaShip(pos, vel, dt){
   for(const sh of seaShips){
     if(!sh.group) continue;
     const rx = pos.x - sh.x, rz = pos.z - sh.z;
-    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
     // Lage im Schiffssystem, bezogen auf die RUMPFmitte (Versatz siehe shipHalf)
     const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
     const gx = shipHalfWidthAt(sh, lz) + 4, gz = sh.hl + 4;   // Grenzen: Breite nach der Rumpfform
@@ -1296,11 +1307,17 @@ function pushOutOfSeaShip(pos, vel, dt){
     const step = drin
       ? Math.min((gx + 2) - Math.abs(lx), SHIP_PUSH * dt)
       : SHIP_PUSH * 0.5 * (1 - (Math.abs(lx) - gx) / SHIP_WAKE) * dt;
-    // Querrichtung des Schiffs in Weltkoordinaten. Die Hin-Drehung oben rechnet
-    // lx = rx*cos(-h) - rz*sin(-h), lx ist also die Projektion auf (cos h, SIN h). Mit -sin h
-    // (mein erster Versuch) schob es diagonal: das Boot pendelte zwischen quer -0,24 und 0,00 und
-    // kam nie aus dem Rumpf (gemessen).
-    const qx = Math.cos(sh.heading) * side, qz = Math.sin(sh.heading) * side;
+    // Querrichtung des Schiffs in WELTkoordinaten — die Richtung, in der lx waechst.
+    // Die Rueckdrehung oben rechnet lx = rx*cos(h) - rz*sin(h), das ist die Projektion auf
+    // (cos h, -sin h). Genau dieser Vektor gehoert hierher.
+    // Hier stand vorher (cos h, +SIN h), und das war falsch: gemessen gegen three.js
+    // (C:/tmp/push.js) schob die Verdraengung bei 90 Grad Kurs mit 0,5 m pro Frame NACH INNEN,
+    // zog das Boot also zur Mittellinie statt hinaus. Nur bei Kurs 0 und 180 Grad stimmte es
+    // zufaellig (sin = 0) — deshalb faellt es an einem Testschiff mit heading 0 nie auf.
+    // Ein alter Kommentar behauptete hier das Gegenteil ("mit -sin h schob es diagonal"). Das war
+    // eine Fehldiagnose: damals war zusaetzlich die Rueckdrehung falsch, und die beiden Fehler
+    // hoben sich bei heading 0 gegenseitig auf. Beide sind jetzt gegen three.js nachgerechnet.
+    const qx = Math.cos(sh.heading) * side, qz = -Math.sin(sh.heading) * side;
     pos.x += qx * step;
     pos.z += qz * step;
     // ABPRALLEN, nicht umlenken. Vorher wurde die Fahrt auf "quer * Tempo * 0,6" gesetzt: das Boot
@@ -2381,17 +2398,19 @@ const SHADOW_MAXALT = 20;
 // Schatten bleibt am BODEN stehen und waechst, dadurch sieht man die Sprunghoehe erst richtig.
 function updateOvalShadow(){
   let px, pz, alt, yawS, rx, rz;
+  // Die Halbmasse liegen rund 15 % ueber den echten Umrissen: ein Schatten ist nie so scharf wie das
+  // Objekt, und knapp zu klein sah aus, als schwebte das Fahrzeug. Auf Wunsch etwas groesser gemacht.
   if(eva && eva.boat){                       // im Schlauchboot: Umriss des Boots
     px = eva.boat.position.x; pz = eva.boat.position.z; alt = 0;
-    yawS = eva.yaw; rx = DINGHY_LEN*0.30; rz = DINGHY_LEN*0.52;
+    yawS = eva.yaw; rx = DINGHY_LEN*0.35; rz = DINGHY_LEN*0.60;
   } else if(eva){                            // zu Fuss: rund, klein
     px = eva.group.position.x; pz = eva.group.position.z;
     alt = Math.max(0, eva.group.position.y - evaFootY(px, pz));
-    yawS = eva.yaw; rx = 0.75; rz = 0.75;
+    yawS = eva.yaw; rx = 0.9; rz = 0.9;
   } else {                                   // Feuerwehrboot: 16 m langer Rumpf
     px = state.pos.x; pz = state.pos.z; alt = 0;
     const f = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-    yawS = Math.atan2(f.x, f.z) + Math.PI; rx = 2.6; rz = 8;
+    yawS = Math.atan2(f.x, f.z) + Math.PI; rx = 3.0; rz = 9.2;
   }
   if(alt > SHADOW_MAXALT){ ovalShadow.visible = false; return; }
   const onLand = isOnLand(px, pz), onCar = isOnCarrier(px, pz);
@@ -5087,7 +5106,16 @@ scene.add(planeShadow);
 // der Hoehe. Mit einem gemeinsamen Material wuerde der eine den anderen mitverstellen.
 const ovalShadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.3,
   depthWrite:false, depthTest:false });
-const ovalShadow = new THREE.Mesh(new THREE.CircleGeometry(1, 24), ovalShadowMat);
+// Kein Vollkreis: das vordere Stueck fehlt. Der Schatten wird mit depthTest:false gezeichnet, liegt
+// also IMMER vor allem anderen — auch vor dem eigenen Rumpf, wo er vorne sichtbar auf dem Boot lag.
+// depthTest einzuschalten ist keine Option: dann flackert er gegen das animierte Wasser (genau
+// deswegen ist es aus, siehe shadowMat). Also faengt die Flaeche erst hinter dem Bug an.
+// CircleGeometry(r, seg, thetaStart, thetaLength): der Kreis wird in der XY-Ebene gebaut und spaeter
+// um X gekippt; nach dem Kippen liegt +Y auf -Z, also VORNE. Ausgespart wird daher der Bereich um
+// +90 Grad — SHADOW_CUT gibt an, wie viel (0,55 rad = rund 32 Grad zu jeder Seite).
+const SHADOW_CUT = 0.55;
+const ovalShadow = new THREE.Mesh(
+  new THREE.CircleGeometry(1, 32, Math.PI/2 + SHADOW_CUT, Math.PI*2 - 2*SHADOW_CUT), ovalShadowMat);
 ovalShadow.rotation.x = -Math.PI/2;
 ovalShadow.renderOrder = 999;
 ovalShadow.visible = false;
@@ -6489,7 +6517,7 @@ function shipDiagText(){
   for(const sh of seaShips){
     if(!sh.group) continue;
     const rx = p.x - sh.x, rz = p.z - sh.z;
-    const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+    const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
     const lx = rx*cs - rz*sn - sh.cx, lz = rx*sn + rz*cs - sh.cz;
     const gx = shipHalfWidthAt(sh, lz) + 4, gz = sh.hl + 4;
     const istDrin = Math.abs(lx) < gx && Math.abs(lz) < gz;
@@ -7292,7 +7320,7 @@ function aiObstacleTopAt(x, z, margin){
     for(const sh of seaShips){
       if(!sh.group) continue;
       const rx = x - sh.x, rz = z - sh.z;
-      const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+      const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
       const lx2 = rx*cs - rz*sn, lz2 = rx*sn + rz*cs;
       if(Math.abs(lx2 - sh.cx) < sh.hw + margin && Math.abs(lz2 - sh.cz) < sh.hl + margin
          && sh.top > seaTop) seaTop = sh.top;
@@ -7324,7 +7352,7 @@ function aiShipAhead(x, z, fx, fz, look, py){
     for(const sh of seaShips){
       if(!sh.group) continue;
       const rx = tx - sh.x, rz = tz - sh.z;
-      const cs = Math.cos(-sh.heading), sn = Math.sin(-sh.heading);
+      const cs = Math.cos(sh.heading), sn = Math.sin(sh.heading);
       const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
       if(Math.abs(lx - sh.cx) < sh.hw + 22 && Math.abs(lz - sh.cz) < sh.hl + 22
          && sh.top + 25 > py) return sh.top;

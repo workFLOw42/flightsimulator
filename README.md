@@ -338,6 +338,34 @@ frei. Genau so ein Schiff war auf einem Screenshot zu sehen.
   Lage, in der es wirklich landete, war vorher ungeprüft.
   Über **1.280 Anfahrten** (4 Schiffe × 4 Kurse × 20 Richtungen × 2 Abstände × vor/rückwärts) kommt
   die Bootsmitte danach höchstens **3 %** in den Rumpf hinein; vorher waren es 28 %.
+- **DER Fehler: zwei Vorzeichen in der Drehung.** Das Durchfahren, das sich über Stunden nicht fassen
+  ließ, waren zwei Vorzeichenfehler im Wechsel zwischen Welt- und Schiffskoordinaten — und **die
+  Diagnose-Taste hat sie geliefert**: sie meldete „quer −31,3 bei Grenze 25,2 → frei", während das Boot
+  sichtbar im Rumpf saß. Da das Modell nur 21,2 m breit ist, *kann* bei 31,3 m kein Schiff sein: also
+  war nicht die Hülle zu klein, sondern die Rechnung, die die Position ins Schiffssystem übersetzt.
+
+  | | Code vorher | richtig |
+  |---|---|---|
+  | Rückdrehung ins Schiffssystem | `cos(-h)`, `sin(-h)` bei sonst gleicher Formel | `cos(h)`, `sin(h)` |
+  | Querachse des Schiffs in der Welt | `(cos h, +sin h)` | `(cos h, −sin h)` |
+
+  Beides dreht **um +h statt um −h**: die Kollisionshülle wanderte *mit* dem Schiff, anstatt die
+  Weltposition zurückzurechnen. Gegen echtes three.js gemessen lag die Hülle bei **90° Kurs 203 m
+  neben dem Rumpf**, und **92 %** aller Kurse hatten mehr als eine Schiffsbreite Versatz. Der zweite
+  Fehler drehte zusätzlich die Verdrängung um: sie schob das Boot mit 0,5 m pro Frame **zur
+  Mittellinie**, statt es hinauszudrücken.
+
+  **Warum es so lange gedauert hat:** bei Kurs 0° und 180° ist `sin(h) = 0`, dort stimmt beides
+  zufällig. Alle meine früheren Tests benutzten ein Schiff mit `heading = 0` — und, schlimmer, *dieselbe
+  falsche Formel* wie das Spiel. Sie waren in sich konsistent falsch und konnten den Fehler nicht
+  sehen. Erst der Vergleich gegen `three.js worldToLocal`, also gegen das, was der **Renderer**
+  tatsächlich zeichnet, macht ihn sichtbar. Ein alter Kommentar im Code behauptete sogar das Gegenteil
+  („mit −sin h schob es diagonal") — eine Fehldiagnose von damals, als beide Fehler zugleich drin waren
+  und sich bei `heading = 0` gegenseitig aufhoben.
+
+  Nach der Korrektur bleiben über **864 Fahrten** (4 Schiffe × 9 Kurse × 12 Anfahrtsrichtungen ×
+  vorwärts/rückwärts, je 30 s Vollgas mitten auf den Rumpf zu) **alle** im freien Wasser — vorher
+  landeten 252 davon bis auf der Mittellinie.
 - **Diagnose im Spiel (Taste J).** Weil ein gemeldetes Durchfahren in über 1.200 simulierten Anfahrten
   *nicht* reproduzierbar war, zeigt das HUD auf Wunsch die Lage zum nächsten Schiff: quer und längs,
   jeweils gegen die Grenze, dazu „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu unterscheiden,
@@ -480,9 +508,17 @@ Jetzt gibt es einen zweiten, **ovalen** Schatten für alles, was kein Flugzeug i
 
 | | Form | Bezug |
 |---|---|---|
-| Feuerwehrboot | 5,2 × 16 m, längs zum Kurs | fährt immer auf der Wasserlinie |
-| Schlauchboot | 2,5 × 4,4 m, längs zum Kurs | dito |
-| Astronaut zu Fuß | rund, 1,5 m | wächst mit der **Sprunghöhe** |
+| Feuerwehrboot | 6,0 × 18,4 m, längs zum Kurs | fährt immer auf der Wasserlinie |
+| Schlauchboot | 2,9 × 5,0 m, längs zum Kurs | dito |
+| Astronaut zu Fuß | rund, 1,8 m | wächst mit der **Sprunghöhe** |
+
+Die Maße liegen bewusst rund 15 % über den echten Umrissen: ein Schatten ist nie so scharf wie das
+Objekt, und knapp zu klein sah aus, als schwebte das Fahrzeug.
+
+Das **vordere Stück fehlt** (ein Kreissektor, kein Vollkreis). Der Schatten wird mit `depthTest:false`
+gezeichnet, liegt also immer vor allem anderen — auch vor dem eigenen Rumpf, wo er vorne sichtbar auf
+dem Boot lag. `depthTest` einzuschalten ist keine Option: dann flackert er gegen das animierte Wasser,
+genau dafür ist es aus. Also beginnt die Fläche erst hinter dem Bug.
 
 Beim Astronauten ist das mehr als Zierde: der Schatten bleibt am **Boden** stehen und wird beim
 Springen größer und blasser. Erst dadurch sieht man, wie hoch er kommt — und auf dem Mond kommt er

@@ -1,54 +1,15 @@
 # TODO — Flugspiel
 
 Offene Punkte. Erledigtes austragen, nicht abhaken lassen.
-Stand: 10.09.2026, nach der vierten Runde.
+Stand: 10.09.2026, nach der fünften Runde.
 
 ---
 
-## 1. Durchfahren durch das Containerschiff — teils behoben, Rest offen
+## Offen
 
-Gemeldet am 10.09. mehrfach, mit Screenshot: das Feuerwehrboot war **mitten im Containerschiff**,
-Kamera mit drin, und das Schiffsmodell ist innen hohl (deshalb sah man Wasser im Rumpf).
-
-**Was daran behoben ist** (beides gemessen, siehe README):
-- Geprüft wurde nur **ein Punkt** 8 m vor der Bootsmitte. In 5,4 % aller Lagen steckt die Bootsmitte
-  im Rumpf, während dieser Punkt frei liegt — daraus fuhr das Boot ungehindert weiter. Jetzt werden
-  neun Punkte geprüft (Bug/Mitte/Heck × drei Querlagen).
-- Die Ausweichlogik prüfte einen Punkt 8 m voraus, verschob das Boot aber nur um einen Frameschritt.
-  Die Lage, in der es wirklich landete, war ungeprüft. Jetzt wird die tatsächliche Ziellage geprüft.
-- Die Grenze folgt jetzt der Rumpfform (24 Scheiben) statt einem Rechteck.
-
-Über 1.280 simulierte Anfahrten kommt die Bootsmitte danach höchstens **3 %** in den Rumpf (vorher
-28 %), und **kein** Fall erreicht die Rumpfmitte.
-
-**Was offen ist:** genau dieser Durchbruch ließ sich in der Simulation **nie** reproduzieren — in
-keiner der 1.280 Anfahrten, auch nicht mit dem alten Code. Es fehlt also noch eine Ursache, die mein
-Nachbau nicht abbildet. Kandidaten, die noch nicht geprüft sind:
-
-- **Bildrate.** Bei einem großen `dt` (Ruckler, Tab-Wechsel) legt das Boot pro Frame mehr als die
-  Vorausschau zurück. `dt` ist auf 0,05 s geklemmt, das sind bei 24 m/s 1,2 m — reicht nicht für 8 m,
-  aber die Klemme greift nur im Loop, nicht bei einem Sprung in `seaTime`.
-- **Zwei Schiffe gleichzeitig.** Die Ausweichlogik sucht Wasser gegen *alle* Schiffe, die Verdrängung
-  behandelt aber nur das **erste** getroffene (`return` in der Schleife). Zwischen zwei Rümpfen könnte
-  das ein Verhalten geben, das mein Test mit einem Schiff nicht sieht.
-- **Der Weg über die EVA.** Steigt man im Schlauchboot aus und wieder ins Feuerwehrboot ein, während
-  ein Schiff darüber steht, wird die Position gesetzt statt gefahren — dabei greift keine Sperre.
-
-**Zum Nachsehen ist die Taste J eingebaut** (Diagnose im HUD): sie zeigt für das nächste Schiff die
-Lage quer und längs gegen die Grenze und sagt „frei" oder „IM RUMPF". Damit ist im Spiel selbst zu
-unterscheiden, ob die Hülle zu klein ist (steht „frei", obwohl man im Stahl sitzt → Hüllenproblem)
-oder ob die Sperre nicht greift (steht „IM RUMPF" → Fahrlogik). Das ist die Information, die noch
-fehlt, um den Rest gezielt zu beheben statt weiter zu raten.
-
----
-
-## 2. Kamera fährt durch alles
-
-Die Kamera hat als einzige Kollision die Klemme „nicht unter y = 2". Sie hängt rund 30 m hinter dem
-Fahrzeug und steckt beim Vorbeifahren an einem 300-m-Frachter regelmäßig im Rumpf — gemessen bei bis
-zu **50 %** der Kurse, wenn das Boot längsseits fährt. Sie wird jetzt herangezogen, bis sie frei ist
-(nur gegen **Schiffe**, siehe README). Inseln, Berge, Häuser und der Trägerrumpf fehlen noch: dort
-schaut man weiterhin von innen durch die Wand.
+**Kamera fährt durch alles außer Schiffen.** Sie hat als einzige Kollision die Klemme „nicht unter
+y = 2" und wird jetzt bei Schiffen herangezogen. Inseln, Berge, Häuser und der Trägerrumpf fehlen
+noch: dort schaut man weiterhin von innen durch die Wand.
 
 ---
 
@@ -72,6 +33,25 @@ als die Welle. Wenn es zu ruhig wirkt: `BOAT_BOB` 1 → **2,45**, `DINGHY_BOB` 1
 
 ---
 
+## Lehre aus der Fehlersuche (bitte beim nächsten Mal beherzigen)
+
+Das Durchfahren durch die Schiffe hat einen ganzen Tag gekostet, und der Grund dafür ist eine
+Testmethode, die nicht funktioniert hat:
+
+- Meine Simulationen benutzten **dieselbe Formel wie das Spiel**. Sie waren dadurch in sich konsistent
+  falsch und konnten den Vorzeichenfehler nicht sehen — über 1.280 Anfahrten meldeten sie „kein
+  Durchfahren", während es im Spiel offensichtlich passierte.
+- Alle Tests fuhren gegen ein Schiff mit `heading = 0`. Genau dort ist `sin(h) = 0`, und genau dort
+  stimmten beide falschen Formeln zufällig.
+- **Was hilft:** gegen eine *unabhängige* Referenz prüfen, nicht gegen die eigene Rechnung. Hier war
+  das `three.js worldToLocal` — also das, was der Renderer tatsächlich zeichnet. Und Kurse durchvariieren,
+  nicht bei 0 bleiben.
+- **Was am Ende entschieden hat:** die Diagnose-Anzeige im Spiel (Taste J). Sie zeigte „quer −31,3 bei
+  Grenze 25,2 → frei", und weil das Modell nur 21,2 m breit ist, war damit klar, dass die *Rechnung*
+  falsch liegt und nicht die Hülle. Eine Messung im laufenden Spiel schlägt jede Simulation.
+
+---
+
 ## Erledigt am 10.09.2026
 
 1. **Rettungsboote liefen voll** — Gitter-Interpolation (bis 1,005 m), nicht `tOff`. `seaMeshY()`.
@@ -80,11 +60,21 @@ als die Welle. Wenn es zu ruhig wirkt: `BOAT_BOB` 1 → **2,45**, `DINGHY_BOB` 1
    `aiShipAhead()`, weil der Jet sonst seinen eigenen Träger als Hindernis gesehen hätte.
 4. **Feuerwehrboot drang ein statt abzuprallen** — es prüfte nur seinen Mittelpunkt. `BOAT_LOOK`.
 5. **Barriere lag neben dem Schiff** — Hülle kam aus der Gesamtbox mit Masten. Jetzt Rumpfband + `cx`/`cz`.
-6. **Von vorne durchgefahren** — meine eigene Vorausschau machte das Ausweichen blind. Zwei Durchgänge.
+6. **Von vorne durchgefahren** — die eigene Vorausschau machte das Ausweichen blind. Zwei Durchgänge.
 7. **Schiffe schwebten in der Luft** — sie fuhren jenseits des Meeresgitters. Radien 2,4 / 2,9 km.
 8. **Schatten für Boote und Astronaut** (Wunsch) — ovaler Schatten, wächst mit der Sprunghöhe.
 9. **Schatten wanderte** — er lag auf fester Höhe statt auf der Welle (bis 5,59 m Differenz).
 10. **Falcon flog seitwärts** — `setFromUnitVectors` ließ den Roll frei (im Mittel 45,3° gekippt).
-    Jetzt `lookAt` mit definiertem Oben.
+11. **Grenze folgt der Rumpfform** — Halbbreiten-Profil mit 24 Scheiben statt Rechteck.
+12. **Ganzer Bootsumriss geprüft** statt eines Punktes — 5,4 % der Lagen waren sonst „frei", obwohl
+    die Bootsmitte im Rumpf stand.
+13. **DAS Durchfahren: zwei Vorzeichen in der Drehung.** Die Rückdrehung ins Schiffssystem und die
+    Querachse des Schiffs drehten beide um +heading statt um −heading. Gemessen gegen three.js lag die
+    Hülle bei 90° Kurs **203 m** neben dem Rumpf, bei **92 %** aller Kurse mehr als eine Schiffsbreite
+    daneben — und die Verdrängung schob zusätzlich zur Mittellinie statt hinaus. Bei Kurs 0° und 180°
+    stimmte es zufällig, deshalb war es so schwer zu finden. Nach der Korrektur bleiben **3.528**
+    Fahrten (21 Kurse × 21 Anfahrten × 4 Schiffe × vor/rückwärts) **restlos** im freien Wasser.
+14. **Schatten größer und vorne beschnitten** (Wunsch) — 15 % größer, und das vordere Stück fehlt,
+    damit er nicht über dem eigenen Rumpf liegt.
 
 Alle Befunde stehen ausführlich im README.
