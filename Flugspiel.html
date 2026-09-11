@@ -828,10 +828,17 @@ function buildIsland(cx, cz) {
       // Laufender Index ueber ALLE Plaetze, nicht row*100+idx: 100 mod 5 ist 0, beide Reihen
       // waeren damit gleich besetzt. Fuer die zweite Reihe also weiterzaehlen.
       const nm = parkPlaneAt(cx, cz, s.row * nSlotsPerRow + s.idx, 0);
-      // Das Modell, das man SELBST fliegt, steht nicht zusaetzlich geparkt da — es waere sonst
-      // doppelt in der Welt (einmal unter dem Spieler, einmal auf dem Platz). Dieselbe Regel gilt
-      // schon fuer den geparkten X-Wing auf der Wiese.
-      const pl2 = (nm === MODEL_NAMES[currentModel]) ? null : makeParkedPlane(nm);
+      // Das Modell, das man SELBST fliegt, steht nicht zusätzlich geparkt da — es wäre sonst doppelt
+      // in der Welt (einmal unter dem Spieler, einmal auf dem Platz).
+      //
+      // AUSNAHME X-Wing, und die ist der Grund, warum er gemeldet fehlte: man startet in ihm
+      // (currentModel 0), also war sein Platz immer leer — auf allen 226 Plätzen, die ihm über die
+      // gezählten Inseln zugeteilt waren. Er ist aber das Fahrzeug, mit dem man ins Weltall kommt,
+      // und genau danach sucht man auf dem Vorfeld. Doppelt in der Welt ist er trotzdem nicht
+      // schlimm: es fliegen ohnehin KI-X-Wings herum (aiXwings), und einer, der neben dem eigenen
+      // steht, sieht aus wie ein zweiter Jäger der Staffel und nicht wie ein Fehler.
+      const eigenes = (nm === MODEL_NAMES[currentModel]) && nm !== 'XWing';
+      const pl2 = eigenes ? null : makeParkedPlane(nm);
       if(pl2){
         pl2.position.set(s.x, ISLAND_Y, s.z);
         pl2.rotation.y = s.yaw;
@@ -3037,7 +3044,16 @@ const ROVER_VMAX  = 27.78;   // m/s = 100 km/h
 const ROVER_ACCEL = 7;       // m/s^2 — zieht zuegig an, ohne zu schleudern
 const ROVER_YAW   = 1.1;     // Lenkgeschwindigkeit (rad/s)
 const ROVER_BOARD_R = 12;    // so nah muss man ihm sein, um einzusteigen
-const ROVER_SEAT_Y  = 1.1;   // Sitzhoehe ueber dem Boden (der Astronaut sitzt oben drauf)
+// Sitzhoehe: NICHT pauschal, sondern aus dem Modell. Im Browser ausgemessen ist der Perseverance
+// 5,45 m hoch (er wird auf 10 m Laenge gestreckt, damit man ihn in der weiten Landschaft findet),
+// der Apollo Lunar Rover 1,77 m. Mit einem festen Wert von 1,1 m sass der Astronaut also IM
+// Perseverance, und die Kamera - die 5,1 m ueber ihm sitzt - steckte in dessen Dach: genau das
+// gemeldete "die Kamera geht unter den Rover". Beim Mondrover fiel es nicht auf, weil 1,1 m dort
+// zufaellig passte. Der Ursprung liegt bei beiden Modellen am Boden (minY = 0,00 gemessen), also
+// ist die Oberkante direkt die Sitzhoehe.
+function roverSeatY(loc){
+  return (loc === 'mars') ? 5.45 : 1.77;
+}
 // ---- Jetpack (Weltall, ausserhalb des Hangars) ----
 // Der dritte Sub-Modus neben eva.boat und eva.rover, nach genau demselben Muster: eigene Physik
 // (updateJet), eigener Kamerafaktor, eigene HUD-Anzeige, eigener Eingabezweig. Er faengt den
@@ -3182,11 +3198,14 @@ function jetSnapCam(){
   // 3,4 mal 1,9 plus 2,2): sonst springt die Kamera im naechsten Bild wieder um, und der
   // Ortswechsel saehe aus wie ein Ruckler.
   const jp = eva.jet ? eva.jetPitch : 0;
-  const cjp = Math.cos(jp), sjp = Math.sin(jp);
+  const sjp = Math.sin(jp);
   const bt = eva.jet ? 1.9 : 1;
-  const back = new THREE.Vector3(Math.sin(eva.yaw)*cjp, -sjp, Math.cos(eva.yaw)*cjp);
+  // back ist WAAGERECHT — dieselbe Formel wie in updateCamera. Die Kamera folgt dem Nickwinkel
+  // absichtlich nicht: auf der Flugachse sitzend stand sie bei steilem Steigflug unter dem
+  // Astronauten und das Bild kippte (siehe die Begruendung in updateCamera).
+  const back = new THREE.Vector3(Math.sin(eva.yaw), 0, Math.cos(eva.yaw));
   camera.position.copy(eva.group.position).addScaledVector(back, 7*bt);
-  camera.position.y += eva.jet ? (3.4*bt + 2.2) : 3.4;
+  camera.position.y = eva.group.position.y + 3.4*bt;
   camera.up.set(0, 1, 0);
   const ziel = eva.group.position.clone()
     .addScaledVector(new THREE.Vector3(-back.x, sjp, -back.z), EVA_LOOK_AHEAD);
@@ -3375,9 +3394,18 @@ let xwingSpot = { moon:null, mars:null };
 // Standplatz. Ein einzelner surfaceY-Wert liess es einsinken, weil das Hoehenraster von Mond und
 // Mars nur alle 59 m einen Stuetzpunkt hat und dazwischen interpoliert — genau wie beim Flugzeug
 // (GROUND_PROBES) muss also die Umgebung mitgemessen werden, sonst steckt es im Hang.
+// Der Tastradius richtet sich nach dem Fahrzeug, nicht nach einer festen Zahl: der Perseverance ist
+// ausgemessen 10,0 m lang und 6,55 m breit, der Lunar Rover 3,09 x 1,78 m. Mit pauschal 5 m tastete
+// der Mondrover weit über sich hinaus (er wurde von Hügeln angehoben, die er nicht berührt), und der
+// Perseverance zu kurz. Halbe Länge ist das richtige Maß — dieselbe Überlegung wie GROUND_PROBES
+// beim Flugzeug, das über die Spannweite tastet.
+function vehicleProbeR(loc){
+  return (loc === 'mars') ? 5 : 1.6;
+}
 function vehicleGroundY(x, z){
   let gy = surfaceY(x, z);
-  for(const [dx, dz] of [[5,0],[-5,0],[0,5],[0,-5]]){
+  const r = vehicleProbeR(locale);
+  for(const [dx, dz] of [[r,0],[-r,0],[0,r],[0,-r]]){
     const y = surfaceY(x+dx, z+dz);
     if(y > gy) gy = y;
   }
@@ -3426,7 +3454,10 @@ function roverSpawnBesideXwing(){
   }
   const s = roverSpot[locale];
   obj.position.set(s.x, vehicleGroundY(s.x, s.z), s.z);
-  obj.rotation.y = s.yaw || 0;
+  // Der Modellversatz gehört auch hier dazu, nicht nur beim Fahren (updateRover): ohne ihn stand der
+  // Lunar Rover quer zur eigenen Blickrichtung, bis man einstieg und losfuhr — es sah aus, als
+  // wäre er falsch abgestellt worden. Eine Formel, zwei Stellen: roverYawOff.
+  obj.rotation.y = (s.yaw || 0) + roverYawOff(locale);
   obj.visible = true;
 }
 // Steht man neben dem Rover? (nur zu Fuss, und nur wo es einen gibt)
@@ -3503,7 +3534,7 @@ function updateRover(dt, inp){
   obj.visible = true;
   // Der Astronaut sitzt oben drauf und wird unsichtbar gefuehrt: seine Position ist der Bezugspunkt
   // fuer Kamera, Radar und HUD (worldFocus), also muss sie mitwandern.
-  eva.group.position.set(nx, obj.position.y + ROVER_SEAT_Y, nz);
+  eva.group.position.set(nx, obj.position.y + roverSeatY(locale), nz);
   eva.group.rotation.y = eva.yaw;
   eva.group.visible = false;
   roverSpot[locale] = { x:nx, z:nz, yaw:eva.yaw };
@@ -4427,8 +4458,9 @@ function parkPlaneNear(){
       if(d < PARK_BOARD_R && d < bd){
         const nm = parkPlaneAt(cx, cz, s.row * nRow + s.idx, 0);
         // Der Platz des eigenen Modells ist leer (siehe buildIsland) — dort gibt es nichts
-        // einzusteigen, sonst stiege man in ein unsichtbares Flugzeug ein.
-        if(nm === MODEL_NAMES[currentModel]) continue;
+        // einzusteigen, sonst stiege man in ein unsichtbares Flugzeug ein. Dieselbe Ausnahme wie
+        // dort: der X-Wing steht immer da, also kann man dort auch immer einsteigen.
+        if(nm === MODEL_NAMES[currentModel] && nm !== 'XWing') continue;
         bd = d;
         best = { name: nm, x:wx, z:wz, dist:d, cx, cz };
       }
@@ -7612,13 +7644,22 @@ function updateCamera(){
     // Kameraplatz und BLICKZIEL zusammen. Entscheidend ist, dass sich das Blickziel mitbewegt:
     // sonst schaut man immer nur auf den Astronauten, und "nach oben schauen" gibt es nicht.
     const yaw = eva.yaw + evaOrbit;
-    // Am JETPACK folgt die Kamera dem Nickwinkel: sie sitzt hinter und leicht ueber ihm auf seiner
-    // Flugachse und schaut voraus. Ohne das blieb sie waagerecht (richtig fuer einen Laufenden) und
-    // man sah im Steigflug nur seinen Ruecken, waehrend das Ziel aus dem Bild wanderte.
+    // Die Kamera steht bei ALLEN Sub-Modi schräg hinter und über dem Astronauten — zu Fuß, im Boot,
+    // im Rover und am Jetpack gleich. Das ist die Ansicht, die man von einem Fahrzeug erwartet.
+    //
+    // Am Jetpack folgte sie vorher dem Nickwinkel, saß also auf seiner Flugachse. Nachgerechnet ist
+    // das der gemeldete Fehler „von oben mit dem Kopf nach unten": bei 40 Grad Nick stand sie genau
+    // auf Augenhöhe (0,6 Grad), ab 60 Grad DARUNTER und schaute steil hinauf (bei 72 Grad, dem
+    // Anschlag JET_PMAX, um 44 Grad) — und weil camera.up fest (0,1,0) bleibt, kippt das Bild dabei
+    // um. Der Nickwinkel gehört an den Astronauten (das tut updateJet), nicht an die Kamera.
+    //
+    // Das Blickziel trägt den Nickwinkel weiterhin (siehe unten): man schaut dorthin, wo man
+    // hinfliegt, ohne dass die Kamera selbst mitkippt.
     const jp = eva.jet ? eva.jetPitch : 0;
-    const cjp = Math.cos(jp), sjp = Math.sin(jp);
-    const back = new THREE.Vector3(Math.sin(yaw)*cjp, -sjp, Math.cos(yaw)*cjp);
-    const fwd  = new THREE.Vector3(-back.x, sjp, -back.z);         // Blickrichtung (mit Nicken)
+    const sjp = Math.sin(jp);
+    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));   // waagerecht, wie im Rover
+    // Blickrichtung MIT Nicken: nur fuer das Ziel, nicht fuer den Kameraplatz.
+    const fwd  = new THREE.Vector3(-back.x*Math.cos(jp), sjp, -back.z*Math.cos(jp));
     // Blickziel: vor dem Astronauten, um evaPitch gehoben bzw. gesenkt. Positiv = in den Himmel,
     // negativ = auf den Boden vor ihm.
     if(eva.jet){
@@ -7641,10 +7682,13 @@ function updateCamera(){
     const bt = eva.jet ? 1.9 : (eva.boat ? 1.7 : (eva.rover ? 1.5 : 1));
     const dist = 7*bt - 1.5 * Math.max(0, Math.sin(evaPitch));
     const desired = g.position.clone().addScaledVector(back, dist);
-    // Am Jetpack steckt das Nicken schon in back (siehe oben), hier kommt nur noch der feste
-    // Hoehenversatz dazu. Zu Fuss bleibt die alte Rechnung mit evaPitch (freies Umsehen).
-    if(eva.jet) desired.y += 2.2;
-    else desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
+    // Höhe für ALLE gleich gerechnet: 3,4 m mal Abstandsfaktor über dem Astronauten. Am Jetpack
+    // ergibt das mit bt = 1,9 gut 6,5 m auf 13,3 m Abstand — dieselben 26 Grad schräg von hinten,
+    // die man im Rover hat. Vorher addierte der Jetpack-Zweig nur 2,2 m auf einen Kameraplatz, der
+    // selbst dem Nickwinkel folgte; das war der gemeldete Blick von oben.
+    // Der evaPitch-Anteil (freies Umsehen mit dem rechten Stick) gilt nur, wo man sich umsieht — am
+    // Jetpack lenkt derselbe Stick, dort ist evaPitch immer 0.
+    desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
     // Nicht unter den Boden: sonst schaut man durch das Gelände. Beim Blick nach oben darf sie
     // deshalb auch nicht beliebig tief — der Boden gewinnt.
     // Ueber Wasser zaehlt die WELLENhoehe: surfaceY gibt dort 0 zurueck, die Duenung reicht aber bis
