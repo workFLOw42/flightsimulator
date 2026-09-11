@@ -312,6 +312,83 @@ Gelaende, 3,47 m hohe Aufbauten) ist verworfen. Auf 260 m Inselgroesse waeren di
 hoch. Keiner der beiden dort erwogenen Wege wurde genommen, sondern ein dritter: ein eigenes
 Vorfeld aus derselben Geometrie wie die Landebahn.
 
+
+---
+
+## Nachbesserung am Jetpack (nach dem ersten Test)
+
+Gemeldet wurden drei Dinge, alle drei bestätigt und behoben. Der erste Entwurf hatte das Jetpack als
+Anhängsel des Hangars gebaut — der Ort blieb `death`, und der Astronaut schwebte "vor" der Halle.
+Auf Zuruf ist es jetzt ein **Fahrzeug wie der X-Wing**, und das war der richtige Entwurf: es wechselt
+den Ort wirklich ins Weltall (`locale = 'space'`), und damit gilt die **vorhandene** Weltall-Logik
+ohne eine Zeile eigener Arbeit — Planeten, Schiffe, Asteroiden, Radar, Anflug und Andocken.
+
+**1. "Der Astronaut dreht sich leicht nach rechts."** Ursache war die Euler-Ordnung: `rotation.set`
+benutzt die three.js-Vorgabe **XYZ**, also erst Nicken um X, dann Drehen um Y. Damit wandert die
+schon gekippte Längsachse mit der Y-Drehung weg und der Astronaut hängt seitlich in der Luft.
+Gemessen **45,8°** Querlage bei halbem Nickwinkel und **71,6°** am Anschlag. Mit **YXZ** (erst Y, dann
+X um die bereits gedrehte Achse) bleibt die Querlage bei 0 — über 35 geprüfte Lagen (7 Nickwinkel ×
+5 Kurse) jetzt **maximal 0,000°**. Der Rest des Spiels rechnet überall in YXZ; das war die einzige
+Stelle, die aus der Reihe fiel.
+
+**2. "Man sieht nur Sterne, keine Planeten, kein Raumschiff."** Zwei Gründe, beide gemessen:
+
+- `placeBodies` blendet alles aus, was nicht `locale === 'space'` ist. Für den Flieger richtig (er
+  sitzt in der Halle und sieht die Wand), zu Fuß draußen falsch. Mit dem Ortswechsel ist das erledigt.
+- Und selbst dann wäre nichts zu sehen gewesen: die **Kamera blieb im Hangar stehen**, gemessen
+  **183.871 m** vom Astronauten entfernt. Bei 1,9 m Körpergröße ist er damit unsichtbar. `jetSnapCam`
+  setzt sie jetzt bei jedem Ortswechsel hart hinter ihn (Abstand danach **14,2 m**).
+
+**3. "Wieder landen ist gar nicht möglich."** Der alte Entwurf verlangte, die Hallenöffnung zu
+treffen. Jetzt fliegt man einfach den **Todesstern** an und dockt an, genau wie im Flieger — über
+dieselbe Prüfung, die `updateSpaceBodies` schon hat. Im Test dauert der Anflug **24,7 s**, danach
+steht man im Hangar neben dem X-Wing und kann mit **B** einsteigen. Auf Mond oder Mars zu setzt man
+dort auf und läuft weiter; Sonne und Erde haben eine Orbit-Grenze, die einen seitlich vorbeizieht.
+
+### Der Fehler, den mein eigener Test verdeckt hatte
+`updateEva` setzte im Jetpack-Zweig `state.pos` sofort wieder auf `eva.planeAt` zurück — richtig für
+Boot und Rover (dort steht der Flieger still), falsch für das Jetpack, denn an `state.pos` hängt die
+ganze Weltall-Logik. Mein Test rief `updateJet` **direkt** auf und umging diese Zeile: die Messung
+sah gut aus, im Spiel wäre man an allem vorbeigeflogen, ohne dass etwas näher kommt. Erst der Blick
+auf `state.pos` nach einem echten `updateEva`-Durchlauf zeigte es (Position blieb bei (−20, 6, 0),
+während der Astronaut 250 km entfernt war).
+
+**Lehre, schon zum zweiten Mal in diesem Projekt:** eine Teilfunktion direkt zu takten prüft die
+Teilfunktion, nicht das Spiel. Der Weg muss dort beginnen, wo der Spieler ihn auch beginnt.
+
+### Und noch eine Fehldiagnose, die die Messung widerlegt hat
+Ein Regressionstest meldete "X-Wing kommt nicht mehr ins Weltall". Das war ein **Testfehler**: das
+Skript setzte den Nickwinkel auf `-1.2` — das ist Nase **runter**. Der Flieger stürzte ab und wurde
+in den Hangar zurückgesetzt. Mit `+1.2` steigt er auf y = **4006** und ist im Weltall, und von dort
+landet er im Hangar. Nichts war kaputt.
+
+## Der X-Wing ist von der Wiese aufs Vorfeld gezogen
+
+Auf Zuruf: er stand als einzelner geparkter Flieger im Gras (Ring bei 45 % des Inselradius, Salt
+902/903) und fehlte auf dem Parkplatz. Jetzt steht er dort mit den anderen — **alle sechs Flugzeuge**
+auf 10 Stellplätzen. `_xwingLocalCalc` gibt `null` zurück, statt samt Aufrufern ausgebaut zu werden:
+die Funktion wird an fünf Stellen gefragt (buildIsland, xwingParkNear, Radar, Rakete, Parkplatz), und
+alle prüfen schon auf `null`. So fällt der Wiesen-X-Wing überall zugleich weg, ohne dass eine dieser
+Stellen zur Baustelle wird. Die alte Ringsuche bleibt als `_xwingLocalCalcAlt` stehen, damit
+nachvollziehbar ist, wie der Platz gewürfelt wurde.
+
+Dazu kam eine Regel, die vorher nicht nötig war: **der Platz des Flugzeugs, das man selbst fliegt,
+bleibt leer.** Sonst stünde das Modell doppelt in der Welt — einmal unter dem Spieler, einmal auf dem
+Stellplatz. `parkPlaneNear` überspringt diesen Platz ebenfalls, sonst stiege man in ein unsichtbares
+Flugzeug ein. Und `evaBoardParked` ruft am Ende `refreshIslands`, damit der neue Platz leer wird und
+der alte sein Flugzeug zurückbekommt.
+
+### Verifiziert (Browser, 0 Konsolenfehler)
+- **Jetpack:** Ortswechsel nach `space`, alle vier Himmelskörper plus Erdkugel sichtbar, Radar zeigt
+  vier bis fünf Ziele in ihren Farben, Querlage über 35 Lagen maximal 0,000°, `state.pos` wandert mit
+  (79,1 m in 3 s) und deckt sich mit dem Astronauten (0,00 m Abweichung), Anflug auf den Todesstern
+  dockt nach 24,7 s an, danach steht man im Hangar und kann einsteigen.
+- **Vorfeld:** über 29 Inseln 290 Stellplätze, alle sechs Modelle vertreten (X-Wing 49-mal), alle
+  Plätze einsteigbar, eigener Platz leer, kein X-Wing mehr auf der Wiese.
+- **Regression:** Mond landen/aussteigen/Rover (100 km/h)/wieder aussteigen, kein Jetpack auf dem
+  Mond (dort ist überall Boden), Schlauchboot fängt den Schritt ins Wasser weiter auf, Radar zu Fuß
+  auf Erde und Mond, X-Wing steigt normal ins Weltall (y = 4006) und landet im Hangar.
+
 ---
 
 ## Salt-Bereiche (Stand nach dieser Runde)
@@ -331,3 +408,80 @@ Einzelwerte. Belegt sind:
 | 905 | Parkplatz: welches Modell auf welchem Platz |
 
 Der naechste freie Salt ist **906**.
+
+---
+
+## Neue Tastenbelegung: Y steigt ein, B macht Aktionen
+
+Gewünscht war die Trennung, und sie war überfällig: **B** machte vorher beides. Wer neben seiner
+Canadair stand und löschen wollte, stieg stattdessen ein.
+
+| Taste | vorher | jetzt |
+|---|---|---|
+| **Y** | Modell wechseln | **ein- und aussteigen, umsteigen** |
+| **B** | einsteigen *und* Aktion | **nur Aktion** (Wasser, löschen, Kiste, Schleudersitz, Laser, hüpfen) |
+| **D-Pad rechts** | frei | **Modell wechseln** |
+
+Auf der Tastatur: **Y** ein-/aussteigen, **B** Aktion, **M** Modell — wie vorher.
+
+`buttonY` bündelt alles, was man an einem Fahrzeug tun kann, und die Reihenfolge zählt: wer drin
+sitzt, will heraus; wer daneben steht, hinein. `evaBoardY` prüft deshalb erst Rover, dann Vorfeld,
+dann den eigenen Flieger. Am Jetpack tut Y nichts — dort kommt man über das Andocken am Todesstern
+zurück, und eine Taste, die im leeren Raum aussteigen lässt, wäre eine Falle.
+
+`evaButtonB` ist entfallen; seine zwei Aufgaben liegen jetzt getrennt in `buttonY` und `evaActionB`.
+
+## Startplätze und Reihenfolge
+
+Neue Reihenfolge des Modellwechsels: **X-Wing, Canadair, Mustang, Feuerwehrboot, Alpha Jet, Airbus,
+Transall**. `currentModel` ist nur ein Index in `MODEL_NAMES` — geprüft, dass keine Stelle im Code
+einen harten Index annimmt, sonst wäre das Umsortieren gefährlich gewesen.
+
+**Mustang** und **Transall** starten jetzt auf der Landebahn einer **Nicht-Stadt-Insel**. Die Mustang
+stand vorher auf dem Trägerdeck (sie ist ein Warbird, kein Marineflieger, und man findet sie so
+leichter wieder), die Transall auf einer *beliebigen* Insel — also auch in einer Wolkenkratzer-Stadt,
+wo die Bahn in einer Schneise zwischen Türmen liegt. Mit ihren 0,85 Wendigkeit und 600 m Höhendeckel
+ist das ein unschöner Start. Der Alpha Jet bleibt auf dem Deck: der Katapultstart ist sein Auftritt.
+
+## Canadair und Transall dürfen auf den Träger
+
+Beide dürfen dort jetzt **landen und laden**. Die Canadair ist mit 18,5 m Spannweite breiter als der
+Alpha Jet (8,1 m), passt aber auf die 38 m Deckbreite, und mitten auf dem Meer ist der Träger der
+nächste Platz zum Nachtanken. Die Transall passt mit 20 m ebenfalls — träge ist sie nur in der Luft.
+
+Das **Laden** gehörte ausdrücklich dazu und fehlte: `crateLoad` zählte nur auf `isOnRunway` hoch. Wer
+auf dem Deck aufsetzen darf, muss dort auch Fracht aufnehmen können, sonst steht man da und kann
+nichts tun. Auch der 📦-Hinweis über dem Flieger kannte nur die Bahn — man lud also, ohne es zu sehen.
+Beide Stellen prüfen jetzt dieselbe Bedingung: Landebahn **oder** Trägerdeck.
+
+## Zwei gemeldete Bugs
+
+**Der Mondrover fuhr mit der linken Seite voran.** Im Browser ausgemessen: der Apollo Lunar Rover ist
+3,09 (X) × 1,77 × 1,78 m — seine **Längsachse liegt auf X**. Der Perseverance ist 6,55 × 5,45 × 10,0 m,
+dort liegt sie auf **Z**. `updateRover` drehte beide gleich (`rotation.y = yaw`, Fahrtrichtung −Z), also
+fuhr der Mondrover tatsächlich seitwärts. Die Vierteldrehung sitzt jetzt in `roverYawOff(loc)` am
+**Modell** und nicht in der Fahrphysik — sonst müsste jede Rechnung dort zwei Fälle kennen.
+
+**Das HUD zeigte im Rover „Sprung" statt „Schub".** Nur `eva.boat` bekam die Schubanzeige; Rover und
+Jetpack fielen in den Sprung-Zweig und zeigten eine tote Zahl, während man mit 100 km/h fuhr. In
+**allen drei** Fahrzeugen steht jetzt der Schub in Prozent. Die Quelle unterscheidet sich: das Boot
+fährt mit `eva.boatThr` (eigener Gashebel, damit A rückwärts kann), Rover und Jetpack regeln direkt
+über `state.throttle` — dieselbe Unterscheidung, die `updateEngineSound` schon macht.
+
+## Noch offen: der Mars-Rover
+
+Gemeldet: er lässt sich nicht steuern, und die Kamera geht unter ihn. Die Ursache ist **gemessen und
+belegt**, aber noch nicht behoben:
+
+`stepGroundExact` nimmt auf dem Mars `roverObj` als zusätzliche Bodengeometrie in den Raycast — das
+**Fahrzeug selbst**. Der Rover raycastet also gegen sein eigenes Dach und klettert darauf. Gemessen an
+einer Stelle, deren echter Grund bei −71,84 m liegt: mit sichtbarem Rover liefert `groundHitY`
+**+2,82 m**, ohne ihn **−71,84 m**.
+
+Auf dem Mond geht das gut, weil `extra` dort `moonBaseObj` ist — ein **Gebäude**, auf dessen Plattform
+man wirklich stehen soll. Der Lunar Rover bleibt außen vor. Der Mars-Zweig ist eine **Altlast** aus der
+Zeit, als der Perseverance nur Kulisse war und man nicht einsteigen konnte.
+
+## Salt-Bereiche (unverändert)
+
+Der nächste freie Salt ist weiterhin **906**.

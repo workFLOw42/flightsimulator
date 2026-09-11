@@ -27,10 +27,10 @@ Offene Punkte stehen in **[TODO.md](TODO.md)**.
 | Vollgas | — | Leertaste |
 | **Boost** (halten): 100 % + extra Schub | X | Shift |
 | **Bremse / Umkehrschub** (halten) | A | C |
-| Aktion (modellabhängig, s.u.) · im Weltall **Laser** | B | B |
-| **Aussteigen** (nach der Landung) · draußen: **hüpfen** / einsteigen | B | B |
+| **Ein- und aussteigen, umsteigen** | Y | Y |
+| Aktion (modellabhängig, s.u.) · im Weltall **Laser** · zu Fuß **hüpfen** | B | B |
 | Im **Schlauchboot** fahren: lenken · Schub | L-Stick ←→ · R-Stick ↕ | ← → · W / S |
-| Modell wechseln | Y | M |
+| Modell wechseln | D-Pad → | M |
 | Kamera wechseln | — | V |
 | Ansicht von links/rechts (halten) | LB / RB | — |
 | Hilfe/Anleitung ein/aus (pausiert das Spiel) | D-Pad ↑ | H |
@@ -74,15 +74,21 @@ Jedes Modell startet an einem passenden Ort (Hafen, Landebahn, Stadt oder Flugze
 durch die Modelle, und jedes andere Modell beginnt wieder in der Inselwelt:
 
 - **Canadair CL-215** (Löschflugboot) — 🔥 **Waldbrand löschen**: tief übers Wasser fliegen füllt den
-  Tank, über dem Feuer **B** = Wasser ablassen.
+  Tank, über dem Feuer **B** = Wasser ablassen. Als Flugboot setzt sie auf **Wasser** auf und darf auf
+  die **Landebahn** und aufs **Trägerdeck** — mitten auf dem Meer ist der Träger der nächste Platz zum
+  Nachtanken. Mit 18,5 m Spannweite passt sie auf die 38 m Deckbreite.
 - **Dornier Alpha-Jet** — Kunstflug-Jet (Looping/Rolle), **Überschall** bei Vollgas. **B = Schleudersitz**.
   Startet/landet auf Landebahn oder Flugzeugträger.
 - **Airbus A380** — 🧍 **Menschen transportieren**: auf einer Landebahn stehen bleiben, Leute steigen
   um — bei **jeder** Landung, auf **jeder** Bahn. Man fliegt sie also weiter von A nach B und sucht
   sich B selbst aus. Startet in einer Wolkenkratzer-Stadt.
-- **Transall C-160** — 📦 **Fracht abwerfen**: auf der Bahn 4 Kisten laden, dann mit **B** am
-  Fallschirm abwerfen — wo man mag, ein vorgegebenes Ziel gibt es nicht mehr.
-- **P-51 Mustang** — flotter Warbild (Kunstflug), **B = Schleudersitz**. Startet auf einem Flugzeugträger.
+- **Transall C-160** — 📦 **Fracht abwerfen**: auf der **Landebahn** oder auf dem **Trägerdeck**
+  4 Kisten laden (das 📦 über dem Flieger zeigt es an), dann mit **B** am Fallschirm abwerfen — wo man
+  mag, ein vorgegebenes Ziel gibt es nicht mehr. Sie startet auf der Bahn einer **Nicht-Stadt-Insel**:
+  träge wie sie ist, wäre eine Schneise zwischen Wolkenkratzern ein unschöner Anfang.
+- **P-51 Mustang** — flotter Warbird (Kunstflug), **B = Schleudersitz**. Startet auf der Landebahn einer
+  **Nicht-Stadt-Insel** — sie ist ein Warbird, kein Marineflieger, und dort findet man sie leichter
+  wieder. Landen darf sie weiterhin überall auf einer Insel und auf dem Trägerdeck.
 - **Feuerwehrboot** 🚤 — **fährt** auf dem Meer statt zu fliegen und ist das siebte Fahrzeug in der
   **Y/M**-Reihe. Es startet **vor dem Hafen** einer Insel im offenen Wasser (weiter draußen als die
   Canadair, weil die Hafenmole für ein Boot eine Wand ist und es dort sonst nicht wegkäme).
@@ -152,7 +158,7 @@ Herauskommen geht nur mit Fahrt — Nase runter und Schub geben.
 
 ## 🧑‍🚀 Aussteigen und herumlaufen
 
-Wer **gelandet** ist, steigt mit **B** aus und läuft als Astronaut umher. Das geht auf **Insel,
+Wer **gelandet** ist, steigt mit **Y** aus und läuft als Astronaut umher. Das geht auf **Insel,
 Landebahn, Wolkenkratzer-Stadt, Trägerdeck, Mond und Mars** — überall dort, wo fester Boden ist.
 **Aussteigen** geht **nicht** in der Luft, nicht über Wasser und nicht mit dem Feuerwehrboot. Ins
 Wasser kann man aber zu Fuß hinein — dort steht man dann im **Schlauchboot** (siehe unten).
@@ -634,13 +640,22 @@ darum nur **zu Fuß**, nicht im Boot).
 
 ## Parkplatz: alle Flugzeuge zum Aussuchen
 
-Neben der Landebahn **jeder Insel ausser den Staedten** liegt ein **Vorfeld von 200 x 70 m** mit
-**10 Stellplaetzen** in zwei Reihen, die Nasen zueinander. Darauf stehen **Canadair, Alpha Jet,
-Airbus, Transall und Mustang** - jedes genau zweimal. Ein **Rollweg** verbindet Vorfeld und Bahn.
+Neben der Landebahn **jeder Insel außer den Städten** liegt ein **Vorfeld von 200 × 70 m** mit
+**10 Stellplätzen** in zwei Reihen, die Nasen zueinander. Darauf stehen **alle sechs Flugzeuge** —
+X-Wing, Canadair, Alpha Jet, Airbus, Transall und Mustang. Ein **Rollweg** verbindet Vorfeld und Bahn.
 
-Zu Fuss hinlaufen, vor ein Flugzeug stellen, **B** druecken: man sitzt drin und steht startklar am
+Zu Fuß hinlaufen, vor ein Flugzeug stellen, **Y** drücken: man sitzt drin und steht startklar am
 Anfang der Landebahn **dieser** Insel. Welches Modell auf welchem Platz steht, ist deterministisch
-aus der Zelle gewuerfelt - dieselbe Insel zeigt beim Wiederbetreten dieselbe Aufstellung.
+aus der Zelle gewürfelt — dieselbe Insel zeigt beim Wiederbetreten dieselbe Aufstellung.
+
+Der Platz des Flugzeugs, das man **selbst fliegt**, bleibt leer: sonst stünde das Modell doppelt in
+der Welt, einmal unter dem Spieler und einmal geparkt. `parkPlaneNear` überspringt diesen Platz
+ebenfalls, sonst stiege man in ein unsichtbares Flugzeug ein.
+
+Der frühere **einzelne X-Wing auf der Wiese** (Ring bei 45 % des Inselradius) ist damit entfallen —
+er steht jetzt mit den anderen auf dem Vorfeld. `xwingLocal` gibt `null` zurück, statt samt Aufrufern
+ausgebaut zu werden: die Funktion wird an fünf Stellen gefragt, und alle prüfen schon auf `null`. So
+fällt er überall zugleich weg, ohne dass eine dieser Stellen zur Baustelle wird.
 
 ### Das fertige Flughafen-Modell war unbrauchbar
 
@@ -670,51 +685,69 @@ Die geparkten Flugzeuge haben **bewusst keine Kollisionshuelle**, genau wie der 
 `hitsBuilding` gilt auch fuer die Schritte des Astronauten, eine Huelle wuerde also den Weg zum
 Flugzeug blockieren und den Zweck der Sache zerstoeren.
 
-## Jetpack: zu Fuss ins Weltall
+## Jetpack: zu Fuß ins Weltall
 
-Im **Hangar** aussteigen (**B**) und einfach **hinauslaufen**: an der Hallenkante zuendet das
-**Jetpack** und man schwebt im Weltall. Geflogen wird **wie im X-Wing** - der Schub gibt die
+Im **Hangar** aussteigen (**Y**) und einfach **hinauslaufen**: an der Hallenkante zündet das
+**Jetpack**, und man ist wirklich **im Weltall** — mit Erde, Mond, Mars, Sonne, Raumschiffen und
+Asteroiden, genau wie im X-Wing. Geflogen wird auch wie im X-Wing: der Schub gibt die
 Zielgeschwindigkeit (bis **45 m/s = 162 km/h**), der linke Stick dreht und hebt die Nase, geflogen
-wird in Blickrichtung. Gas weg: die Bremsduesen halten an.
+wird in Blickrichtung. Gas weg: die Bremsdüsen halten an. Es ist schwerelos, man fällt also nicht.
 
-Gebaut ist es als `eva.jet`, der **dritte Sub-Modus** neben `eva.boat` (Schlauchboot) und
-`eva.rover`, nach genau demselben Muster: eigene Physik, eigener Kamerafaktor, eigene HUD-Anzeige,
-eigener Eingabezweig. Und mit derselben Grundhaltung wie beim Schlauchboot - **kein Verbot, sondern
-ein Uebergang**: wo das Boot den Schritt ins Wasser auffaengt, faengt das Jetpack den Schritt ueber
-die Hallenkante auf.
+Zurück geht es, indem man **den Todesstern anfliegt** — man dockt an und steht wieder im Hangar neben
+seinem X-Wing. Das Radar zeigt dabei alle Ziele in ihren Farben, wie im Flieger. Auf **Mond** oder
+**Mars** zu setzt man dort auf und läuft weiter. In die **Sonne** und in die **Erde** kommt man nicht:
+dort zieht eine Grenze einen seitlich vorbei (ein Wiedereintritt ohne Schiff wäre auch kein gutes
+Ende).
 
-### Der Fehler, der dahinter steckte
+### Es ist ein Fahrzeug, kein Hangar-Anhängsel
 
-Gemeldet war: *"ich komme zu Fuss nicht vom Hangar in den Weltraum, er bleibt im Uebergang haengen"*.
-Die Ursache: `surfaceY` gibt fuer den Hangar **pauschal** die Bodenhoehe zurueck, egal an welcher
-Stelle, und `evaSolid` gab dort pauschal `true`. Der Astronaut lief also jenseits der Hallenkante auf
-**unsichtbarem Boden** weiter - im Browser gemessen bis zur EVA-Leine bei **4000 m**, ohne dass je
-etwas geschah.
+Das ist der Kern und war der zweite Anlauf. Der erste Entwurf ließ den Ort auf `death` stehen und
+den Astronauten "vor" der Halle schweben. Das Ergebnis im Test: **man sah nur Sterne** — keine
+Planeten, kein Raumschiff — und **zurück kam man nicht**, weil man die Hallenöffnung treffen musste.
 
-Fuer den **Flieger** war das nie aufgefallen, und der Grund ist lehrreich: `updateLocale` prueft den
-Ausstieg ins Weltall an `state.pos`, also am Flugzeug - und das steht im Hangar still, waehrend man
-zu Fuss unterwegs ist. Der gemessene Abstand des X-Wing zur Hallenmitte blieb konstant 20 m,
-waehrend der Astronaut bei 4000 m ankam.
+Jetzt wechselt das Jetpack den Ort wirklich ins Weltall (`locale = 'space'`) und setzt den
+Astronauten dorthin, wo `leaveHangar` auch den Flieger absetzt. Damit gilt die **vorhandene**
+Weltall-Logik ohne eine Zeile eigener Arbeit: Anflug, Andocken, Asteroiden, Schiffe, Sternenkuppel,
+Nebel und Radar. Eigen ist nur der Antrieb — ein Astronaut fliegt nicht mit Warp, sondern mit
+45 m/s. Gebaut ist es als `eva.jet`, der **dritte Sub-Modus** neben `eva.boat` (Schlauchboot) und
+`eva.rover`, nach demselben Muster: eigene Physik, eigener Kamerafaktor, eigene HUD-Anzeige, eigener
+Eingabezweig.
 
-Die Kante ist jetzt **ausgemessen**: per Raycast-Raster ueber die geladene Geometrie ist die
-tragende Flaeche ein durchgehendes Rechteck **x = -140..130, z = -145..145** auf y = 6,25, mit dem
-Ausgang am +X-Ende. Genau dort zuendet das Jetpack - im Test bei **x = 130,4**.
+### Vier Fehler, die erst die Messung gezeigt hat
 
-### Drei Dinge, die erst die Messung gezeigt hat
+- **Der Astronaut hing seitlich in der Luft.** `rotation.set` benutzt die three.js-Vorgabe **XYZ**,
+  also erst Nicken um X, dann Drehen um Y — dabei wandert die schon gekippte Längsachse mit der
+  Y-Drehung weg. Gemessen **45,8°** Querlage bei halbem Nickwinkel und **71,6°** am Anschlag. Mit
+  **YXZ** bleibt sie bei 0: über 35 geprüfte Lagen (7 Nickwinkel × 5 Kurse) maximal **0,000°**. Der
+  Rest des Spiels rechnet überall in YXZ, dies war die einzige Stelle, die aus der Reihe fiel.
+- **Die Kamera blieb im Hangar stehen** — gemessen **183.871 m** vom Astronauten entfernt. Bei 1,9 m
+  Körpergröße ist er damit unsichtbar, und man sah tatsächlich nur Sterne, auch nachdem die
+  Himmelskörper schon sichtbar waren. `jetSnapCam` setzt sie bei jedem Ortswechsel hart hinter ihn
+  (Abstand danach 14,2 m) und benutzt dieselbe Formel wie `updateCamera`, damit sie im nächsten Bild
+  nicht zurückspringt.
+- **`state.pos` wurde jeden Frame zurückgesetzt.** `updateEva` schreibt im Jetpack-Zweig
+  `state.pos = eva.planeAt` — richtig für Boot und Rover, wo der Flieger stillsteht, falsch hier:
+  an `state.pos` hängt die gesamte Weltall-Logik. Ohne die Korrektur schaut das Spiel weiter auf die
+  Stelle im Hangar, und man fliegt an allem vorbei, ohne dass etwas näher kommt.
+- **Die Kamera blieb waagerecht.** Die EVA-Kamera ist für einen Laufenden gebaut. Im Steigflug sah
+  man dem Astronauten auf den Rücken, während das Ziel aus dem Bild wanderte. Am Jetpack folgt sie
+  jetzt dem Nickwinkel und schaut voraus.
 
-- **Ueber der Halle muss die Schwerkraft ziehen.** Zuerst war es ueberall schwerelos, und damit blieb
-  er ueber der Halle fuer immer schweben - gemessen: 8 m ueber dem Boden, Gas aus, keine Bewegung, er
-  kam nicht mehr herunter. Jetzt zieht **innerhalb** der Flaeche die kuenstliche Schwerkraft des
-  Todessterns (4,0 m/s2), **draussen** nicht. Das ist auch die Erklaerung, die das Spiel schon gibt.
-- **Der Saum darf nur beim Hinauslaufen gelten.** Er verhindert, dass man auf der Kante hin und her
-  schaltet - beim **Landen** haette er den Astronauten genau am Rand durch den Boden fallen lassen.
-  Nachgemessen an sieben Stellen einschliesslich aller vier Raender und einer Ecke: ueberall exakt
-  y = 6,25.
-- **Es braucht eine harte Tempo-Deckelung.** Die Schubregelung sieht nur die Fahrt **laengs** der
-  Blickrichtung; beim Nicken bleibt die alte Fahrt quer dazu stehen, und beides addiert sich
-  geometrisch. Gemessen wurden so **68,5 m/s** statt der erlaubten 45. Ein Kind kurvt viel, das
-  passiert also dauernd - der Flieger hat dieselbe Deckelung aus demselben Grund.
+### Der Fehler, den der eigene Test verdeckt hatte
 
+Die Rücksetzung von `state.pos` war in der ersten Messung **nicht** aufgefallen, weil das Testskript
+`updateJet` **direkt** aufrief und damit die Zeile in `updateEva` umging. Die Messung sah gut aus,
+das Spiel hätte nicht funktioniert. Erst der Blick auf `state.pos` nach einem echten
+`updateEva`-Durchlauf zeigte es: die Position blieb bei (−20, 6, 0), während der Astronaut 250 km
+entfernt war.
+
+**Lehre, schon zum zweiten Mal in diesem Projekt:** eine Teilfunktion direkt zu takten prüft die
+Teilfunktion, nicht das Spiel. Der Weg muss dort beginnen, wo der Spieler ihn auch beginnt.
+
+Dazu passt eine Fehldiagnose in derselben Runde: ein Regressionstest meldete "X-Wing kommt nicht mehr
+ins Weltall". Das Skript hatte den Nickwinkel auf `-1.2` gesetzt — Nase **runter**. Der Flieger
+stürzte ab und wurde in den Hangar zurückgesetzt. Mit `+1.2` steigt er auf y = 4006 und ist im
+Weltall. Nichts war kaputt.
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
 Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und die Sterne kommen, ab
@@ -975,6 +1008,25 @@ Weitere verwendete Technik:
   vorher nicht in den Grafikspeicher — genau das war der Grund für das lange Ruckeln nach dem Start.
 - Endlose, ortsfeste Inselwelt (deterministisch je Rasterzelle), animiertes Meer, Flugzeugträger,
   Häfen, Wolkenkratzer-Städte.
+
+## 🎮 Y steigt ein, B macht Aktionen
+
+**B** machte vorher beides: einsteigen *und* die Aktion des Flugzeugs. Wer neben seiner Canadair stand
+und löschen wollte, stieg stattdessen ein. Jetzt hat jede Taste eine Aufgabe:
+
+| Taste | Aufgabe |
+|---|---|
+| **Y** | ein- und aussteigen, umsteigen — aus dem Flieger heraus, in ein geparktes Flugzeug hinein, in den Rover, zurück ins eigene |
+| **B** | nur Aktion: Wasser ablassen, löschen, Kiste abwerfen, Schleudersitz, Laser, zu Fuß hüpfen |
+| **D-Pad →** | Modell wechseln (war frei — Y brauchte den Platz) |
+
+`buttonY` bündelt alles, was man an einem Fahrzeug tun kann, und die Reihenfolge zählt: wer drin
+sitzt, will heraus; wer daneben steht, hinein. Am **Jetpack** tut Y nichts — dort kommt man über das
+Andocken am Todesstern zurück, und eine Taste, die im leeren Raum aussteigen ließe, wäre eine Falle.
+
+Neue Reihenfolge des Modellwechsels: **X-Wing, Canadair, Mustang, Feuerwehrboot, Alpha Jet, Airbus,
+Transall**. `currentModel` ist nur ein Index in `MODEL_NAMES` — vor dem Umsortieren geprüft, dass keine
+Stelle im Code einen harten Index annimmt.
 
 ## 📄 Lizenz
 Der Spielcode ist frei nutzbar. Die 3D-Modelle unterliegen ihren jeweiligen Creative-Commons-Lizenzen
