@@ -4810,9 +4810,19 @@ function stepGroundExact(){
   const approx = groundHeightAt(locale, F.x, F.z);
   if(F.y - approx > 300) return;                    // weit oben genügt das Raster
   const T = G.tile;
-  // Mondbasis bzw. Rover mitprüfen: sie stehen auf eigenen Flächen, die höher liegen als der
-  // Kraterboden — ohne sie landet man unter der Plattform.
-  const extra = (locale === 'moon') ? moonBaseObj : (locale === 'mars' ? roverObj : null);
+  // Die Mondbasis mitprüfen: sie ist ein GEBÄUDE und steht auf einer eigenen Fläche, die höher liegt
+  // als der Kraterboden — ohne sie landet man unter der Plattform, und darauf soll man auch laufen.
+  //
+  // Der Mars-Rover darf hier NICHT stehen, obwohl er es lange tat (seit dem 23.08., als er reine
+  // Kulisse war und man nicht einsteigen konnte). Ein FAHRZEUG ist kein Boden: sitzt man darin, tastet
+  // der Raycast sein eigenes Dach ab, der Rover klettert darauf, und im nächsten Frame noch höher.
+  // Im Browser gemessen an einer Stelle, deren echter Grund bei −71,84 m liegt: mit sichtbarem Rover
+  // gab groundHitY +2,82 m. Genau das war „der Mars-Rover lässt sich nicht steuern, die Kamera geht
+  // unter ihn" — er entfernte sich nach oben, während die Kamera dem echten Boden folgte.
+  //
+  // Auf dem Mond fiel es nie auf, weil dort die Basis in extra steht und der Lunar Rover außen vor
+  // bleibt. Deshalb ist die Regel jetzt gleich für beide Orte: nur Gebäude, keine Fahrzeuge.
+  const extra = (locale === 'moon') ? moonBaseObj : null;
   let best = null;
   // Draußen zu Fuß nur der Punkt unter den Füßen (siehe GROUND_PROBES_FOOT) — im Rover ebenso: die
   // Ausdehnung des Fahrzeugs steckt schon in vehicleGroundY, das ein eigenes Kreuz von 5 m abtastet.

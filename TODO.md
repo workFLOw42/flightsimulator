@@ -468,20 +468,41 @@ Jetpack fielen in den Sprung-Zweig und zeigten eine tote Zahl, während man mit 
 fährt mit `eva.boatThr` (eigener Gashebel, damit A rückwärts kann), Rover und Jetpack regeln direkt
 über `state.throttle` — dieselbe Unterscheidung, die `updateEngineSound` schon macht.
 
-## Noch offen: der Mars-Rover
-
-Gemeldet: er lässt sich nicht steuern, und die Kamera geht unter ihn. Die Ursache ist **gemessen und
-belegt**, aber noch nicht behoben:
-
-`stepGroundExact` nimmt auf dem Mars `roverObj` als zusätzliche Bodengeometrie in den Raycast — das
-**Fahrzeug selbst**. Der Rover raycastet also gegen sein eigenes Dach und klettert darauf. Gemessen an
-einer Stelle, deren echter Grund bei −71,84 m liegt: mit sichtbarem Rover liefert `groundHitY`
-**+2,82 m**, ohne ihn **−71,84 m**.
-
-Auf dem Mond geht das gut, weil `extra` dort `moonBaseObj` ist — ein **Gebäude**, auf dessen Plattform
-man wirklich stehen soll. Der Lunar Rover bleibt außen vor. Der Mars-Zweig ist eine **Altlast** aus der
-Zeit, als der Perseverance nur Kulisse war und man nicht einsteigen konnte.
-
 ## Salt-Bereiche (unverändert)
 
 Der nächste freie Salt ist weiterhin **906**.
+
+## Der Mars-Rover ließ sich nicht steuern (behoben)
+
+Gemeldet: er reagiert nicht, und die Kamera geht unter ihn — „da sind wohl noch Altlasten vorhanden,
+die die Fahrzeugsteuerung verhindern". Genau das war es, und die Vermutung traf zu.
+
+`stepGroundExact` nahm auf dem Mars `roverObj` als zusätzliche Bodengeometrie in den Raycast — **das
+Fahrzeug selbst**. Wer darin sitzt, tastet also sein eigenes Dach ab: der Rover steigt darauf, im
+nächsten Frame noch höher. Im Browser gemessen an einer Stelle, deren echter Grund bei −71,84 m liegt,
+gab `groundHitY` mit sichtbarem Rover **+2,82 m**.
+
+Auf dem Mond fällt es nicht auf, weil dort `moonBaseObj` in `extra` steht — ein **Gebäude**, auf dessen
+Plattform man wirklich stehen soll; der Lunar Rover bleibt außen vor. Die Mars-Zeile stammt vom
+**23.08.** (Commit `cd077a6`), als der Perseverance reine Kulisse war und man nicht einsteigen konnte.
+Mit dem Einsteigen wurde sie zur Falle, ohne dass sie jemand angefasst hätte.
+
+Die Regel gilt jetzt für beide Orte gleich: **nur Gebäude, keine Fahrzeuge**. `basePlatformNear` und
+`padSurfaceY` kannten den Rover ohnehin nie — der Eingriff bleibt also auf diese eine Zeile begrenzt.
+
+Verifiziert (14 von 14 grün, keine Konsolenfehler): Boden mit und ohne sichtbaren Rover identisch
+(Differenz 0,000 m), 3 s Vollgas ergeben 31,7 m — das passt zur Rechnung 0,5 · 7 · 3² = 31,5 m —,
+Lenken exakt −1,100 rad/s = `ROVER_YAW`, Höhenänderung 0,00 m, der Astronaut sitzt oben, und die
+Mondbasis ist weiterhin Boden.
+
+### Zwei Testfehler, die nach Spielfehlern aussahen
+
+Beide notiert, weil sie beim nächsten Mal wieder drohen:
+
+- **Das Mars-Höhenraster schien um 71 m falsch** (Raster 0, Raycast −72). Es wird über Frames
+  aufgebaut, 8 Zeilen pro Frame, 128 nötig — und bis dahin gibt `groundHeightAt` pauschal 0 zurück.
+  Mein Test wartete mit `setTimeout` statt auf echte Frames. Nach 23 gerechneten Frames beträgt die
+  Abweichung **1,86 m** im Mittel, genau wie auf dem Mond (1,75 m). Also kein Fehler.
+- **Der Rover schien mit −2307 km/h zu fahren.** `loop(now)` rechnet `dt` selbst aus der übergebenen
+  Zeit; mein Testtakt spulte die Uhr vor und erzeugte absurde Zeitschritte. Wer die Physik messen
+  will, ruft `updateRover(dt, inp)` direkt mit festem `dt` — dann stimmen die Zahlen.
