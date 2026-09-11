@@ -225,12 +225,66 @@ Aber: erst messen, dann ändern. Zwei dieser Stellen waren richtig, wie sie ware
   `state.quat`, ist der Glättungsfaktor bei 60 fps nur 0,042 — angezeigt würden 4 % der
   Wellenneigung, das Nicken wäre unsichtbar.
 
-**2. Neuer Flughafen auf den Inseln.** `airport_by_nermin.glb` als Modell: dort parken alle Flugzeuge
-mit genug Abstand, damit klar ist, in welches man einsteigt. Wer einsteigt, **respawnt auf der
-Landebahn**.
+**2. Parkplatz mit allen Flugzeugen auf den Inseln - ERLEDIGT.** Neben der Landebahn jeder
+Nicht-Stadt-Insel liegt ein **Vorfeld von 200 x 70 m** mit **10 Stellplaetzen** in zwei Reihen,
+Nasen zueinander. Darauf stehen Canadair, Alpha Jet, Airbus, Transall und Mustang - jedes genau
+zweimal, deterministisch aus der Zelle gewuerfelt (Salt 905). Ein Rollweg verbindet Vorfeld und
+Bahn. Zu Fuss hinlaufen, **B** druecken: man sitzt drin und steht am Anfang der Landebahn *dieser*
+Insel.
 
-**3. Jetpack im Weltall.** Da man im Weltall-Hangar schon aussteigen kann: auch **ins Weltall
-hinauslaufen** und dort per Jetpack schweben — **Steuerung wie beim X-Wing**.
+  - **Das GLB war unbrauchbar, wie im alten Punkt 7 vermutet** - und die Messung hat es bestaetigt:
+    `airport_by_nermin.glb` ist ein 3000 x 1577 m grosses Gelaende mit nur **3,47 m** hohen
+    Aufbauten. Auf Inselgroesse skaliert waeren die Terminals **30 cm** hoch, niedriger als der
+    Astronaut (1,8 m). Von den beiden dort erwogenen Wegen ist es der dritte geworden: ein eigenes
+    Vorfeld aus derselben Geometrie wie die Landebahn (`runwayMat`, `lineMat`). Das GLB bleibt
+    ungenutzt.
+  - **Der Platz wird FREIGEHALTEN, nicht gesucht.** Das ist der Kern und der Unterschied zu Rakete
+    und geparktem X-Wing, die einen freien Ring absuchen: ein 200 x 70 m grosses Rechteck zwischen
+    8 bis 18 gewuerfelte Bauwerke zu bekommen gelingt nur auf **76 %** der Inseln (durchgerechnet
+    ueber 7.218). Die Landebahn loest das schon lange, indem `islandBuildings` ihren Streifen
+    ausspart - der Parkplatz macht es jetzt genauso, und damit passt er auf **100 %**.
+  - **Modellmasse im Browser gemessen**, nicht geschaetzt: das groesste Flugzeug ist der **Airbus**
+    mit 27,1 m Spannweite und 24,93 m Laenge. Daraus das Raster von **34 m** (6,9 m Luft zum
+    Nachbarn) und die Reihenbreite von 35 m. `GLB_SPAN` normiert die groessere waagerechte Achse,
+    und die ist nicht bei jedem Modell die Spannweite - geraten waere daneben gegangen.
+  - **Keine Kollisionshuelle** fuer die geparkten Flugzeuge, bewusst und wie beim geparkten X-Wing:
+    `hitsBuilding` gilt auch fuer die Schritte des Astronauten, eine Huelle wuerde also genau den
+    Weg zum Flugzeug blockieren.
+  - **`preloadGLB` ruft jetzt `refreshIslands`.** Ohne das waere auf den zuerst gebauten Inseln
+    dauerhaft eine Luecke im Vorfeld geblieben: die GLBs laden asynchron, und vorher zog der
+     Callback nur das eigene Flugmodell nach.
+
+**3. Jetpack im Weltall - ERLEDIGT, und es war zugleich der gemeldete Fehler.** Im Hangar
+aussteigen und hinauslaufen: an der Hallenkante zuendet das Jetpack und man schwebt im Weltall.
+Steuerung wie beim X-Wing, wie gewuenscht - Schub gibt die Zielfahrt (bis **45 m/s = 162 km/h**),
+der linke Stick dreht und nickt, geflogen wird in Blickrichtung. Gas weg: die Bremsduesen halten an.
+Gebaut als `eva.jet`, der dritte Sub-Modus neben `eva.boat` und `eva.rover`, nach demselben Muster.
+Damit ist auch der alte Punkt 6 (im Hangar aussteigen) abgeschlossen.
+
+### Der Fehler dahinter: "kommt zu Fuss nicht in den Weltraum, bleibt im Uebergang haengen"
+`surfaceY` gibt fuer `locale === 'death'` **pauschal** `hangarFloorY` zurueck, und `evaSolid` gab dort
+pauschal `true`. Der Astronaut lief also jenseits der Hallenkante auf **unsichtbarem Boden** weiter -
+im Browser gemessen bis zur EVA-Leine bei **4000 m**, ohne dass je etwas passierte. Fuer den
+FLIEGER war das unsichtbar, weil `updateLocale` `state.pos` prueft und der X-Wing im Hangar stehen
+bleibt, waehrend man zu Fuss unterwegs ist (`rPlane` blieb konstant 20 m).
+
+Die Kante ist jetzt **ausgemessen**, nicht geraten: per Raycast-Raster ist die tragende Flaeche ein
+durchgehendes Rechteck **x = -140..130, z = -145..145** auf y = 6,25 (`HANGAR_FLOOR_*`). Der Ausgang
+liegt am +X-Ende, und genau dort zuendet das Jetpack - im Test bei **x = 130,4**.
+
+  - **Ueber der Halle zieht die kuenstliche Schwerkraft** (`GRAV_AT.death` = 4,0), draussen nicht.
+    Ohne das blieb er ueber der Halle fuer immer schweben und kam nicht zurueck (gemessen: 8 m
+    ueber der Flaeche, Gas aus, keine Bewegung). Jetzt sinkt er von allein und setzt auf.
+  - **Der Saum gilt nur beim Hinauslaufen** (`JET_EDGE` = 6 m), nicht beim Landen. Beim Landen
+    zaehlt die ganze Flaeche - ein Saum haette ihn genau am Rand durch den Boden fallen lassen.
+    Nachgemessen an sieben Stellen einschliesslich aller Raender und einer Ecke: ueberall exakt
+    y = 6,25.
+  - **Harte Tempo-Deckelung**, wie der Flieger sie auch hat. Die Schubregelung sieht nur die Fahrt
+    LAENGS der Blickrichtung; beim Nicken bleibt die alte Fahrt quer dazu stehen und beides addiert
+    sich geometrisch. Gemessen wurden so **68,5 m/s** statt der erlaubten 45. Ein Kind kurvt viel,
+    das passiert also dauernd.
+  - **Steigt der X-Wing im Hangar jenseits der Bodenflaeche aus**, schwebt der Astronaut sofort -
+    dort gibt es keinen Grund zum Stehen, und `canLandHere` erlaubt dem X-Wing die Landung ueberall.
 
 **4. Weitere Modelle liegen bereit** (noch nicht eingebaut):
   - `submarine_by_Helindu.glb` — U-Boot
@@ -249,14 +303,31 @@ Raster von x = 0 aus nach beiden Seiten aufgebaut (`N = floor(radius/STEP)`), da
 Rasterlinie genau auf 0 liegt: **0 von 360 schief**, Gasse 92 m breit bei 24 m Bahn. Die
 Salt-Bereiche bleiben frei (Türme 70..202 und 300..432, Rakete und X-Wing bei 900..903).
 
-**6. Im Hangar aussteigen und herumlaufen** — geht bereits (`evaAllowed` erlaubt
-`locale === "death"`). Das ist die Voraussetzung für Punkt 3, das Jetpack im Weltall.
+**6. Im Hangar aussteigen und herumlaufen** - erledigt. Es war die Voraussetzung fuer Punkt 3, und
+mit dem Jetpack ist der Weg nach draussen jetzt auch zu Fuss offen.
 
-**7. Airport auf den Nicht-Stadt-Inseln** (`airport_by_nermin.glb`, 0,65 MB, 1.300 Dreiecke —
-winzig, keine Reduktion nötig). **Aber vermessen, und da liegt ein Problem:** er ist ein flaches
-Gelände von **3000 × 1577 m** mit nur **3,47 m hohen** Aufbauten. Die Inseln haben 150–330 m
-Radius. Skaliert man ihn auf 260 m Länge, sind die Terminals **0,30 m** hoch — niedriger als der
-Astronaut (1,8 m). Er lässt sich also nicht einfach hinstellen. Zwei Wege: nur das **Vorfeld**
-verwenden (die flache Fläche ist das Brauchbare, Parkplatz genug für alle Flugzeuge), oder
-**Aufbauten und Fläche getrennt skalieren** — dasselbe Verfahren wie bei Rakete und Startturm, die
-auch getrennt wurden. **Vor dem Bau zu entscheiden.**
+**7. Airport auf den Nicht-Stadt-Inseln** - entschieden und erledigt, siehe Punkt 2. Die dort
+geforderte Entscheidung VOR dem Bau ist gefallen: das GLB (`airport_by_nermin.glb`, 3000 x 1577 m
+Gelaende, 3,47 m hohe Aufbauten) ist verworfen. Auf 260 m Inselgroesse waeren die Terminals 30 cm
+hoch. Keiner der beiden dort erwogenen Wege wurde genommen, sondern ein dritter: ein eigenes
+Vorfeld aus derselben Geometrie wie die Landebahn.
+
+---
+
+## Salt-Bereiche (Stand nach dieser Runde)
+
+Zur Erinnerung, weil es schon zweimal fast schiefging: die `cellRnd`-Salts sind **Bereiche**, keine
+Einzelwerte. Belegt sind:
+
+| Bereich | wofuer |
+|---|---|
+| 1..5, 30..99 | Insel, Bauwerke, Stadt-Kennung |
+| 42..46 | Traeger, Hafen |
+| 70..202 | Stadt-Tuerme (`70 + idx`, idx bis 128) |
+| 300..432 | Stadt-Tuerme, zweiter Wurf (`300 + idx`) |
+| 900, 901 | Rakete: ob und wo |
+| 902, 903 | geparkter X-Wing: wo |
+| 904 | Parkplatz: welche Seite der Bahn |
+| 905 | Parkplatz: welches Modell auf welchem Platz |
+
+Der naechste freie Salt ist **906**.

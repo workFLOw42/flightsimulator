@@ -107,6 +107,8 @@
     <div class="hrow"><span>🌊 Wellen</span><b>die Dünung ist deutlich höher geworden. <b>Kleine Boote reiten darauf</b> und wackeln sichtbar, der <b>Großsegler</b> schwingt noch mit, und bei den <b>großen Frachtern</b> läuft das Wasser am Rumpf hoch und runter, während sie ruhig liegen — je länger ein Schiff, desto gelassener</b></div>
     <div class="hrow"><span>🧑‍🚀 Aussteigen</span><b>gelandet auf Insel, Bahn, Deck, Mond oder Mars: <b>B</b> = raus und zu Fuß los · linker Stick läuft und dreht · <b>B</b> = hüpfen — auf dem Mond 6× so hoch wie auf der Erde, auf dem Mars 3× · <b>LB/RB</b> = von der Seite schauen · das Radar zeigt, wo dein Flieger steht · zurück am Flieger <b>B</b> = einsteigen</b></div>
     <div class="hrow"><span>✈️ umsteigen</span><b>auf jeder Insel (außer den Städten) steht ein <b>X-Wing</b>, auf dem Träger einer am Deckrand. Zu Fuß hinlaufen und <b>B</b> drücken: du sitzt drin und stehst startklar auf der Landebahn. Das weiße Radar-Blip zeigt, wo er steht</b></div>
+    <div class="hrow"><span>&#128747;&#65039; Parkplatz</span><b>neben der Landebahn jeder Insel (au&szlig;er den St&auml;dten) liegt ein <b>Vorfeld</b> mit <b>10 Stellpl&auml;tzen</b>: dort stehen <b>Canadair, Alpha Jet, Airbus, Transall und Mustang</b> in zwei Reihen, Nasen zueinander. Zu Fu&szlig; hinlaufen, vor eines stellen und <b>B</b> dr&uuml;cken: du sitzt drin und stehst startklar am Anfang der <b>Landebahn dieser Insel</b>. Ein Rollweg verbindet Vorfeld und Bahn</b></div>
+    <div class="hrow"><span>&#128640; Jetpack</span><b>im <b>Hangar</b> aussteigen (<b>B</b>) und einfach <b>hinauslaufen</b>: an der Hallenkante z&uuml;ndet das <b>Jetpack</b> und du schwebst im Weltall. Geflogen wird <b>wie im X-Wing</b> &mdash; rechter Stick &#8597; gibt Schub (bis <b>162 km/h</b>), linker Stick dreht und hebt die Nase, Gas weg = die Bremsd&uuml;sen halten dich an. Drau&szlig;en ist es schwerelos, &uuml;ber der Halle zieht dich die Schwerkraft sanft nach unten &mdash; dort setzt du von allein auf und stehst wieder zu Fu&szlig; da</b></div>
     <div class="hrow"><span>🚙 Rover fahren</span><b>auf <b>Mond</b> und <b>Mars</b> steht 30 m rechts neben dem gelandeten X-Wing ein Fahrzeug: der <b>Lunar Rover</b> bzw. der <b>Mars-Rover</b>. <b>B</b> = einsteigen, <b>B</b> = wieder aussteigen. Gefahren wird wie beim Boot: linker Stick lenkt, rechter Stick ↕ gibt Gas, A fährt rückwärts — bis <b>100 km/h</b>. Der X-Wing bleibt stehen, wo er ist, und das <b>weiße Blip</b> führt zurück</b></div>
     <div class="hrow"><span>📡 Radar zu Fuß</span><b>auf Mond und Mars zeigt es beides: <b>weiß</b> = X-Wing, <b>orange</b> = Mars-Rover, <b>blau</b> = Lunar Rover. Sitzt du im Rover, bleibt nur der weiße X-Wing übrig</b></div>
     <div class="hrow"><span>🛟 ins Wasser</span><b>zu Fuß ins Meer laufen oder vom Flugzeugträger springen: du landest im <b>Schlauchboot</b>. Gefahren wird <b>genau wie beim Feuerwehrboot</b>: linker Stick lenkt, rechter Stick ↕ gibt Schub, A bremst und fährt rückwärts · fährst du an Land, steigst du von allein aus · gehüpft wird im Boot nicht — es ist ein Fahrzeug</b></div>
@@ -580,6 +582,12 @@ function islandBuildings(cx, cz) {
       // Hügel/Häuser NEBEN der Bahn diese nicht überragen -> Bahn (±12 X) bleibt garantiert frei.
       const hw = (type==='hill') ? (30 + r1*50) : Math.max(5 + r1*11, 5 + r2*9)/2;
       if(Math.abs(hx) - hw < 22 && Math.abs(hz) - hw < rwLen/2 + 10) continue;  // Bahn+Rand freihalten
+      // Den PARKPLATZ genauso freihalten. Genau daran haengt, dass er auf jeder Insel passt: die
+      // Suche nach einer freien Luecke gelang nur auf 76 % der Inseln (gemessen). Die Halbbreite hw
+      // zaehlt mit, damit auch ein breites Haus NEBEN dem Platz nicht hineinragt  dieselbe
+      // Rechnung, die eine Zeile darueber die Landebahn schuetzt.
+      const pk0 = parkLocal(cx, cz);
+      if(pk0 && inParkLocal(pk0, hx, hz, hw + 6)) continue;
       list.push({ x:hx, z:hz, r1, r2, type });
     }
   }
@@ -781,6 +789,44 @@ function buildIsland(cx, cz) {
     g.add(dash);
   }
 
+  // ---- Parkplatz (Vorfeld) neben der Bahn, mit allen Flugzeugen ----
+  // Er schliesst unmittelbar an die Landebahn an (PARK_GAP = 8 m Abstand zur Bahnkante), damit man
+  // vom Stellplatz aus losrollen kann. Gebaut aus derselben Geometrie wie die Bahn selbst.
+  const pk = parkLocal(cx, cz);
+  if(pk){
+    const pw = pk.xb - pk.xa, pl = pk.zb - pk.za;
+    const ap = new THREE.Mesh(new THREE.PlaneGeometry(pw, pl), runwayMat);
+    ap.rotation.x = -Math.PI/2;
+    ap.position.set((pk.xa + pk.xb)/2, ISLAND_Y + 0.02, 0);
+    g.add(ap);
+    // Rollweg von der Bahn zum Vorfeld: ein Querstreifen auf halber Hoehe. Ohne ihn steht das
+    // Vorfeld wie eine Insel im Gras, obwohl es an die Bahn anschliessen soll.
+    const tw = new THREE.Mesh(new THREE.PlaneGeometry(PARK_GAP + 2, 16), runwayMat);
+    tw.rotation.x = -Math.PI/2;
+    tw.position.set(pk.side > 0 ? 12 + PARK_GAP/2 : -(12 + PARK_GAP/2), ISLAND_Y + 0.02, 0);
+    g.add(tw);
+    // Stellplatz-Markierungen: je Platz ein Querstrich, damit die Plaetze abgegrenzt sind.
+    const nSlotsPerRow = Math.max(1, Math.floor(pk.len / PARK_SLOT));
+    for(const s of parkSlots(cx, cz)){
+      const mk = new THREE.Mesh(new THREE.PlaneGeometry(pw/PARK_ROWS - 6, 1.2), lineMat);
+      mk.rotation.x = -Math.PI/2;
+      mk.position.set(s.x, ISLAND_Y + 0.04, s.z + (s.yaw === 0 ? PARK_SLOT/2 - 1 : -(PARK_SLOT/2 - 1)));
+      g.add(mk);
+      // Und das Flugzeug darauf. Fehlt sein GLB noch, bleibt der Platz vorerst leer  preloadGLB
+      // ruft nach dem Laden refreshIslands, dann steht es da (das musste dort ergaenzt werden:
+      // vorher zog es nur das eigene Flugmodell nach, und die zuerst gebauten Inseln waeren
+      // dauerhaft ohne Flugzeuge geblieben).
+      // Laufender Index ueber ALLE Plaetze, nicht row*100+idx: 100 mod 5 ist 0, beide Reihen
+      // waeren damit gleich besetzt. Fuer die zweite Reihe also weiterzaehlen.
+      const nm = parkPlaneAt(cx, cz, s.row * nSlotsPerRow + s.idx, 0);
+      const pl2 = makeParkedPlane(nm);
+      if(pl2){
+        pl2.position.set(s.x, ISLAND_Y, s.z);
+        pl2.rotation.y = s.yaw;
+        g.add(pl2);
+      }
+    }
+  }
   // ---- Bauwerke (Häuser / Wolkenkratzer / Hügel) aus der deterministischen Liste ----
   for(const b of islandBuildings(cx, cz)){
     let built;
@@ -893,6 +939,7 @@ function _rocketLocalCalc(cx, cz){
   if(cellRnd(cx, cz, 900) >= 0.5) return null;       // nur jede zweite der übrigen Inseln
   const rwLen = Math.min(260, info.radius * 1.4);    // Landebahn wie in buildIsland
   const hb = harborLocal(cx, cz);
+  const pk = parkLocal(cx, cz);                      // das Vorfeld muss auch frei bleiben
   const list = islandBuildings(cx, cz) || [];
   // Auf einem Ring bei 62 % des Radius in 16 Richtungen suchen, Startwinkel gewürfelt — sonst
   // stände die Rakete auf jeder Insel an derselben Stelle. Deterministisch: dieselbe Insel gibt
@@ -905,6 +952,7 @@ function _rocketLocalCalc(cx, cz){
     // Landebahn frei halten (24 m breit in X, rwLen lang in Z, mittig)
     if(Math.abs(x) < 12 + ROCKET_CLR && Math.abs(z) < rwLen/2 + ROCKET_CLR) continue;
     if(Math.hypot(x - hb.x, z - hb.z) < HARBOR_SIZE*0.45 + ROCKET_CLR) continue;   // Hafen frei
+    if(pk && inParkLocal(pk, x, z, ROCKET_CLR)) continue;                          // Parkplatz frei
     let frei = true;
     for(const b of list){
       // Halbbreite wie in islandBuildings geschätzt: b.hw wird erst von buildIsland
@@ -932,6 +980,57 @@ function rocketStateFor(cx, cz){
   return s;
 }
 
+// ---- Parkplatz (Vorfeld) an der Landebahn, auf jeder Nicht-Stadt-Insel -------------------
+// Hier stehen ALLE Flugzeuge des Spiels nebeneinander, damit man sieht, in welches man einsteigt.
+// Das fertige Flughafen-GLB (airport_by_nermin) ist dafuer nicht zu gebrauchen: ausgemessen ist es
+// ein 3000 x 1577 m grosses Gelaende mit nur 3,47 m hohen Aufbauten — auf 260 m Inselgroesse
+// skaliert waeren die Terminals 30 cm hoch, niedriger als der Astronaut. Also ein eigenes Vorfeld,
+// gebaut aus derselben Geometrie wie die Landebahn selbst.
+//
+// Der Platz wird FREIGEHALTEN, nicht gesucht. Das ist der entscheidende Unterschied zu Rakete und
+// X-Wing, die sich einen freien Ring suchen: ein 200 x 70 m grosses Rechteck zwischen 8 bis 18
+// gewuerfelte Bauwerke zu bekommen gelingt nur auf 76 % der Inseln (durchgerechnet ueber 7.218
+// Inseln in C:/tmp/park_platz.js). Die Landebahn loest das schon laenger, indem islandBuildings
+// ihren Streifen ausspart — der Parkplatz macht es jetzt genauso, und damit passt er auf 100 %.
+const PARK_LEN  = 200;    // Laenge entlang Z, wie die Bahn (die ist 238 bis 260 m lang)
+const PARK_WID  = 70;     // Breite in X: zwei Reihen a 34 m (Airbus 27,1 m Spannweite, gemessen)
+const PARK_GAP  = 8;      // Abstand zwischen Bahnkante (x = 12) und Parkplatzkante
+const PARK_SLOT = 34;     // Stellplatzraster: 27,1 m Spannweite + 6,9 m Luft
+const PARK_ROWS = 2;      // zwei Reihen, Nasen zueinander
+// Salt 904 fuer die Seitenwahl. Die Salt-Bereiche im Spiel sind BEREICHE, keine Einzelwerte:
+// die Stadt-Tuerme belegen real 70..202 und 300..432 (nachgerechnet), Rakete und X-Wing sitzen
+// auf 900..903. 904 liegt sicher dahinter.
+const PARK_SALT = 904;
+// Der Parkplatz einer Insel in LOKALEN Koordinaten, oder null (Staedte haben keinen).
+const _parkCache = new Map();
+function parkLocal(cx, cz){
+  const key = cx + ',' + cz;
+  if(_parkCache.has(key)) return _parkCache.get(key);
+  const r = _parkLocalCalc(cx, cz);
+  _parkCache.set(key, r);
+  return r;
+}
+function _parkLocalCalc(cx, cz){
+  const info = islandInfo(cx, cz);
+  if(!info) return null;                             // kein Land
+  if(cellRnd(cx, cz, 99) < 0.10) return null;        // Wolkenkratzer-Stadt: kein Parkplatz
+  // Seite gewuerfelt, damit er nicht auf jeder Insel gleich liegt. Laenge notfalls kuerzen, damit
+  // er auch auf der kleinsten Insel (Radius 170 m) ganz auf der Grasflaeche bleibt.
+  const side = cellRnd(cx, cz, PARK_SALT) < 0.5 ? -1 : 1;
+  const wid  = PARK_WID;
+  const xi = 12 + PARK_GAP, xo = xi + wid;           // Innen- und Aussenkante vom Bahnrand
+  // Die Ecken muessen innerhalb radius*0.9 liegen — dieselbe Grenze, die auch Bauwerke einhalten.
+  let len = PARK_LEN;
+  while(len > 60 && Math.hypot(xo, len/2) > info.radius*0.9) len -= 10;
+  const xa = side > 0 ? xi : -xo, xb = side > 0 ? xo : -xi;
+  return { xa, xb, za:-len/2, zb:len/2, side, len, wid, cx:(xa+xb)/2 };
+}
+// Liegt (lx,lz) INNERHALB des Parkplatzes einer Insel (lokale Koordinaten, mit Rand)?
+// Damit halten islandBuildings, Rakete und X-Wing ihn frei.
+function inParkLocal(pk, lx, lz, rand){
+  const r = rand || 0;
+  return lx > pk.xa - r && lx < pk.xb + r && lz > pk.za - r && lz < pk.zb + r;
+}
 // ---- Geparkter X-Wing auf jeder Insel, die keine Stadt ist -------------------------------
 // Damit hat das Aussteigen einen Zweck: man laeuft zu ihm hin und steigt mit B ein. Er steht
 // NICHT auf der Landebahn (sonst waere er beim Landen im Weg) und nicht im Hafen, sondern auf
@@ -956,6 +1055,7 @@ function _xwingLocalCalc(cx, cz){
   const hb = harborLocal(cx, cz);
   const list = islandBuildings(cx, cz) || [];
   const rl = rocketLocal(cx, cz);                    // die Startrampe muss auch frei bleiben
+  const pk2 = parkLocal(cx, cz);                     // und das Vorfeld mit den Flugzeugen
   // Ring bei 45 % des Radius — deutlich innerhalb der Rakete (62 %), damit sich beide nicht
   // ins Gehege kommen. 16 Richtungen, Startwinkel gewuerfelt, deterministisch.
   const a0 = cellRnd(cx, cz, 902) * Math.PI * 2;
@@ -966,6 +1066,9 @@ function _xwingLocalCalc(cx, cz){
     if(Math.abs(x) < 12 + XWP_CLR && Math.abs(z) < rwLen/2 + XWP_CLR) continue;   // Bahn frei
     if(Math.hypot(x - hb.x, z - hb.z) < HARBOR_SIZE*0.45 + XWP_CLR) continue;     // Hafen frei
     if(rl && Math.hypot(x - rl.x, z - rl.z) < PAD_R + XWP_CLR) continue;          // Rampe frei
+    // Der Parkplatz ist tabu: dort stehen die Flugzeuge, in die man einsteigt. Ein zweiter X-Wing
+    // mitten darin waere verwirrend, und er hat auf der Wiese ohnehin Platz.
+    if(pk2 && inParkLocal(pk2, x, z, XWP_CLR)) continue;                          // Parkplatz frei
     let frei = true;
     for(const b of list){
       const hw = (b.type === 'hill') ? (30 + b.r1*50)
@@ -2873,6 +2976,24 @@ const ROVER_ACCEL = 7;       // m/s^2 — zieht zuegig an, ohne zu schleudern
 const ROVER_YAW   = 1.1;     // Lenkgeschwindigkeit (rad/s)
 const ROVER_BOARD_R = 12;    // so nah muss man ihm sein, um einzusteigen
 const ROVER_SEAT_Y  = 1.1;   // Sitzhoehe ueber dem Boden (der Astronaut sitzt oben drauf)
+// ---- Jetpack (Weltall, ausserhalb des Hangars) ----
+// Der dritte Sub-Modus neben eva.boat und eva.rover, nach genau demselben Muster: eigene Physik
+// (updateJet), eigener Kamerafaktor, eigene HUD-Anzeige, eigener Eingabezweig. Er faengt den
+// Schritt ueber die Hangarkante auf, so wie das Schlauchboot den Schritt ins Wasser auffaengt.
+// Steuerung wie beim X-Wing, wie gewuenscht: der SCHUB (rechter Stick, W/S, Leertaste) ist das
+// Gas, der linke Stick dreht (<->) und nickt (hoch/runter), und geflogen wird in Blickrichtung.
+// Anders als der Flieger hat er keine Traegheitsachse quer dazu — ein Jetpack driftet nicht, es
+// schiebt dorthin, wohin der Astronaut schaut. Das ist fuer ein Kind die einfachere Regel.
+const JET_VMAX   = 45;     // m/s Spitze bei 100 % Schub (162 km/h) — zuegig, aber beherrschbar
+const JET_ACCEL  = 18;     // m/s^2, mit der er die Zielfahrt erreicht
+const JET_YAW    = 1.3;    // Drehgeschwindigkeit (rad/s)
+const JET_PITCH  = 1.0;    // Nickgeschwindigkeit (rad/s)
+const JET_PMAX   = 1.25;   // rad (~72 Grad): so steil geht es hoch und runter, kein Ueberkopf
+const JET_DAMP   = 0.6;    // Restschwung pro Sekunde, wenn das Gas aus ist (Bremsduesen)
+// So weit hinter der Hangarkante beginnt das freie Weltall. Ohne diesen Saum stuende er genau auf
+// der Kante und wechselte bei jedem Schritt hin und her (dasselbe Problem, das beim Schlauchboot
+// der 8-m-Saum an der Zonengrenze loest).
+const JET_EDGE   = 6;
 const EVA_SPEED    = 6.0;     // Laufgeschwindigkeit (m/s) — flott, aber kein Sprint
 const EVA_TURN     = 2.6;     // wie schnell er sich dreht (rad/s)
 const EVA_JUMP_V   = 4.6;     // Absprunggeschwindigkeit (m/s) — auf der Erde gut 1 m hoch
@@ -2923,7 +3044,12 @@ function evaAllowed(){
 // Traegerdeck. Ins Wasser DARF er inzwischen — dort steigt er ins Schlauchboot (siehe updateEva),
 // diese Funktion sagt nur, wo er zu FUSS stehen kann.
 function evaSolid(x, z){
-  if(GROUNDS[locale] || locale === 'death') return true;
+  // Im Hangar traegt nur die ausgemessene Bodenflaeche (siehe onHangarFloor). Vorher stand hier
+  // pauschal true, und damit lief er ueber die Hallenkante hinaus ins Nichts weiter. Jenseits der
+  // Kante uebernimmt jetzt das Jetpack (updateJet) — die Entsprechung zum Schlauchboot in der
+  // Erdwelt, das den Schritt ins Wasser auffaengt statt ihn zu verbieten.
+  if(locale === 'death') return onHangarFloor(x, z);
+  if(GROUNDS[locale]) return true;
   // Der SANDRAND zaehlt mit: er ist gezeichnet (buildIsland, bis radius*1.12) und laeuft flach ins
   // Meer. Ohne ihn endete der feste Grund an der Grasflaeche und der Astronaut blieb 31 m vor der
   // Wasserlinie stehen (gemessen) — mitten auf dem sichtbaren Strand. Fuer FLUGZEUGE bleibt der
@@ -2970,6 +3096,96 @@ function evaLeaveDinghy(x, z){
   eva.group.position.set(x, evaFootY(x, z), z);
   eva.vy = 0; eva.onGround = true;
   showBig('🧑‍🚀'); bigTimer = 1.2;
+}
+// ---- Jetpack: ins Weltall hinauslaufen und dort schweben ---------------------------------
+// Wo das Schlauchboot den Schritt ins Wasser auffaengt, faengt das Jetpack den Schritt ueber die
+// Hangarkante auf. Beides nach demselben Muster: kein Verbot, sondern ein Uebergang.
+function evaStartJet(x, z, y){
+  if(!eva || eva.jet) return;
+  eva.jet = true;
+  eva.jetVel = new THREE.Vector3(0, 0, 0);
+  eva.jetPitch = 0;
+  eva.group.position.set(x, y, z);
+  eva.vy = 0; eva.onGround = false;
+  evaJumpFrom = null;                   // ein laufender Sprung endet hier
+  state.throttle = 0;                   // er soll schweben, nicht sofort losschiessen
+  showBig('\u{1F680}'); bigTimer = 1.2;
+}
+// Zurueck auf den Hangarboden. Passiert von allein, sobald er wieder ueber der Flaeche ist —
+// genau wie das Schlauchboot an Land von allein endet.
+function evaEndJet(x, z){
+  if(!eva || !eva.jet) return;
+  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+  state.throttle = 0;
+  eva.group.position.set(x, evaFootY(x, z), z);
+  eva.group.rotation.set(0, eva.yaw, 0);   // Nickwinkel zuruecknehmen, er steht ja wieder
+  eva.vy = 0; eva.onGround = true;
+  showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
+}
+// Flug mit dem Jetpack. Steuerung wie beim X-Wing (so gewuenscht): Schub gibt die Zielfahrt, der
+// linke Stick dreht und nickt. Geflogen wird stur in Blickrichtung — ein Jetpack hat keine
+// Flaeche, die quer traegt, also gibt es auch keinen Kurvenflug aus der Querlage.
+function updateJet(dt, inp){
+  const g = eva.group, v = eva.jetVel;
+  eva.yaw -= (inp.yaw || 0) * JET_YAW * dt;
+  // Nase heben und senken. Der Stick nach vorn (negativ) soll nach UNTEN zeigen, wie im Flieger.
+  eva.jetPitch += (inp.pitch || 0) * JET_PITCH * dt;
+  eva.jetPitch = Math.max(-JET_PMAX, Math.min(JET_PMAX, eva.jetPitch));
+  // Blickrichtung im Raum: yaw um Y, dann der Nickwinkel. Genau die Richtung, in die er schiebt.
+  const cp = Math.cos(eva.jetPitch), sp = Math.sin(eva.jetPitch);
+  const dir = new THREE.Vector3(-Math.sin(eva.yaw)*cp, sp, -Math.cos(eva.yaw)*cp);
+  // Schub = Zielgeschwindigkeit, angeregelt — dieselbe Formel wie beim Flieger und beim Boot.
+  const want = Math.max(0, state.throttle);
+  const targetV = JET_VMAX * want;
+  const fwdSpeed = v.dot(dir);
+  const dv = targetV - fwdSpeed;
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), JET_ACCEL);
+  v.addScaledVector(dir, push * dt);
+  // Gas aus: die Bremsduesen holen ihn zum Stehen. Im Vakuum gibt es keinen Luftwiderstand, aber
+  // ein Jetpack, das man nicht anhalten kann, ist fuer ein Kind unbrauchbar — und der Astronaut
+  // hat sichtbar Duesen ringsum. Schwerelos bleibt es trotzdem: kein Fallen, kein Auftrieb.
+  if(want < 0.01){ const k = Math.max(0, 1 - JET_DAMP*dt); v.multiplyScalar(k); }
+  // UEBER DER HALLE zieht die kuenstliche Schwerkraft des Todessterns (GRAV_AT.death) ihn
+  // herunter, DRAUSSEN im Vakuum nicht. Ohne das blieb er ueber der Halle fuer immer schweben und
+  // kam nicht mehr auf den Boden zurueck (im Browser gemessen: 8 m ueber der Flaeche, Gas aus,
+  // keine Bewegung). Mit der Schwerkraft sinkt er von allein und landet — das ist auch die
+  // Erklaerung, die das Spiel schon gibt: im Hangar wirkt Schwerkraft, im All nicht. Sie wirkt nur
+  // beim SINKEN mit, gegen Gas nach oben kommt sie nicht an (4 m/s^2 gegen 18 m/s^2 Schub).
+  if(locale === 'death' && onHangarFloor(g.position.x, g.position.z)) v.y -= GRAV_AT.death * dt;
+  g.position.addScaledVector(v, dt);
+  // Er liegt in Flugrichtung, wie ein Astronaut am Manoevriergeraet.
+  g.rotation.set(-eva.jetPitch, eva.yaw, 0);
+  eva.vy = 0; eva.onGround = false;
+  // Wieder ueber dem Hangarboden und tief genug? Dann landet er dort. Der Saum (JET_EDGE) haelt
+  // ihn davon ab, auf der Kante hin und her zu schalten.
+  // Aufsetzen: ueber der Flaeche und tief genug. Hier zaehlt die GANZE Flaeche ohne Saum — ein
+  // Saum wuerde ihn genau am Rand durch den Boden fallen lassen. Der Saum gilt nur beim
+  // HINAUSlaufen (siehe updateEva), damit er dort nicht auf der Kante hin und her schaltet.
+  if(locale === 'death' && onHangarFloor(g.position.x, g.position.z)
+     && g.position.y <= hangarFloorY + 0.4 && v.y <= 0){
+    evaEndJet(g.position.x, g.position.z); return;
+  }
+  // Nicht endlos ins Leere: dieselbe Leine wie zu Fuss (EVA_MAX_DIST), damit der Weg zurueck zum
+  // X-Wing nie verloren geht. Sie zieht nicht, sie haelt nur — sonst ruckelte es beim Anschlag.
+  const d = Math.hypot(g.position.x - eva.planeAt.x, g.position.z - eva.planeAt.z);
+  if(d > EVA_MAX_DIST){
+    const k = EVA_MAX_DIST / d;
+    g.position.x = eva.planeAt.x + (g.position.x - eva.planeAt.x)*k;
+    g.position.z = eva.planeAt.z + (g.position.z - eva.planeAt.z)*k;
+    v.multiplyScalar(0.2);
+  }
+  // Hoehe begrenzen: ueber der Hallendecke ist im Todesstern kein Platz mehr.
+  const dach = hangarCeilY - 3;
+  if(locale === 'death' && g.position.y > dach){ g.position.y = dach; if(v.y > 0) v.y = 0; }
+  const tief = hangarFloorY - 400;
+  if(g.position.y < tief){ g.position.y = tief; if(v.y < 0) v.y = 0; }
+  // Harte Deckelung, wie sie der Flieger auch hat. Ohne sie summiert sich Fahrt auf: die Schub-
+  // regelung sieht nur die Fahrt LAENGS der Blickrichtung, und beim Nicken bleibt die alte Fahrt
+  // quer dazu stehen. Gemessen wurden so 68,5 m/s statt der erlaubten 45 — beide Anteile addieren
+  // sich geometrisch. Ein Kind kurvt viel, also passiert das dauernd.
+  const vl = v.length();
+  if(vl > JET_VMAX) v.multiplyScalar(JET_VMAX / vl);
+  evaKmh += (v.length()*3.6 - evaKmh) * Math.min(1, 8*dt);
 }
 // ---- Die Rover als FAHRZEUGE (Mond und Mars) ---------------------------------------------
 // Frueher war der Rover reine Deko: roverBesideEva() setzte ihn jeden Frame neben den Astronauten,
@@ -3127,6 +3343,10 @@ function evaExit(){
   scene.add(g);
   eva = { group:g, vy:0, onGround:true, yaw:eul.y,
           planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
+  // Im Hangar kann der X-Wing auch jenseits der Bodenflaeche stehen (er landet ueberall, siehe
+  // canLandHere). Dort gibt es keinen Grund zum Stehen — also schwebt der Astronaut von der
+  // ersten Sekunde an, statt auf unsichtbarem Boden zu landen.
+  if(locale === 'death' && !onHangarFloor(x, z)) evaStartJet(x, z, g.position.y);
   state.throttle = 0;                 // Motor aus, während man draußen ist
   showBig('🧑‍🚀'); bigTimer = 1.2;     // kurze Bestätigung, dann wieder freie Sicht
   evaOrbit = 0; evaPitch = 0;         // Kamera beginnt hinter ihm
@@ -3161,9 +3381,17 @@ function evaJump(){
 // wer im Rover sitzt, will aussteigen; wer daneben steht, einsteigen; und erst danach kommt der
 // eigene Flieger. Zuletzt bleibt Huepfen — so wie bisher.
 function evaButtonB(){
+  // Am Jetpack tut B nichts: einsteigen kann er dort nicht (der X-Wing steht im Hangar), und
+  // huepfen geht ohne Boden auch nicht. Zurueck kommt er, indem er ueber der Halle landet.
+  if(eva && eva.jet) return;
   if(eva && eva.rover){ evaLeaveRover(); return; }        // im Rover -> aussteigen
   if(roverNear()){ evaEnterRover(); return; }             // daneben  -> einsteigen
   if(xwingParkNear()){ evaBoardXwing(); return; }         // am geparkten X-Wing -> umsteigen
+  // Auf dem Vorfeld: in das Flugzeug einsteigen, vor dem man steht. Steht NACH dem X-Wing, weil
+  // der ein eigener, einzelner Flieger auf der Wiese ist  die beiden liegen nie nah beieinander
+  // (xwingLocal meidet den Parkplatz), die Reihenfolge entscheidet also nichts, ist aber stabil.
+  const pn = parkPlaneNear();
+  if(pn){ evaBoardParked(pn.name, pn.cx, pn.cz); return; } // auf dem Vorfeld -> einsteigen
   if(evaCanBoard()){ evaBoard(); return; }                // am eigenen Flieger  -> einsteigen
   evaJump();
 }
@@ -3263,6 +3491,13 @@ function updateEva(dt, inp){
     state.pos.copy(eva.planeAt);      // der X-Wing bleibt, wo er steht
     return;
   }
+  // Am Jetpack gilt eine eigene Physik: kein Boden, keine Schwerkraft, Fahrt in Blickrichtung.
+  // Steht hier NACH Boot und Rover, damit die Reihenfolge dieselbe bleibt wie in evaButtonB.
+  if(eva.jet){
+    updateJet(dt, inp);
+    state.pos.copy(eva.planeAt);      // der X-Wing bleibt im Hangar stehen
+    return;
+  }
   // Drehen und laufen: ←→ dreht, ↕ läuft vor/zurück (wie ein Fahrzeug — für Kinder einfacher als
   // eine kameragebundene Steuerung, weil "vorwärts" immer die Blickrichtung ist).
   eva.yaw -= (inp.yaw || 0) * EVA_TURN * dt;
@@ -3325,6 +3560,25 @@ function updateEva(dt, inp){
       }
     }
   }
+  // Im HANGAR endet der Boden an der ausgemessenen Hallenkante (siehe onHangarFloor). Wer dort
+  // weiterlaeuft, tritt ins Weltall hinaus — und genau dort setzt das Jetpack ein, so wie in der
+  // Erdwelt das Schlauchboot. Geprueft wird wie oben die tatsaechlich zurueckgelegte STRECKE mit
+  // Schwelle: ein 'else if' am Kettenende griffe nie, weil free(x, nz) trivial wahr ist, wenn nz
+  // auf seinem eigenen z liegt (derselbe Fall, der beim Schlauchboot gemessen wurde).
+  if(locale === 'death' && eva.onGround && !eva.jet && Math.abs(walk) > 0.01){
+    const wantD = Math.abs(walk) * EVA_SPEED * dt;
+    const gotD  = Math.hypot(g.position.x - _wasX, g.position.z - _wasZ);
+    if(gotD < wantD*0.1){
+      // Ein Stueck weit voraus suchen, nicht nur den naechsten Schritt: an der Kante steht er
+      // sonst fest, weil der erste Schritt noch auf dem Boden landet.
+      const jx = -Math.sin(eva.yaw), jz = -Math.cos(eva.yaw);
+      for(let s = 0.5; s <= JET_EDGE*2; s += 0.5){
+        const px = g.position.x + jx*s, pz = g.position.z + jz*s;
+        if(onHangarFloor(px, pz)) continue;        // noch Hallenboden davor -> weitersuchen
+        evaStartJet(px, pz, g.position.y + 0.6); return;
+      }
+    }
+  }
   // Springen und fallen mit der Schwerkraft DES ORTES — das ist der Witz an Mond und Mars.
   const grav = GRAV_AT[locale] !== undefined ? GRAV_AT[locale] : 9.81;
   // Ueber Wasser abwaerts unterwegs (vom Traegerdeck gesprungen, ueber die Kaikante gelaufen):
@@ -3374,6 +3628,8 @@ function updateEva(dt, inp){
 function clearEva(){
   // Das Schlauchboot mit abraeumen — sonst bleibt es beim Modellwechsel oder Reset im Meer liegen.
   if(eva && eva.boat) scene.remove(eva.boat);
+  // Das Jetpack ist kein eigenes Objekt in der Szene (nur ein Zustand am Astronauten), es
+  // verschwindet also mit ihm — anders als Boot und Rover, die eigene Modelle sind.
   if(eva){ scene.remove(eva.group); eva = null; }
   evaKmh = 0; evaJumpFrom = null; evaJumpDist = 0;
 }
@@ -3487,6 +3743,10 @@ function preloadGLB(name){
     const wrap = new THREE.Group(); wrap.add(obj);
     glbTemplates[name] = wrap;
     if(MODEL_NAMES[currentModel] === name) buildModel(name);  // sofort ersetzen wenn aktiv
+    // Die Inseln neu bauen, damit das Modell auch auf den PARKPLAETZEN erscheint. Die GLBs laden
+    // asynchron und liegen als base64 im Skript  wer schneller auf einer Insel ist als der Airbus
+    // geladen war, haette dort sonst dauerhaft eine Luecke im Vorfeld.
+    if(PARK_MODELS.indexOf(name) >= 0) refreshIslands();
   }, (err)=>{ console.warn(name+'-GLB Ladefehler:', err); });
 }
 // Weiß-Blau-Rot in Höhenzonen: obere Hälfte weiß, schmaler roter Streifen, untere Hälfte blau.
@@ -3872,6 +4132,56 @@ function preloadRocketPad(){
   }
 }
 
+// ---------- Geparkte Flugzeuge auf dem Vorfeld ----------
+// Die Flugmodelle stecken in modelHolder und werden bewegt  fuer den Parkplatz braucht es Kopien,
+// die stehen bleiben. Dieselbe Ueberlegung wie beim geparkten X-Wing (preloadXwingPark), nur fuer
+// alle Modelle: geklont wird aus glbTemplates, sobald die geladen sind.
+// Welche Flugzeuge auf dem Vorfeld stehen. Das Boot faellt weg (es faehrt im Wasser), und der
+// X-Wing auch: der steht schon als eigener geparkter Flieger auf der Wiese, und im Hangar fliegt
+// man ihn ohnehin. Bleiben die fuenf, die man sonst nur per M erreicht.
+const PARK_MODELS = ['Canadair', 'AlphaJet', 'Airbus', 'Transall', 'Mustang'];
+// Ein geparktes Flugzeug bauen: wie buildModel, aber als eigenstaendige Kopie zum Hinstellen.
+// Die Drehung je Modell muss dieselbe sein wie dort, sonst stehen sie quer zur Nase.
+const PARK_GLB_ROT = { Canadair: Math.PI, AlphaJet: Math.PI/2, Airbus: Math.PI,
+                       Mustang: -Math.PI, Transall: 0, XWing: Math.PI };
+function makeParkedPlane(name){
+  const tpl = glbTemplates[name];
+  if(!tpl) return null;                      // noch nicht geladen  beim naechsten Bauen wieder da
+  const m = tpl.clone(true);
+  m.rotation.y = PARK_GLB_ROT[name] || 0;
+  const g = new THREE.Group(); g.add(m);
+  return g;
+}
+// Stellplaetze eines Parkplatzes: zwei Reihen, Nasen zur Mitte, im PARK_SLOT-Raster entlang Z.
+// Ausgemessen im Browser (C:/tmp/mess_modelle.js): das groesste Flugzeug ist der Airbus mit 27,1 m
+// Spannweite und 24,93 m Laenge  bei 34 m Raster bleiben also 6,9 m Luft zum Nachbarn, und die
+// beiden Reihen liegen 35 m auseinander (Nasen 10 m voneinander entfernt).
+function parkSlots(cx, cz){
+  const pk = parkLocal(cx, cz);
+  if(!pk) return [];
+  const out = [];
+  const rowW = pk.wid / PARK_ROWS;                 // 35 m je Reihe
+  const n = Math.floor(pk.len / PARK_SLOT);        // Plaetze je Reihe
+  const z0 = -(n-1) * PARK_SLOT / 2;               // mittig verteilen
+  for(let r = 0; r < PARK_ROWS; r++){
+    const rx = pk.xa + rowW*(r + 0.5);             // Reihenmitte in X
+    // Reihe 0 (naeher an der Bahn) schaut nach -Z, Reihe 1 nach +Z: die Nasen zeigen zueinander,
+    // so sieht es aus wie ein echtes Vorfeld und nicht wie eine Warteschlange.
+    const yaw = (r === 0) ? 0 : Math.PI;
+    for(let i = 0; i < n; i++) out.push({ x:rx, z:z0 + i*PARK_SLOT, yaw, row:r, idx:i });
+  }
+  return out;
+}
+// Welches Modell steht auf welchem Platz? Deterministisch aus der Zelle: dieselbe Insel zeigt
+// beim Wiederbetreten dieselbe Aufstellung. Alle PARK_MODELS kommen mindestens einmal vor 
+// darum geht es ja: man soll sich eines aussuchen koennen.
+function parkPlaneAt(cx, cz, slotIdx, slotCount){
+  const k = PARK_MODELS.length;
+  // Die ersten k Plaetze bekommen je ein anderes Modell (durchgemischt per Startversatz), danach
+  // wiederholt sich die Reihe. So ist jedes Modell garantiert da, auch wenn nur 5 Plaetze frei sind.
+  const off = Math.floor(cellRnd(cx, cz, 905) * k);
+  return PARK_MODELS[(slotIdx + off) % k];
+}
 // Der geparkte X-Wing auf den Inseln. Eigenes Template, obwohl der X-Wing als FLUGmodell schon
 // geladen wird (buildModel): jenes steckt in modelHolder und wird bewegt, hier braucht es Kopien,
 // die auf den Inseln stehen bleiben.
@@ -3914,6 +4224,67 @@ function xwingParkNear(){
       return true;
   }
   return false;
+}
+// ---- In ein geparktes Flugzeug auf dem Vorfeld einsteigen -------------------------------
+// Genau der Zweck des Parkplatzes: hingehen, sehen was dort steht, einsteigen. Gebaut nach dem
+// Vorbild von xwingParkNear/evaBoardXwing  nur dass hier fuenf verschiedene Modelle stehen und
+// deshalb mitgegeben werden muss, WELCHES gemeint ist.
+const PARK_BOARD_R = 14;   // so nah an einem Stellplatz wird B zum Einsteigen (Airbus ist 25 m lang)
+// Das naechstgelegene geparkte Flugzeug in Reichweite: { name, x, z } oder null.
+function parkPlaneNear(){
+  if(!eva || eva.rover || eva.boat || eva.jet) return null;
+  if(locale !== 'earth') return null;
+  const p = eva.group.position;
+  const pcx = Math.round(p.x / CELL), pcz = Math.round(p.z / CELL);
+  let best = null, bd = Infinity;
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const cx = pcx+dx, cz = pcz+dz;
+    const info = islandInfo(cx, cz); if(!info) continue;
+    const pk = parkLocal(cx, cz); if(!pk) continue;
+    const nRow = Math.max(1, Math.floor(pk.len / PARK_SLOT));
+    for(const s of parkSlots(cx, cz)){
+      const wx = info.wx + s.x, wz = info.wz + s.z;
+      const d = Math.hypot(p.x - wx, p.z - wz);
+      if(d < PARK_BOARD_R && d < bd){
+        bd = d;
+        best = { name: parkPlaneAt(cx, cz, s.row * nRow + s.idx, 0), x:wx, z:wz, dist:d, cx, cz };
+      }
+    }
+  }
+  return best;
+}
+// Einsteigen und auf der LANDEBAHN starten  wie beim geparkten X-Wing (evaBoardXwing) und aus
+// demselben Grund: vom Stellplatz zwischen anderen Flugzeugen wegzurollen waere muehsam, und
+// placeAtStart setzt Bahnanfang, Nase und Kamera schon richtig. Bewusst NICHT cycleModel: das
+// zaehlt die Modelle durch und schickt den X-Wing in den Todesstern-Hangar.
+// cx,cz ist die Zelle des Vorfelds: dorthin gehoert der Start, nicht irgendwohin.
+function evaBoardParked(name, cx, cz){
+  const idx = MODEL_NAMES.indexOf(name);
+  if(idx < 0) return;
+  const info = islandInfo(cx, cz);
+  clearEva();
+  currentModel = idx;
+  document.getElementById('mdl').textContent = MODEL_NAMES[idx];
+  buildModel(MODEL_NAMES[idx]);
+  spec = PLANE_SPECS[MODEL_NAMES[idx]] || DEFAULT_SPEC;
+  // placeAtStart raeumt alles auf (Fallschirm, Rettung, Absturzflags, Kamera) und setzt danach die
+  // MODELLTYPISCHE Startposition: AlphaJet und Mustang aufs Traegerdeck, die Canadair ins Wasser
+  // neben den Hafen, den Airbus in eine Stadt. Das ist beim Modellwechsel per M richtig, hier aber
+  // falsch: man steht auf DIESER Insel neben dem Flugzeug und soll auf DEREN Bahn starten  sonst
+  // wird man beim Einsteigen ueber Kilometer woandershin versetzt. Gemessen: von 10 Stellplaetzen
+  // landeten 6 nicht auf einer Landebahn. Also erst aufraeumen lassen, dann umsetzen.
+  placeAtStart(MODEL_NAMES[idx]);
+  if(info){
+    const rwLen = Math.min(260, info.radius * 1.4);      // wie in buildIsland
+    // Ans +Z-Ende der Bahn, Nase (-Z bei yaw = 0) laeuft die ganze Bahn entlang  dieselbe
+    // Rechnung, die findStart fuer Transall und Airbus benutzt.
+    state.pos.set(info.wx, ISLAND_Y, info.wz + rwLen*0.5 - 20);
+    state.quat.setFromEuler(new THREE.Euler(0, 0, 0, 'YXZ'));
+    state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
+    planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+    snapCamera();     // Kamera mitnehmen, sonst kriecht sie ueber die halbe Insel hinterher
+  }
+  showBig('\u{2708}\u{FE0F}'); bigTimer = 1.2;
 }
 // In den geparkten X-Wing umsteigen. Er startet auf der LANDEBAHN, nicht am Parkplatz: von der
 // Wiese zwischen Haeusern wegzurollen waere muehsam, und placeAtStart setzt ohnehin schon alles
@@ -4377,7 +4748,21 @@ const HANGAR_Z = 0;
 const HANGAR_HOVER = 25;           // Schwebehöhe über dem Hangarboden
 const HANGAR_YAW = -Math.PI/2;     // Nase (liegt auf -Z) zeigt damit auf +X, also zum Ausgang
 let hangarCeilY = 1e9;             // Unterkante des Dachs, beim Laden gemessen (siehe preloadHangar)
-const HANGAR_OUT_R = 200;          // so weit vom Zentrum -> zurück ins All (Öffnung liegt bei 141)
+const HANGAR_OUT_R = 200;
+// ---- Wo der Hangarboden WIRKLICH endet ----
+// Per Raycast-Raster ausgemessen (C:/tmp/hangar_raster.js): die tragende Flaeche ist ein
+// durchgehendes Rechteck x = -140..130, z = -145..145 auf y = 6,25 (die Oeffnung liegt am +X-Ende).
+// Das war der gemeldete Fehler: surfaceY gibt fuer 'death' UEBERALL hangarFloorY zurueck, also lief
+// der Astronaut jenseits der Hallenkante auf unsichtbarem Boden weiter — gemessen bis zur
+// EVA-Leine bei 4000 m, ohne dass je etwas passierte. Genau so fuehlt sich "im Uebergang haengen
+// bleiben" an. Fuer den FLIEGER blieb es unbemerkt, weil updateLocale state.pos prueft und der
+// X-Wing im Hangar stehen bleibt, waehrend man zu Fuss unterwegs ist.
+const HANGAR_FLOOR_X0 = -140, HANGAR_FLOOR_X1 = 130;
+const HANGAR_FLOOR_Z0 = -145, HANGAR_FLOOR_Z1 = 145;
+function onHangarFloor(x, z){
+  return x >= HANGAR_FLOOR_X0 && x <= HANGAR_FLOOR_X1
+      && z >= HANGAR_FLOOR_Z0 && z <= HANGAR_FLOOR_Z1;
+}          // so weit vom Zentrum -> zurück ins All (Öffnung liegt bei 141)
 let hangarObj = null, hangarFloorY = 0;
 // Wohin man beim Verlassen des Hangars zurückkehrt: Todesstern, Star Destroyer oder die ISS.
 let hangarHost = null;      // { pos: Vector3, up: number }
@@ -6244,7 +6629,8 @@ function readInput() {
   // fürs Laufen belegt). Nur draußen wirksam.
   // Auch im Rover kein freies Umsehen: dort lenkt der linke Stick und der rechte gibt Schub,
   // genau wie im Schlauchboot.
-  if(eva && !eva.boat && !eva.rover){
+  // Am Jetpack gilt die Fahrzeug-Belegung wie im Rover und im Boot: der Schub ist das Gas.
+  if(eva && !eva.boat && !eva.rover && !eva.jet){
     lookX = (keys['KeyL'] ? 1 : 0) - (keys['KeyJ'] ? 1 : 0);
     lookY = (keys['KeyI'] ? 1 : 0) - (keys['KeyK'] ? 1 : 0);   // I hebt, K senkt
   }
@@ -6276,7 +6662,7 @@ function readInput() {
       // beim Feuerwehrboot. Es ist ja auch ein Boot, und zwei verschiedene Boots-Steuerungen zu
       // lernen waere fuer ein Kind eine unnoetige Huerde.
       const rx = deadzone(gp.axes[2] || 0), ry2 = gp.axes[3] || 0;
-      if(eva && !eva.boat && !eva.rover){
+      if(eva && !eva.boat && !eva.rover && !eva.jet){
         lookX = rx;
         // Vorzeichen umgedreht: der Stick liefert für "oben" einen negativen Wert (wie der linke).
         // Ohne das senkte "Stick nach oben" die Kamera, statt sie zu heben.
@@ -7029,7 +7415,9 @@ function updateCamera(){
     // aufs Wasser und die Kueste, genau wie beim Feuerwehrboot. Zu Fuss bleibt es dicht dran.
     // Abstandsfaktor: das Schlauchboot braucht den meisten Platz, der Rover etwas weniger,
     // zu Fuss ist die Kamera am naechsten dran.
-    const bt = eva.boat ? 1.7 : (eva.rover ? 1.5 : 1);
+    // Am Jetpack am weitesten weg: er fliegt mit 162 km/h durch einen leeren Raum, in dem es
+    // keine Bodenmerkmale gibt — ohne Abstand fehlt jedes Gefuehl fuer Fahrt und Richtung.
+    const bt = eva.jet ? 1.9 : (eva.boat ? 1.7 : (eva.rover ? 1.5 : 1));
     const dist = 7*bt - 1.5 * Math.max(0, Math.sin(evaPitch));
     const desired = g.position.clone().addScaledVector(back, dist);
     desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
@@ -7037,8 +7425,12 @@ function updateCamera(){
     // deshalb auch nicht beliebig tief — der Boden gewinnt.
     // Ueber Wasser zaehlt die WELLENhoehe: surfaceY gibt dort 0 zurueck, die Duenung reicht aber bis
     // 1,6 m — ohne das taucht die Kamera in einen Wellenberg und man sieht kurz nur Blau.
-    const floor = (eva.boat ? seaYAt(desired.x, desired.z) : evaFootY(desired.x, desired.z)) + 1.2;
-    if(desired.y < floor) desired.y = floor;
+    // Am Jetpack gibt es keinen Boden, an dem die Kamera anstossen koennte — die Klemme wuerde sie
+    // im freien Raum auf Hangarhoehe festnageln, obwohl er 200 m darueber fliegt.
+    if(!eva.jet){
+      const floor = (eva.boat ? seaYAt(desired.x, desired.z) : evaFootY(desired.x, desired.z)) + 1.2;
+      if(desired.y < floor) desired.y = floor;
+    }
     // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
     camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
     camera.lookAt(look);
@@ -7220,9 +7612,10 @@ function updateHUD(){
     // Im Rover: Fahrzeugsymbol mit Tempo (100 km/h Spitze, das will man sehen). Zu Fuss wie bisher
     // der Astronaut plus Hinweis — der zeigt jetzt auch auf den Rover und den geparkten X-Wing,
     // nicht mehr nur auf den eigenen Flieger.
-    s = eva.boat ? '🛟'
+    s = eva.jet ? ('\u{1F680} ' + Math.round(evaKmh) + ' km/h')
+      : eva.boat ? '🛟'
       : eva.rover ? ('🚙 ' + Math.round(evaKmh) + ' km/h')
-      : ('🧑‍🚀 ' + ((evaCanBoard() || roverNear() || xwingParkNear()) ? '✈️' : '⤒'));
+      : ('🧑‍🚀 ' + ((evaCanBoard() || roverNear() || xwingParkNear() || parkPlaneNear()) ? '✈️' : '⤒'));
   }
   else if(state.ejected || parachute) s = '🪂';
   else if(state.crashed) s = '🚒';

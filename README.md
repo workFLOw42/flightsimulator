@@ -632,6 +632,89 @@ darum nur **zu Fuß**, nicht im Boot).
   ein exakter Vergleich zählte das als Bewegung. Gemessen: 60 Bilder bewegungslos am Ufer. Jetzt gilt
   „fest", wenn weniger als ein Zehntel des gewollten Schritts herauskommt.
 
+## Parkplatz: alle Flugzeuge zum Aussuchen
+
+Neben der Landebahn **jeder Insel ausser den Staedten** liegt ein **Vorfeld von 200 x 70 m** mit
+**10 Stellplaetzen** in zwei Reihen, die Nasen zueinander. Darauf stehen **Canadair, Alpha Jet,
+Airbus, Transall und Mustang** - jedes genau zweimal. Ein **Rollweg** verbindet Vorfeld und Bahn.
+
+Zu Fuss hinlaufen, vor ein Flugzeug stellen, **B** druecken: man sitzt drin und steht startklar am
+Anfang der Landebahn **dieser** Insel. Welches Modell auf welchem Platz steht, ist deterministisch
+aus der Zelle gewuerfelt - dieselbe Insel zeigt beim Wiederbetreten dieselbe Aufstellung.
+
+### Das fertige Flughafen-Modell war unbrauchbar
+
+`airport_by_nermin.glb` lag bereit und war der naheliegende Weg. Ausgemessen ist es aber ein
+**3000 x 1577 m** grosses Gelaende mit nur **3,47 m** hohen Aufbauten. Die Inseln haben 170-330 m
+Radius: skaliert man es passend, sind die Terminals **30 cm** hoch - niedriger als der Astronaut
+mit 1,8 m. Gebaut ist deshalb ein eigenes Vorfeld aus derselben Geometrie wie die Landebahn selbst.
+
+### Der Platz wird freigehalten, nicht gesucht
+
+Das ist der entscheidende Punkt und der Unterschied zu Rakete und geparktem X-Wing, die sich einen
+freien Ring absuchen. Ein 200 x 70 m grosses Rechteck zwischen 8 bis 18 gewuerfelte Bauwerke zu
+bekommen gelingt nur auf **76 %** der Inseln (durchgerechnet ueber 7.218 Inseln). Die Landebahn
+loest dasselbe Problem schon lange, indem `islandBuildings` ihren Streifen von vornherein ausspart -
+der Parkplatz macht es jetzt genauso. Ergebnis: er passt auf **100 %** der Inseln, und ueber 4.103
+geprueften Inseln gibt es **null** Kollisionen mit Bahn, Haeusern, Hafen, Startrampe oder dem
+geparkten X-Wing. Engster Abstand zu einem Haus: 6,0 m.
+
+### Die Stellplatzgroesse ist gemessen, nicht geschaetzt
+
+Im Browser nachgemessen ist das groesste Flugzeug der **Airbus** mit **27,1 m** Spannweite und
+**24,93 m** Laenge. Daraus das Raster von **34 m** (6,9 m Luft zum Nachbarn). Schaetzen waere hier
+schiefgegangen: `GLB_SPAN` normiert die **groessere waagerechte Achse**, und das ist nicht bei jedem
+Modell die Spannweite - beim X-Wing zum Beispiel die Laenge.
+
+Die geparkten Flugzeuge haben **bewusst keine Kollisionshuelle**, genau wie der geparkte X-Wing:
+`hitsBuilding` gilt auch fuer die Schritte des Astronauten, eine Huelle wuerde also den Weg zum
+Flugzeug blockieren und den Zweck der Sache zerstoeren.
+
+## Jetpack: zu Fuss ins Weltall
+
+Im **Hangar** aussteigen (**B**) und einfach **hinauslaufen**: an der Hallenkante zuendet das
+**Jetpack** und man schwebt im Weltall. Geflogen wird **wie im X-Wing** - der Schub gibt die
+Zielgeschwindigkeit (bis **45 m/s = 162 km/h**), der linke Stick dreht und hebt die Nase, geflogen
+wird in Blickrichtung. Gas weg: die Bremsduesen halten an.
+
+Gebaut ist es als `eva.jet`, der **dritte Sub-Modus** neben `eva.boat` (Schlauchboot) und
+`eva.rover`, nach genau demselben Muster: eigene Physik, eigener Kamerafaktor, eigene HUD-Anzeige,
+eigener Eingabezweig. Und mit derselben Grundhaltung wie beim Schlauchboot - **kein Verbot, sondern
+ein Uebergang**: wo das Boot den Schritt ins Wasser auffaengt, faengt das Jetpack den Schritt ueber
+die Hallenkante auf.
+
+### Der Fehler, der dahinter steckte
+
+Gemeldet war: *"ich komme zu Fuss nicht vom Hangar in den Weltraum, er bleibt im Uebergang haengen"*.
+Die Ursache: `surfaceY` gibt fuer den Hangar **pauschal** die Bodenhoehe zurueck, egal an welcher
+Stelle, und `evaSolid` gab dort pauschal `true`. Der Astronaut lief also jenseits der Hallenkante auf
+**unsichtbarem Boden** weiter - im Browser gemessen bis zur EVA-Leine bei **4000 m**, ohne dass je
+etwas geschah.
+
+Fuer den **Flieger** war das nie aufgefallen, und der Grund ist lehrreich: `updateLocale` prueft den
+Ausstieg ins Weltall an `state.pos`, also am Flugzeug - und das steht im Hangar still, waehrend man
+zu Fuss unterwegs ist. Der gemessene Abstand des X-Wing zur Hallenmitte blieb konstant 20 m,
+waehrend der Astronaut bei 4000 m ankam.
+
+Die Kante ist jetzt **ausgemessen**: per Raycast-Raster ueber die geladene Geometrie ist die
+tragende Flaeche ein durchgehendes Rechteck **x = -140..130, z = -145..145** auf y = 6,25, mit dem
+Ausgang am +X-Ende. Genau dort zuendet das Jetpack - im Test bei **x = 130,4**.
+
+### Drei Dinge, die erst die Messung gezeigt hat
+
+- **Ueber der Halle muss die Schwerkraft ziehen.** Zuerst war es ueberall schwerelos, und damit blieb
+  er ueber der Halle fuer immer schweben - gemessen: 8 m ueber dem Boden, Gas aus, keine Bewegung, er
+  kam nicht mehr herunter. Jetzt zieht **innerhalb** der Flaeche die kuenstliche Schwerkraft des
+  Todessterns (4,0 m/s2), **draussen** nicht. Das ist auch die Erklaerung, die das Spiel schon gibt.
+- **Der Saum darf nur beim Hinauslaufen gelten.** Er verhindert, dass man auf der Kante hin und her
+  schaltet - beim **Landen** haette er den Astronauten genau am Rand durch den Boden fallen lassen.
+  Nachgemessen an sieben Stellen einschliesslich aller vier Raender und einer Ecke: ueberall exakt
+  y = 6,25.
+- **Es braucht eine harte Tempo-Deckelung.** Die Schubregelung sieht nur die Fahrt **laengs** der
+  Blickrichtung; beim Nicken bleibt die alte Fahrt quer dazu stehen, und beides addiert sich
+  geometrisch. Gemessen wurden so **68,5 m/s** statt der erlaubten 45. Ein Kind kurvt viel, das
+  passiert also dauernd - der Flieger hat dieselbe Deckelung aus demselben Grund.
+
 ## 🌍 Ins Weltall: Mond, Mars, Todesstern und Sonne (nur X-Wing)
 
 Mit **80–100 % Schub steil steigen**: ab **3 km** wird der Himmel dunkler und die Sterne kommen, ab
