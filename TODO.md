@@ -1840,3 +1840,38 @@ man läuft also knapp 5 m zurück und ist wieder drin.
 Ich hatte `\u{1F9D1}` genommen, also nur die Person. Überall sonst im Spiel steht der Astronaut als
 ZWJ-Sequenz: Person + ZWJ + Rakete (`\u{1F9D1}\u{200D}\u{1F680}`). Beide Boot-Ausstiege zeigen jetzt
 dasselbe Zeichen wie jeder andere Ausstieg.
+
+## Die Canadair landet und rollt jetzt auch auf der Wiese
+
+Gewünscht: „mach bitte die canadair auf rasen land und fahrbar."
+
+`canLandHere` hatte für sie `!onLand || onRunway || onCarrier` — also Wasser, Landebahn und Trägerdeck,
+aber ausdrücklich **nicht** die Grasfläche. Jetzt `return true`.
+
+Das ist nicht „überall im Spiel": Mond, Mars und Hangarboden sind in der Funktion weiter oben schon
+abgehandelt, hier geht es nur um die Erde. Und dort war sie ohnehin fast überall erlaubt — es fehlte
+genau die Wiese.
+
+**Fahrbar** war sie schon: Vortrieb, Lenkung und Rollreibung im Bodenzweig gelten für jedes Modell.
+Blockiert hat sie dieselbe `canLandHere`-Prüfung, die beim Rollen auf falscher Fläche einen Crash
+auslöst (`wasGround && vspeed > 3 && !canLandHere(...)`) — mit der Freigabe ist auch das erledigt.
+
+Durchgerechnet, dass es zusammenpasst:
+
+- **Landen:** Crash-Schwellen sind 55 m/s Fahrt, 16 m/s Sinken oder 0,9 rad Neigung. Mit `vTO` = 40 m/s
+  setzt sie deutlich darunter auf.
+- **Abheben:** die Sperre `onGround && speed < vTO` gilt weiter, sie braucht auf der Wiese also Anlauf
+  wie auf der Bahn.
+- **Höhe:** `surfaceY` gibt auf Gras `ISLAND_Y`, das Rollen läuft damit ohne Sonderfall.
+- **Schwimmen:** `floatCanadair` prüft `!isOnLand` selbst und schaltet auf Gras ab.
+
+Was ausdrücklich **nicht** mitgeht:
+
+- **Wassertanken** bleibt aufs Wasser beschränkt — `updateScoop` prüft `!isOnLand` eigenständig.
+- **Gebäude, Berge und Raketenrampen** bleiben Hindernisse: die hängen an `hitsBuilding`, nicht an
+  `canLandHere`, und dort kracht man schon im Anflug hinein.
+- Der **Startplatz** bleibt am Strand (rückwärts geparkt, Bug zum Wasser).
+- Der **Strand** zählt weiter als Wasser (`isOnLand` kennt nur die Grasfläche), sie schwimmt dort also.
+
+Hilfetext und der Übersichtskommentar über `canLandHere` sind mitgezogen — beide nannten noch „Wasser
+ODER Landebahn".

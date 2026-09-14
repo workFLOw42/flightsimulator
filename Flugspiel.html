@@ -87,7 +87,7 @@
   </div>
   <div class="hcol">
     <div class="htitle">🎯 Was man machen kann</div>
-    <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B</b></div>
+    <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B. Sie landet <b>überall</b>: Wasser, Landebahn, Trägerdeck und <b>Wiese</b> — und rollt dort auch</b></div>
     <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer, liegt im Wasser und nickt mit den Wellen · B = Wasserstrahl nach vorn (bis 160 m), löscht Feuer und brennende Wracks · braucht keinen Tank · Land und Strand sind eine Wand, schräg fährt man daran entlang</b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf der <b>Landebahn</b> oder auf dem <b>Trägerdeck</b> laden (📦 zeigt es an), mit <b>B</b> abwerfen — wo man mag</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
@@ -514,7 +514,10 @@ function isOnCarrier(x, z){ return !!carrierAt(x, z); }
 // Darf das aktuelle Modell hier landen? (sonst = Crash, auch bei sanftem Aufsetzen)
 //  Mustang/Transall: Insel (Gras+Bahn), NICHT Wasser.
 //  Airbus/AlphaJet: NUR Landebahn (Insel) — AlphaJet zusätzlich Trägerdeck.
-//  Mustang zusätzlich Trägerdeck. Canadair (Löschflugboot): Wasser ODER Landebahn.
+//  Mustang zusätzlich Trägerdeck.
+//  Canadair (Löschflugboot): ÜBERALL auf der Erde — Wasser, Landebahn, Trägerdeck und Wiese. Sie ist
+//  das Löschflugzeug, und ein Waldbrand liegt nicht immer neben einer Bahn. Wassertanken bleibt aufs
+//  Wasser beschränkt (updateScoop prüft das selbst), Gebäude und Berge bleiben Hindernisse.
 function canLandHere(x, z) {
   // Außerhalb der Erde ist jede Fläche landbar (Mond, Mars, Hangarboden) — dorthin kommt nur der X-Wing.
   if(GROUNDS[locale] || locale === 'death') return true;
@@ -530,7 +533,15 @@ function canLandHere(x, z) {
   // dazu (gewuenscht). Sie ist mit 18,5 m Spannweite breiter als der Alpha Jet (8,1 m), passt aber
   // auf die 38 m Deckbreite; und der Traeger ist mitten auf dem Meer der naechste Platz zum
   // Nachtanken. Der Strand bleibt ausgenommen, wie bisher.
-  if (model === 'Canadair') return !onLand || onRunway || onCarrier;
+  // Und jetzt auch auf der WIESE, nicht nur auf Wasser, Bahn und Deck (so gewuenscht). Damit landet
+  // sie ueberall auf der Insel wie die Mustang und kann dort rollen — praktisch, weil sie das
+  // Loeschflugzeug ist und ein Waldbrand nicht immer neben einer Landebahn liegt.
+  //
+  // `true` ist hier NICHT „ueberall im Spiel": Mond, Mars und Hangarboden sind oben schon behandelt
+  // (GROUNDS/death), diese Funktion sieht nur noch die Erde. Und dort war sie ohnehin fast ueberall
+  // erlaubt — es fehlte genau die Grasflaeche. Gebaeude, Berge und Raketenrampen bleiben Hindernisse:
+  // die pruefen hitsBuilding, nicht canLandHere, und dort kracht man schon im Anflug hinein.
+  if (model === 'Canadair') return true;
   if (model === 'Boat')     return !onLand && !onCarrier;                // Boot: nur offenes Wasser
   // Die Transall darf ebenfalls aufs Deck (gewuenscht) — sie ist der Transporter, und Fracht auf
   // einen Traeger zu bringen ist genau ihre Aufgabe. Mit 20 m Spannweite passt sie aufs 38 m breite
@@ -8493,8 +8504,10 @@ function stepPhysics(dt, inp){
         return;
       }
     }
-    // Beim ROLLEN auf falscher Fläche (z.B. Jet rollt ins Gras, Canadair rutscht an Land)
-    // ebenfalls Crash — aber nur wenn er sich noch bewegt (nicht direkt beim Reset/Stillstand).
+    // Beim ROLLEN auf falscher Fläche (z.B. Jet rollt ins Gras) ebenfalls Crash — aber nur wenn er
+    // sich noch bewegt (nicht direkt beim Reset/Stillstand). Fuer die Canadair gilt das nicht mehr:
+    // sie darf inzwischen ueberall auf der Erde aufsetzen und rollen (siehe canLandHere), also auf
+    // Wasser, Bahn, Deck und Wiese.
     if(wasGround && vspeed > 3 && !canLandHere(state.pos.x, state.pos.z)){
       state.crashed = true;
       state.crashTimer = 3.0;
