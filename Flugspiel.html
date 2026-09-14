@@ -1177,10 +1177,12 @@ function makeCarrier(info){
   if(fordTemplate){
     g.add(fordTemplate.clone(true));
   } else {
-    // Fallback: einfacher grauer Rumpf + Deck auf Deckhöhe
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(FORD_DECK_HALF_X*2+8, fordDeckY, FORD_LEN),
+    // Fallback: einfacher grauer Rumpf + Deck auf Deckhöhe. Der Rumpf reicht vom Tiefgang bis zum
+    // Deck, liegt also wie das echte Modell IM Wasser statt darauf (siehe FORD_DRAFT).
+    const hullH = fordDeckY + FORD_DRAFT;
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(FORD_DECK_HALF_X*2+8, hullH, FORD_LEN),
       new THREE.MeshLambertMaterial({ color:0x555b63 }));
-    hull.position.y = fordDeckY/2; g.add(hull);
+    hull.position.y = fordDeckY - hullH/2; g.add(hull);
     const deck = new THREE.Mesh(new THREE.BoxGeometry(FORD_DECK_HALF_X*2, 1.5, FORD_LEN),
       new THREE.MeshLambertMaterial({ color:0x3a3f45 }));
     deck.position.y = fordDeckY; g.add(deck);
@@ -4559,6 +4561,18 @@ function preloadParachute(){
 }
 
 // Flugzeugträger-GLB (Gerald R. Ford by Usman Zia) — schwimmende Landebahn auf dem Meer.
+// Tiefgang als ANTEIL der Rumpfhoehe, nicht als feste Meterzahl. Die echte Gerald R. Ford zieht 12 m
+// und ihr Flugdeck liegt rund 20 m ueber Wasser — der Rumpf ist also 32 m hoch, davon 37,5 % unter
+// Wasser. Das GLB-Modell ist flacher gebaut: bis zum Deck sind es ausgemessen 23,39 m, wo die reine
+// Laengenskalierung 26,6 m erwarten liesse. Mit festen 10 m (dem skalierten Tiefgang) laege das Deck
+// deshalb nur 13,4 m ueber Wasser statt der skalierten 16,6 — zu tief. Der Anteil haelt stattdessen die
+// Proportionen DES MODELLS: 8,8 m Tiefgang, Deck 14,6 m ueber Wasser.
+//
+// Der zweite Messweg (Rumpfbreite je Hoehenscheibe, siehe preloadFord) deutet auf 11,7 m — er ist mit
+// Scheiben von 2 % der Hoehe aber grob, und er misst die Breite des ausgestellten Flugdecks mit. Wo
+// zwei Messungen auseinandergehen, zaehlt die, die das Modell selbst beschreibt.
+const FORD_DRAFT_FRAC = 0.375;
+let FORD_DRAFT = 10;              // in preloadFord aus der gemessenen Rumpfhoehe gesetzt
 let fordTemplate = null, fordDeckY = 12;   // Deckhöhe über Wasser (nach Normierung gesetzt)
 let fordTower = null;   // vermessener Turm/Aufbau (lokale Box) -> exakte Kollision statt Schätzung
 // Deck-/Rumpf-Halbbreite werden aus dem echten GLB vermessen (Default = Schätzung, bis geladen).
@@ -4578,7 +4592,9 @@ function preloadFord(){
     obj.scale.setScalar(FORD_LEN / Math.max(size.x, size.z));   // ~330 m langer Träger
     const box2 = new THREE.Box3().setFromObject(obj);
     const c = new THREE.Vector3(); box2.getCenter(c);
-    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;  // Rumpf-Unterkante auf y=0
+    // Erst die Unterkante auf y = 0 — der Tiefgang kommt weiter unten dazu, wenn die Rumpfhoehe aus
+    // dem Deck-Raycast bekannt ist (er ist ein Anteil davon, siehe FORD_DRAFT_FRAC).
+    obj.position.x -= c.x; obj.position.z -= c.z; obj.position.y -= box2.min.y;
     const box3 = new THREE.Box3().setFromObject(obj);
     // Flugdeck-Höhe EXAKT per Raycast: von oben auf mehrere Punkte der Deck-Mittellinie schießen
     // (dort ist kein Aufbau/Mast -> trifft das ebene Flugdeck). Median der Treffer = Deckhöhe.
@@ -4591,7 +4607,21 @@ function preloadFord(){
       if(hits.length) ys.push(hits[0].point.y);
     }
     ys.sort((a,b)=>a-b);
-    fordDeckY = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
+    const deckUeberKiel = ys.length ? ys[Math.floor(ys.length/2)] : box3.max.y * FORD_DECK_FRAC;
+    // JETZT eintauchen: der Traeger soll IM Wasser liegen, nicht darauf. Vorher stand der Kiel genau
+    // auf der Wasserlinie und das ganze Schiff darueber — gemeldet als „der carrier sitzt nicht
+    // richtig im wasser, sondern auf dem wasser".
+    //
+    // Der Tiefgang ist ein Anteil der gemessenen Rumpfhoehe (siehe FORD_DRAFT_FRAC): 37,5 % von den
+    // 23,4 m bis zum Deck, also rund 8,8 m. Das Deck liegt danach bei rund 14,6 m ueber Wasser.
+    FORD_DRAFT = deckUeberKiel * FORD_DRAFT_FRAC;
+    obj.position.y -= FORD_DRAFT;
+    obj.updateMatrixWorld(true);
+    // fordDeckY ist ab hier die Hoehe des Decks UEBER WASSER — genau das, was alle anderen Stellen
+    // erwarten: Landen und Starten, das Aufsetzfenster (rtAltCarrier), die KI-Anflughoehe, Bordwand-
+    // und Turmkollision, beide Schatten, die Fallschirme, der Astronaut auf dem Deck und die
+    // geparkten Flugzeuge. Keine davon rechnet die Deckhoehe selbst aus, sie folgen also von allein.
+    fordDeckY = deckUeberKiel - FORD_DRAFT;
     // Echte Deck-/Rumpfbreite aus der Bounding-Box übernehmen (das Ford-Deck ist ~35 m halbbreit,
     // nicht die geschätzten 19). Damit landet man auf dem GANZEN sichtbaren Deck und Turm/Ränder
     // sind über die volle Breite kollidierbar. Länge (Z) stimmte bereits mit FORD_LEN/2 überein.

@@ -1409,3 +1409,71 @@ dann trifft der Strahl auch in dem Frame, in dem die Basis gerade gesetzt wurde.
 
 Dass die Modelle dabei richtig sitzen, ist gesichert: `ensurePads` setzt `inner.position.y -= box.min.y`,
 die Unterseite liegt also auf y = 0 des Halters — der Raycast-Wert ist direkt die Aufsetzhöhe.
+
+## Der Flugzeugträger lag auf dem Wasser statt darin
+
+Gemeldet: „bitte schau mal auf den carrier. der sitzt nicht richtig im wasser, sondern auf dem wasser.
+aber wenn korrektur, bitte auch objekthöhe start und landehöhen etc. beachten."
+
+### Die Ursache stand in einem Kommentar
+
+`preloadFord` setzte den Rumpf mit `obj.position.y -= box2.min.y` — Kommentar: „Rumpf-Unterkante auf
+y = 0". Genau das war der Fehler: y = 0 **ist** die Wasserlinie, der Kiel lag also darauf und das ganze
+Schiff darüber. Ein Träger mit 0 m Tiefgang.
+
+### Der Tiefgang ist gemessen, nicht geschätzt
+
+Zwei Wege, und sie gehen bewusst auseinander:
+
+1. **Skalierung:** die echte Gerald R. Ford zieht 12 m bei 337 m Länge. Das Modell ist auf
+   `FORD_LEN` = 280 m normiert (Faktor 0,831) → 10,0 m.
+2. **Rumpfprofil des Modells** (Breite je Höhenscheibe ausgemessen):
+
+| Höhe über Kiel | Breite |
+|---|---|
+| 0 m | 20,69 m |
+| 6,29 m | 27,84 m |
+| 12,58 m | 35,35 m |
+| 18,87 m | 59,32 m ← hier beginnt das ausgestellte Flugdeck |
+| 23,39 m | 70,74 m (Deck) |
+
+Die skalierte Wasserlinienbreite der echten Ford (41 m → 34,1 m) liegt damit bei y ≈ 11,7 m.
+
+Beide Wege ergäben rund 10–12 m — aber das Modell ist **flacher gebaut** als das echte Schiff: bis zum
+Deck sind es 23,39 m, wo die reine Längenskalierung 26,6 m erwarten ließe. Mit festen 10 m läge das Deck
+nur 13,4 m über Wasser statt der skalierten 16,6 m.
+
+Deshalb der **Anteil** statt der Meterzahl: 37,5 % (so verteilt sich der echte Rumpf auf 12 m unter und
+20 m über Wasser) von 23,39 m ergibt **8,77 m Tiefgang** und ein Deck **14,62 m über Wasser**. Das sind
+2 m unter dem skalierten Sollwert — genau die Differenz, die das flachere Modell mitbringt. Wo zwei
+Messungen auseinandergehen, zählt die, die das Modell selbst beschreibt.
+
+### Start- und Landehöhen: alle folgen von allein
+
+Der ausdrücklich genannte Punkt. `fordDeckY` wird **per Raycast** gemessen, und die Reihenfolge musste
+dafür umgestellt werden: erst Unterkante auf 0, dann Deckhöhe messen, **dann** eintauchen, dann
+`fordDeckY = deckÜberKiel − FORD_DRAFT`. Damit ist `fordDeckY` weiterhin die Höhe **über Wasser** — und
+genau das erwarten alle 20 Stellen, die sie lesen:
+
+| | folgt |
+|---|---|
+| Landen und Starten auf dem Deck | ✓ |
+| Aufsetzfenster der KI (`rtAltCarrier`) | ✓ |
+| KI-Anflughöhe | ✓ |
+| Bordwand-Kollision (`fordDeckY − 1,5`) | ✓ relativ |
+| Turm-Kollision (`fordDeckY + 22` bzw. `fordTower`) | ✓ relativ |
+| Flieger- und ovaler Schatten | ✓ |
+| Fallschirme, Spieler und KI | ✓ |
+| Astronaut auf dem Deck (`surfaceY`, `evaFootY`) | ✓ |
+| geparkte Flugzeuge (`probe`) | ✓ |
+
+Geprüft, dass keine Stelle die Deckhöhe selbst ausrechnet — die vier festen Zahlen im Umfeld sind alle
+**relative** Offsets zum Deck. `canLandHere` prüft nur die Fläche, nicht die Höhe. Boote werden über
+`isOnCarrier` ausgeschlossen, unabhängig von der Höhe.
+
+Zwei Details, die beim Umstellen wichtig waren: `box3` entsteht **vor** dem Senken, wird danach aber
+noch für die Deckbreite genutzt — das sind X-Werte, vom Senken unberührt. Und die Turm-Raycasts laufen
+**nach** dem Senken, ihre Trefferhöhen sind also schon Über-Wasser-Werte.
+
+Der Ersatz-Rumpf (falls das GLB nicht lädt) reicht jetzt ebenfalls vom Tiefgang bis zum Deck statt von
+0 bis zum Deck.
