@@ -2936,9 +2936,10 @@ function updateShadow(){
   ovalShadow.visible = false;
   // Oberflaeche: ueber Land (samt Sandrand) die Inselhoehe, ueber Wasser die WELLENHOEHE AN DIESER
   // STELLE — nicht der feste Wert 1,4 m, der hier stand. Genau derselbe Fehler, der beim Feuerwehrboot
-  // schon behoben wurde (siehe updateOvalShadow): weil der Schatten mit depthTest:false immer davor
-  // gezeichnet wird, erscheint die Hoehendifferenz zur echten Wasserflaeche als VERSATZ, der sich mit
-  // dem Kamerawinkel aendert — „der schatten der canadair bewegt sich im wasser alleine".
+  // schon behoben wurde (siehe updateOvalShadow): eine Hoehendifferenz zur echten Wasserflaeche
+  // erscheint als VERSATZ, der sich mit dem Kamerawinkel aendert — „der schatten der canadair bewegt
+  // sich im wasser alleine". (Damals kam dazu, dass der Schatten mit depthTest:false immer davor
+  // gezeichnet wurde; auch das ist inzwischen behoben, siehe shadowMat.)
   // Der Sandrand zaehlt als Land, sonst springt der Schatten am Ufer (dort ist der Boden bei 0,30 m).
   const overLand = isOnLand(state.pos.x, state.pos.z) || isOnBeach(state.pos.x, state.pos.z);
   const seaHere = overLand ? 0 : seaYAt(state.pos.x, state.pos.z);
@@ -6810,10 +6811,17 @@ function updateAsteroids(dt){
 // ---------- Höhen-Schatten am Boden (Hilfe fürs Kind, ab <=20 m) ----------
 // Flacher, flugzeugförmiger Umriss (Kreuz aus zwei Ellipsen: Rumpf + Flügel),
 // folgt der X/Z-Position, liegt knapp über dem Boden. Bei niedriger Höhe größer/dunkler.
-// depthTest:false -> Schatten wird IMMER gezeichnet, egal ob eine Welle davor liegt
-// (verhindert Flackern/z-fighting mit dem animierten Wasser). renderOrder hoch = zuletzt.
+// depthTest ist AN — genau wie beim ovalen Schatten darunter, und aus demselben Grund. Vorher stand
+// hier depthTest:false, damit der Schatten nie von einer Welle verdeckt wird; er wurde damit aber
+// ueber ALLES gezeichnet, auch ueber Objekte, die zwischen ihm und der Kamera stehen. Solange der
+// Traeger auf dem Wasser lag, fiel das nicht auf. Seit er IM Wasser liegt (FORD_DRAFT), sieht man den
+// Schatten auf dem Wasser durch seinen Rumpf hindurch — genau so gemeldet.
+//
+// Gegen das Flackern im animierten Wasser (z-fighting) hilft polygonOffset, nicht das Abschalten des
+// Tiefentests: dieselbe Kombination, mit der der ovale Schatten seit laengerem sauber im Wasser liegt.
+// depthWrite bleibt aus — der Schatten ist ein Aufkleber und soll nichts anderes verdecken.
 const shadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.3,
-  depthWrite:false, depthTest:false });
+  depthWrite:false, depthTest:true, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
 const planeShadow = new THREE.Group();
 planeShadow.renderOrder = 999;
 const shBody = new THREE.Mesh(new THREE.CircleGeometry(1, 24), shadowMat);

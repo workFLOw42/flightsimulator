@@ -1477,3 +1477,23 @@ noch für die Deckbreite genutzt — das sind X-Werte, vom Senken unberührt. Un
 
 Der Ersatz-Rumpf (falls das GLB nicht lädt) reicht jetzt ebenfalls vom Tiefgang bis zum Deck statt von
 0 bis zum Deck.
+
+## Der Flieger-Schatten war durch den Trägerrumpf sichtbar
+
+Gemeldet: „aber jetzt sieht man den schatten auf dem wasser durch den carrier hindurch."
+
+Eine Folge des Tiefgangs aus der Runde davor — und ein Fehler, der die ganze Zeit da war, nur unsichtbar:
+`shadowMat` hatte `depthTest:false`. Der Schatten wurde damit **immer** gezeichnet, also auch über
+Objekte, die zwischen ihm und der Kamera stehen. Solange der Träger auf dem Wasser lag, gab es unter
+Wasser nichts, was ihn hätte verdecken können. Seit der Rumpf 8,8 m eintaucht, schon.
+
+Der ovale Schatten (Boote, Astronaut) hatte dasselbe Problem und ist längst gelöst: `depthTest:true`
+plus `polygonOffset` gegen das z-fighting mit dem animierten Wasser. Genau diese Kombination bekommt
+jetzt auch der Flieger-Schatten — das Abschalten des Tiefentests war der falsche Weg gegen das Flackern.
+
+Geprüft, was sonst noch mit `depthTest:false` zeichnet: nur die **Leitstrahl-Pfeile**, und dort ist es
+gewollt — sie sind eine Navigationshilfe und sollen nie von Terrain oder Wellen verdeckt werden.
+
+Selbstverdecken ist beim Flieger kein Thema: der Schatten liegt auf Wasserhöhe + 0,15 m, der Flieger
+mehrere Meter darüber. Beim ovalen Schatten war das Verdecken sogar gewollt, damit das Boot seinen
+eigenen Schatten überdeckt.
