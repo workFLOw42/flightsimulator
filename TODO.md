@@ -1950,3 +1950,83 @@ Spiel muss man es auch bemerken — das ist bewusst schneller als die Realität.
 Nachgeprüft, dass die Kollisionsgrenze positiv bleibt: aufgetaucht 10,3 m, getaucht 3,9 m (im
 Rückfall ohne Vermessung 7,6 → 1,2 m). `hitsSeaShip` gibt ab `top + 4` frei, ein Flieger auf 10 m Höhe
 fliegt also darüber.
+## Das U-Boot lag zu hoch, weil ich 62-fach falsch gemessen hatte
+
+Gemeldet: „das uboot kann noch etwas tiefer tauchen. im moment sind es etwa 2/3 des rumpfen. so ist noch
+1/3 plus der turm zu sehen. aber die optik ist toll. außerdem fährt das boot?"
+
+### Der eigentliche Fehler
+
+Beim Nachmessen für die Tauchtiefe fiel auf, dass **alle** meine U-Boot-Maße falsch waren. Ich hatte die
+`min`/`max` der Accessoren aus dem GLB gelesen — das sind die **Rohkoordinaten der Meshes**, ohne die
+Transformationen der Nodes, in denen sie hängen.
+
+| | gemessen (falsch) | echt |
+|---|---|---|
+| Länge | 23,67 | **1476,4** |
+| Breite | 3,61 | **361,2** |
+| Höhe | 4,01 | **471,5** |
+
+Faktor 62 daneben. Damit war jedes abgeleitete Maß falsch, und die Kommentare im Code beschrieben ein
+Modell, das es nicht gibt („8,1 m Rumpfhöhe, 7,9 m Turm darüber").
+
+### Wie das Modell wirklich aussieht
+
+Nicht „Rumpf plus Turm", sondern vier Teile übereinander (im Spielmaßstab, 34.422 vermessene Punkte):
+
+```
+  0,0 ..  4,6 m   Tiefenruder und Schraube — ragen UNTER den Druckkörper
+  4,6 .. 17,6 m   Druckkörper, 13,0 m dick, breiteste Stelle 23,2 m auf halber Höhe
+ 15,9 .. 22,9 m   Turm, 7,0 m hoch
+ 22,9 .. 30,3 m   Periskop und Antennen
+```
+
+Das Rumpf**deck** liegt bei 17,6 m. Ich hatte 10,1 m dafür gehalten — dort ist nur der dickste
+Querschnitt. Ein Zwischenschritt, in dem ich Höhenbänder abgetastet und die breiteste Stelle als Deck
+gelesen habe, führte deshalb erneut in die Irre; erst die Aufteilung **nach Mesh** (das längste Teil ist
+der Rumpf) ergab ein widerspruchsfreies Bild.
+
+### Warum ein Drittel Rumpf zu sehen war
+
+`wl` 0,060 senkte das Modell um 5,7 m. Bei einem 8,1 m hohen Rumpf wären das 70 % gewesen — beim
+wirklichen Deck auf 17,6 m lag es aber **11,9 m über Wasser**, der halbe Druckkörper schwebte frei. Genau
+die Beobachtung.
+
+### Neu
+
+| | vorher | jetzt |
+|---|---|---|
+| `wl` | 0,0600 (5,7 m) | **0,1537 (14,6 m)** |
+| `subDive` | 6,4 m | **5,8 m** |
+
+Der Tauchweg wird *kleiner*, das Boot taucht aber **tiefer** — weil die Wasserlinie jetzt stimmt:
+
+| | aufgetaucht | getaucht |
+|---|---|---|
+| Rumpfdeck | +3,0 m | **−2,8 m** (Rumpf ganz weg) |
+| Turmfuß | +1,3 m | −4,5 m |
+| Turmspitze | +8,3 m | **+2,5 m** (36 % des Turms bleiben) |
+| Antenne (= `top`) | +15,7 m | +9,9 m |
+
+3,0 m Freibord bei 13,0 m Rumpfdurchmesser sind 23 % über Wasser — ein aufgetauchtes U-Boot liegt echt
+mit 20 bis 25 % über der Wasserlinie. 5,8 m Weg sind das 1,8-fache der Dünung (3,2 m Hub), bleiben also
+sichtbar. Bei 26 s Zyklus sind das 0,45 m/s im Mittel, mit der smoothstep-Spitze rund 0,7 m/s — ein
+echtes U-Boot taucht mit 0,5 bis 1 m/s, diesmal passt sogar das.
+
+Nebenbei korrigiert sich das **Kollisionsband** mit: `loadShip` sammelt die Hülle aus y −2 bis 3, das
+trifft jetzt Modellhöhe 12,6 bis 17,6 m, also den oberen Druckkörper unter dem Deck. Vorher lag das Band
+auf den Rudern *unter* dem Rumpf.
+
+### „außerdem fährt das boot?"
+
+Ja — `spd: 1.8`, also 6,5 km/h. Es wird von `updateShipsSea` wie jedes andere Schiff bewegt, es ist nur
+das langsamste auf dem Meer (die Frachter fahren 16 bis 20 km/h). Auf 95 m Länge braucht es 53 s für eine
+eigene Schiffslänge, und ohne Bugwelle als Bezug sieht das aus wie Stillstand. Absichtlich so: ein
+tauchendes Boot, das schnell fährt, ist weg, bevor man es angesehen hat.
+
+### Lernpunkt
+
+Beim Vermessen eines GLB **immer** die Node-Matrizen aufmultiplizieren. Der Fehler fällt nicht auf, weil
+die Rohmaße plausibel aussehen und die Skalierung im Spiel sie ohnehin auf `len` normiert — nur alle
+*relativen* Höhen darin sind dann Unsinn. Das ist der zweite Fall dieser Art (siehe die Notiz zum
+Träger); ich habe es als Memory festgehalten.

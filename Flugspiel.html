@@ -1356,34 +1356,55 @@ const SHIP_TYPES = [
   { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0286, spd:5.0, sym:'🚢' },
   { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.0556, spd:3.0, sym:'⛵' },
   // U-Boot (submarine by Helindu): faehrt langsam und TAUCHT im Wechsel — aufgetaucht liegt es auf
-  // seiner Wasserlinie, getaucht ragt nur der Turm heraus. Es verschwindet nie ganz, man sieht es
-  // also immer, mal mehr, mal weniger (so gewuenscht).
+  // seiner Wasserlinie, getaucht ist der Rumpf ganz weg und nur die Turmspitze steht heraus.
   //
-  // Ausgemessen am Rohmodell (C:/tmp, ohne das duenne „Cube"-Blatt, das Periskop/Antenne ist und die
-  // Bounding-Box um 8,4 m verfaelscht): 23,67 lang, 3,61 breit, Rumpf von y -1,00 bis 1,03, Turm bis
-  // y 3,01. Auf 95 m Spiellaenge skaliert (Faktor 4,01) ergibt das 8,1 m Rumpfhoehe und 7,9 m Turm
-  // darueber. 95 m liegt zwischen Typ VII (67 m) und Los-Angeles-Klasse (110 m).
+  // AUSGEMESSEN MIT NODE-TRANSFORMATIONEN (C:/tmp, 34.422 Punkte). Das ist der Kern: die erste
+  // Messung las nur die Accessor-min/max, also die ROHKOORDINATEN der Meshes, ohne die
+  // Transformationen der Nodes, in denen sie haengen. Dabei kam 23,67 x 3,61 x 4,01 heraus — die
+  // echte Ausdehnung ist 1476 x 361 x 471. Faktor 62 daneben, und damit war jedes daraus
+  // abgeleitete Mass falsch. Wer hier nachmisst: Node-Matrizen aufmultiplizieren, sonst misst man
+  // ein Modell, das es nicht gibt.
   //
-  // wl 0.060 senkt es um 5,7 m, also 70 % der Rumpfhoehe: aufgetaucht schauen 2,4 m Rumpf und der
-  // ganze Turm heraus — ein U-Boot liegt tief im Wasser, anders als ein Frachter.
+  // Auf 95 m Spiellaenge (Faktor 95/1476,4 = 0,0643) ist das Modell 30,3 m hoch und besteht aus
+  // vier Teilen uebereinander — der Aufbau ist NICHT "Rumpf plus Turm":
+  //    0,0 ..  4,6 m   Tiefenruder und Schraube (ragen UNTER den Druckkoerper)
+  //    4,6 .. 17,6 m   Druckkoerper, 13,0 m dick, breiteste Stelle 23,2 m auf halber Hoehe
+  //   15,9 .. 22,9 m   Turm, 7,0 m hoch
+  //   22,9 .. 30,3 m   Periskop und Antennen
+  // Das Rumpf-DECK liegt also bei 17,6 m, nicht bei 10,1 m (dort ist nur der dickste Querschnitt).
+  //
+  // wl 0,1537 senkt das Modell um 14,6 m: aufgetaucht stehen 3,0 m Rumpf ueber Wasser, also 23 %
+  // des Durchmessers — ein aufgetauchtes U-Boot liegt fast auf der Wasserlinie (echt 20 bis 25 %),
+  // anders als ein Frachter. Vorher stand wl auf 0,060, was aus der 62-fach falschen Messung kam:
+  // es senkte nur 5,7 m, das Deck lag 11,9 m hoch und der halbe Druckkoerper schwebte ueber dem
+  // Wasser — gemeldet als „im moment sind es etwa 2/3 des rumpfen".
+  //
   // subDive ist der Tauchweg, subPeriod die Dauer eines ganzen Zyklus (auf und ab).
   //
-  // Aufgetaucht liegt das Rumpfdeck 2,4 m ueber Wasser (wl 0,060 senkt den 8,1 m hohen Rumpf um
-  // 5,7 m), die Turmspitze also bei 10,3 m. Getaucht soll der Rumpf ganz verschwinden und der Turm
-  // bis zur halben Hoehe einsinken — Spitze bei 4,0 m. Das ergibt 6,4 m Weg.
+  //                  aufgetaucht   getaucht
+  //   Rumpfdeck          3,0 m      -2,8 m   -> Rumpf 2,8 m unter Wasser, ganz verschwunden
+  //   Turmfuss           1,3 m      -4,5 m
+  //   Turmspitze         8,3 m       2,5 m   -> 2,5 m Turm bleiben stehen (36 % von 7,0 m)
+  //   Antenne (= top)   15,7 m       9,9 m   -> Kollisionsgrenze bleibt positiv
   //
   // Der Weg MUSS deutlich groesser sein als die Duenung, sonst sieht man ihn nicht: die schwankt um
-  // +/-1,6 m, also 3,2 m Hub. Mit den vorherigen 2,4 m bewegte die WELLE das Boot staerker als das
-  // Tauchen, und das Tauchen ging darin unter — gemeldet als „auch bei langem anflug habe ich es
-  // nicht abtauchen oder auftauchen gesehen". 6,4 m sind das Doppelte der Duenung.
+  // +/-1,6 m, also 3,2 m Hub. 5,8 m sind das 1,8-fache. Zusammen mit der neuen Wasserlinie ist der
+  // Wechsel jetzt so auffaellig wie moeglich: der ganze Rumpf taucht weg, statt sich um ein Drittel
+  // zu heben und zu senken.
   //
-  // 26 s statt 34: eine halbe Periode (einmal ganz runter) dauert damit 13 s, ein Anflug 15 bis 30 s
-  // — man sieht also mindestens eine vollstaendige Bewegung. Die Spitzengeschwindigkeit liegt bei
-  // 2,3 m/s; ein echtes U-Boot taucht mit 0,5 bis 1 m/s, aber im Spiel muss man es auch bemerken.
+  // 26 s Zyklus: eine halbe Periode (einmal ganz runter) dauert 13 s, ein Anflug 15 bis 30 s — man
+  // sieht also mindestens eine vollstaendige Bewegung. 5,8 m in 13 s sind 0,45 m/s im Mittel, mit
+  // der smoothstep-Spitze rund 0,7 m/s. Ein echtes U-Boot taucht mit 0,5 bis 1 m/s: passt sogar.
+  //
+  // Das Kollisionsband (y -2 bis 3 in loadShip) liegt damit auf Modellhoehe 12,6 bis 17,6 m — das
+  // ist der obere Druckkoerper direkt unter dem Deck, also der richtige Umriss fuer ein Boot, das
+  // daneben faehrt. Vorher traf das Band die Ruder unter dem Rumpf.
   //
   // Tempo 1,8 m/s = 6,5 km/h, das langsamste Schiff auf dem Meer (die Frachter fahren 16-20 km/h).
-  { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.0600, spd:1.8, sym:'🛥️',
-    subDive:6.4, subPeriod:26 },
+  // Es FAEHRT also, nur eben Schrittgeschwindigkeit: auf 95 m Laenge braucht es 53 s fuer eine
+  // eigene Schiffslaenge. Ohne Bugwelle als Bezug sieht das aus wie Stillstand.
+  { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.1537, spd:1.8, sym:'🛥️',
+    subDive:5.8, subPeriod:26 },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
 // belebt wirken, ohne dass man ständig ausweichen muss.
@@ -1748,9 +1769,9 @@ function updateShipsSea(dt){
     // ---- U-BOOT: langsam auf und ab tauchen. Der Sinus laeuft ueber subPeriod Sekunden, mit dem
     // eigenen x-Wert als Phase — so sind mehrere Boote nicht im Gleichschritt.
     //
-    // Nur die HAELFTE des Sinus wird genutzt (0..1 statt -1..1): oben liegt es auf seiner Wasserlinie
-    // mit Rumpf und Turm, unten ist der Rumpf weg und der halbe Turm steht noch heraus. Ganz
-    // verschwinden soll es nicht (siehe subDive in SHIP_TYPES).
+    // Nur die HAELFTE des Sinus wird genutzt (0..1 statt -1..1): oben liegen 3,0 m Rumpf ueber
+    // Wasser, unten ist der Rumpf 2,8 m tief weg und 2,5 m Turmspitze stehen noch heraus. Ganz
+    // verschwinden soll es nicht, man soll es immer sehen (siehe subDive in SHIP_TYPES).
     //
     // Die Bewegung ist zusaetzlich abgeflacht (smoothstep): ein U-Boot verweilt oben und unten und
     // wechselt dazwischen zuegig, statt gleichmaessig durchzufahren wie ein Kolben.
