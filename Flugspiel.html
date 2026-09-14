@@ -1859,7 +1859,44 @@ const ORCA_JUMP_T = 2*ORCA_JUMP_V*Math.sin(ORCA_JUMP_A) / ORCA_G;   // 2,86 s in
 // Zwischen zwei Spruengen schwimmt ein Springer eine Weile normal weiter — sonst huepft er wie ein
 // Flummi. 9 s Pause auf 2,86 s Flug heisst: man sieht ihn ueberwiegend schwimmen und wird vom
 // Sprung ueberrascht.
-const ORCA_JUMP_CYCLE = ORCA_JUMP_T + 9;
+// Nach dem Eintauchen geht er GANZ unter Wasser und kommt dann wieder herauf — gewuenscht als
+// "beim eintauchen ganz unter wasser gehen und dann wieder etwas auftauchen". Ein Wal schiesst
+// hinein, wird gebremst (Wasser ist rund 800-fach dichter als Luft) und steigt wieder.
+//
+// Die Bahn ist ein Sinusbogen: y = swimY - ORCA_DIVE_J * sin(pi*s) mit s = 0..1 ueber
+// ORCA_UNDER_T Sekunden. sin (nicht sin^2 oder smoothstep) hat an beiden Enden die Steigung pi —
+// er taucht also MIT Fahrt ein und kommt MIT Fahrt heraus, statt an der Oberflaeche zu kleben.
+//
+// Die Tiefe ist NICHT frei gewaehlt, sondern ergibt sich aus der Forderung, dass der Nickwinkel
+// beim Eintauchen nicht springt. In der Luft kommt er mit -45 Grad an, also vy/vh = -1. Unter
+// Wasser ist vh = ORCA_SPD (er bremst sofort auf Schwimmtempo), gebraucht wird also vy = -ORCA_SPD.
+// Das Senkrechttempo am Bogenanfang ist ORCA_DIVE_J * pi / ORCA_UNDER_T, damit:
+//     ORCA_DIVE_J = ORCA_SPD * ORCA_UNDER_T / pi
+// Bei 6 s sind das 6,11 m Tiefe, und atan2(-3,20; 3,2) ergibt genau -45,0 Grad — kein Knick.
+// Nachgerechnet ist die Oberkante am tiefsten Punkt bei -3,87 m, also deutlich unter dem Wellental
+// (-1,6 m): er ist wirklich ganz weg und nicht nur halb.
+// Reisetempo: 11,5 km/h. Orcas schwimmen 8-12 km/h, in Spitzen 50. Steht HIER und nicht bei den
+// anderen Herden-Werten weiter unten, weil ORCA_DIVE_J es braucht — const wird nicht gehoisted,
+// eine Nutzung vor der Deklaration wirft beim Laden einen ReferenceError und das Spiel bleibt
+// schwarz. Genau das war beim ersten Einbau dieser Zeile der Fall.
+const ORCA_SPD      = 3.2;
+const ORCA_UNDER_T  = 6;
+const ORCA_DIVE_J   = ORCA_SPD * ORCA_UNDER_T / Math.PI;
+// ANLAUF vor dem Absprung. Ohne ihn sprang die Nase in EINEM Frame von 0 auf +45 Grad — beim
+// Eintauchen hatte ich auf Stetigkeit geachtet, beim Absprung nicht, und die Simulation hat den
+// 44,8-Grad-Knick dann gefunden. Ein Wal springt auch nicht aus dem Stand: er sinkt kurz ab und
+// schiesst heraus.
+//
+// Die Bahn ist f(s) = -A s^2 (1-s) mit s = 0..1 ueber ORCA_RUNUP_T Sekunden. Diese Form ist
+// gewaehlt, weil sie an BEIDEN Enden passt:
+//   f(0) = 0 und f'(0) = 0   -> sie geht waagerecht aus dem Schwimmen heraus, kein Knick
+//   f(1) = 0 und f'(1) = +A  -> sie endet auf Schwimmhoehe und STEIGT dort schon
+// Fuer die +45 Grad des Absprungs braucht es vy = ORCA_SPD (weil vh = ORCA_SPD), also A = ORCA_SPD
+// mal ORCA_RUNUP_T. Die Anlauftiefe ergibt sich daraus: Minimum bei s = 2/3, dort 4A/27 = 1,90 m.
+const ORCA_RUNUP_T  = 4;
+const ORCA_RUNUP_A  = ORCA_SPD * ORCA_RUNUP_T;
+// Ein ganzer Springer-Zyklus: schwimmen, Anlauf, Flug, tauchen. 19,86 s.
+const ORCA_JUMP_CYCLE = ORCA_RUNUP_T + ORCA_JUMP_T + ORCA_UNDER_T + 7;
 //
 // SCHULE: das U-Boot-Verfahren (Modell heben und senken) geht hier NICHT.
 // Beim U-Boot sind 5,8 m Tauchweg moeglich, weil das Modell 30 m hoch ist. Der Orca ist 3,19 m
@@ -1880,7 +1917,6 @@ const ORCA_COUNT     = 6;
 const ORCA_SPAWN_MIN = 60;
 const ORCA_SPAWN_MAX = 220;
 const ORCA_DESPAWN   = 420;     // weiter weg -> an neuer Stelle aussetzen
-const ORCA_SPD       = 3.2;     // 11,5 km/h Reisetempo; Orcas schwimmen 8-12, in Spitzen 50
 const ORCA_POD       = 26;      // Radius, in dem eine Gruppe zusammenbleibt
 const orcas = [];               // {group, mixer, x, z, heading, t, jumper, y, pitch, placed}
 let orcaTpl = null;             // Vorlage; Klone brauchen cloneSkinned (siehe unten)
@@ -2068,13 +2104,26 @@ function updateOrcas(dt){
     // (ORCA_BACK - ORCA_SURF) unter die Oberflaeche.
     const swimY = surf - (ORCA_BACK - ORCA_SURF);
     if(o.jumper){
-      // ---- SPRINGER: Pause, dann ein Bogen.
+      // ---- SPRINGER: schwimmen, Anlauf, Bogen durch die Luft, ganz unter Wasser, wieder hoch.
+      // Der Zyklus hat VIER Abschnitte, hintereinander am Ende von ORCA_JUMP_CYCLE:
+      //   ... 7 s schwimmen ... | ORCA_RUNUP_T Anlauf | ORCA_JUMP_T Flug | ORCA_UNDER_T unter Wasser |
+      // Alle drei Uebergaenge sind STETIG in Hoehe UND Nickwinkel — nachgerechnet, siehe die
+      // Herleitungen bei den Konstanten. Ein Knick faellt sofort auf: das Tier wuerde in einem Frame
+      // die Nase umlegen.
       if(o.t >= ORCA_JUMP_CYCLE) o.t -= ORCA_JUMP_CYCLE;
-      const tf = o.t - (ORCA_JUMP_CYCLE - ORCA_JUMP_T);   // Flugzeit; negativ = noch Pause
-      if(tf >= 0){
-        // Senkrecht eine reine Wurfparabel: vy0 = v0 sin a, y = vy0 t - g t^2 / 2. Bei tf = 0 und
-        // tf = ORCA_JUMP_T ist der Summand 0, er setzt also genau auf der Schwimmhoehe an und
+      const tj = o.t - (ORCA_JUMP_CYCLE - ORCA_RUNUP_T - ORCA_JUMP_T - ORCA_UNDER_T);  // ab Anlaufbeginn
+      if(tj >= 0 && tj < ORCA_RUNUP_T){
+        // ANLAUF: absinken und mit Steigung herauskommen. f(s) = -A s^2 (1-s), Ableitung
+        // f'(s) = -A (2s - 3s^2), die Zeitableitung also f'(s)/T.
+        const s = tj / ORCA_RUNUP_T;
+        o.y = swimY - ORCA_RUNUP_A * s*s*(1-s);
+        const vyR = -ORCA_RUNUP_A * (2*s - 3*s*s) / ORCA_RUNUP_T;
+        o.pitch = Math.atan2(vyR, ORCA_SPD);
+      } else if(tj >= ORCA_RUNUP_T && tj < ORCA_RUNUP_T + ORCA_JUMP_T){
+        // FLUG. Senkrecht eine reine Wurfparabel: vy0 = v0 sin a, y = vy0 t - g t^2 / 2. Bei tf = 0
+        // und tf = ORCA_JUMP_T ist der Summand 0, er setzt also genau auf der Schwimmhoehe an und
         // kommt dort wieder an — kein Sprung aus dem Nichts und kein Ruck beim Eintauchen.
+        const tf  = tj - ORCA_RUNUP_T;
         const vy0 = ORCA_JUMP_V * Math.sin(ORCA_JUMP_A);
         o.y = swimY + vy0*tf - 0.5*ORCA_G*tf*tf;
         // Nase folgt der Bahn — dieselbe Rechnung wie beim Flieger: pitch = atan2(vy, vHoriz).
@@ -2087,8 +2136,21 @@ function updateOrcas(dt){
         // 40 m ganz von selbst, sie ist nirgends als Zahl hinterlegt.
         o.x += fx * (vh - ORCA_SPD) * dt;
         o.z += fz * (vh - ORCA_SPD) * dt;
+      } else if(tj >= ORCA_RUNUP_T + ORCA_JUMP_T){
+        // UNTER WASSER. Sinusbogen bis ORCA_DIVE_J Tiefe und zurueck (siehe die Herleitung dort):
+        // y = swimY - D sin(pi s). Vorwaerts geht es mit ORCA_SPD weiter, das steht schon oben.
+        const s = (tj - ORCA_RUNUP_T - ORCA_JUMP_T) / ORCA_UNDER_T;
+        o.y = swimY - ORCA_DIVE_J * Math.sin(Math.PI*s);
+        // Nase wieder aus der Bahn: vy = -D (pi/T) cos(pi s), vh = ORCA_SPD. Bei s = 0 ergibt das
+        // atan2(-3,20; 3,2) = -45 Grad, also genau den Winkel, mit dem er in der Luft angekommen
+        // ist — der Uebergang ist stetig, es gibt keinen Knick. Bei s = 1 entsprechend +45 Grad,
+        // er kommt also mit der Schnauze nach oben heraus und geht von dort ins Schwimmen.
+        const vyU = -ORCA_DIVE_J * (Math.PI/ORCA_UNDER_T) * Math.cos(Math.PI*s);
+        o.pitch = Math.atan2(vyU, ORCA_SPD);
       } else {
-        // Pause: normal an der Oberflaeche schwimmen, Ruecken knapp heraus, Nase glatt ziehen.
+        // SCHWIMMEN. Ruecken knapp heraus, Nase glatt ziehen. Die +45 Grad vom Auftauchen laufen
+        // hier aus; nach 7 s ist die Nase praktisch waagerecht, und genau darauf setzt der Anlauf
+        // mit f'(0) = 0 wieder auf.
         o.y = swimY;
         o.pitch += (0 - o.pitch) * Math.min(1, 3*dt);
       }

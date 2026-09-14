@@ -2165,3 +2165,49 @@ plausibel aussieht, beantwortet nicht automatisch die Frage, die man eigentlich 
 der hier nicht in der Modellmitte liegt (roh Z −916 bis 4). Nachgerechnet: nach dem Skalieren Z
 −7,967…0,035, nach der Drehung −0,035…7,967, nach dem Zentrieren symmetrisch −4,001…4,001 — und der Kopf,
 vorher bei Z-max, sitzt jetzt bei −4,0, also auf −Z.
+
+### Nachtrag 2: Sprung mit Anlauf und Tauchbogen
+
+Gewünscht: „die orcas könnten beim eintauchen ganz unter wasser gehen und dann wieder etwas auftauchen (so
+wie sie jetzt sind)".
+
+Der Springer-Zyklus hat jetzt **vier** Abschnitte statt zwei:
+
+| Phase | Dauer | was passiert |
+|---|---|---|
+| Schwimmen | 7,0 s | Rücken 0,45 m heraus, Nase waagerecht |
+| Anlauf | 4,0 s | sinkt 1,90 m ab und kommt mit Steigung heraus |
+| Flug | 2,86 s | 10 m hoch, 40 m weit, ±45° |
+| Unter Wasser | 6,0 s | 6,11 m tief, ganz verschwunden |
+
+Zusammen 19,86 s — ein Sprung also alle 20 s je Springer statt alle 11,9 s.
+
+**Unter Wasser:** Sinusbogen `y = swimY - D·sin(π·s)`. `sin` und nicht `sin²` oder smoothstep, weil es an
+beiden Enden die Steigung π hat — er taucht *mit* Fahrt ein und kommt *mit* Fahrt heraus, statt an der
+Oberfläche zu kleben. Die Tiefe ist nicht gewählt, sondern folgt aus der Stetigkeit: in der Luft kommt er
+mit −45° an, also vy/vh = −1; unter Wasser ist vh = `ORCA_SPD`, gebraucht wird also vy = −`ORCA_SPD`, und
+mit vy = D·π/T ergibt das **D = ORCA_SPD·T/π = 6,11 m**. Die Oberkante liegt am tiefsten Punkt bei
+−3,87 m, deutlich unter dem Wellental (−1,6 m) — er ist wirklich ganz weg. Beim Auftauchen +45°, also
+Schnauze nach oben heraus.
+
+**Anlauf:** Beim Nachrechnen fiel auf, dass die Nase beim Absprung in *einem* Frame von 0 auf +45° sprang
+— **44,8° Knick**. Beim Eintauchen hatte ich auf Stetigkeit geachtet, beim Absprung nicht; die Simulation
+hat es gefunden, im Spiel wäre es als Zucken aufgefallen. Ein Wal springt auch nicht aus dem Stand.
+
+Die Bahn ist `f(s) = -A·s²·(1-s)`, gewählt weil sie an beiden Enden passt:
+
+- `f(0) = 0` und `f'(0) = 0` → geht waagerecht aus dem Schwimmen heraus
+- `f(1) = 0` und `f'(1) = +A` → endet auf Schwimmhöhe und steigt dort schon
+
+Für die +45° braucht es A = `ORCA_SPD`·T. Die Anlauftiefe folgt daraus: Minimum bei s = 2/3, dort
+4A/27 = 1,90 m.
+
+**Nachgerechnet:** alle vier Bahnübergänge sind exakt stetig in Höhe *und* Nickwinkel — Differenz 0,00° an
+jedem. Was in der Simulation zunächst als 2,25°-Sprung auftauchte, ist die Nase, die nach dem Auftauchen
+mit `3·dt` auf waagerecht gelerpt wird: eine gewollte Bewegung, in einer halben Sekunde abgeklungen, nach
+den 7 s Schwimmen bei 0,004° — worauf der Anlauf mit `f'(0) = 0` wieder aufsetzt.
+
+**Nebenbei ein Fehler, den die Prüfung abgefangen hat:** `ORCA_SPD` musste nach oben wandern, weil
+`ORCA_DIVE_J` es in seiner eigenen Deklaration liest. `const` wird nicht gehoisted — in der ersten Fassung
+stand die Nutzung 23 Zeilen vor der Deklaration, was beim Laden einen `ReferenceError` geworfen und das
+Spiel schwarz gelassen hätte.
