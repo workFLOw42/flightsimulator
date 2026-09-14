@@ -1938,6 +1938,15 @@ function preloadOrca(){
     // Laengsachse auf Z (beim Orca liegt sie schon dort, die Zeile ist die gleiche Absicherung wie
     // bei den Schiffen). ZUERST drehen, DANN zentrieren — rotation.y dreht um den Objektursprung.
     if(size.x > size.z) obj.rotation.y = Math.PI/2;
+    // Und um 180 Grad weiter: das Modell ist gegen die Fahrtrichtung gebaut, die Schnauze zeigt auf
+    // +Z, das Spiel erwartet die Nase auf -Z. Ohne das schwimmt und springt es rueckwaerts, mit der
+    // Fluke voran — genau so gemeldet.
+    // Nachgemessen am Laengsschnitt (16 Baender ueber die 8 m): die Fluke ist flach und breit und
+    // liegt bei Z = 0,0 (Hoehe 0,12 m, Breite 2,06), die Brustflossen sitzen bei Z = 5,0 bis 6,0
+    // (Breite 4,16 bis 4,20) und die Rueckenfinne bei Z = 4,5 (Hoehe 3,01). Beim Orca sitzen
+    // Brustflossen und Finne im vorderen Drittel, die Fluke am Ende — der Kopf liegt hier also bei
+    // HOHEM Z. Dasselbe wie rot180 bei Kreuzfahrtschiff und Liberty-Frachter.
+    obj.rotation.y += Math.PI;
     obj.updateMatrixWorld(true);
     const b2 = new THREE.Box3().setFromObject(obj);
     const c = new THREE.Vector3(); b2.getCenter(c);

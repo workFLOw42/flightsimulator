@@ -2139,3 +2139,29 @@ weichen sie Land, Strand, Träger und Schiffen aus (30 m Vorausschau = 9 s Reakt
 | Tempo | 3,2 m/s = 11,5 km/h (echte Orcas: 8–12) |
 | Sprung | 45°, 10 m hoch, 40 m weit, 2,86 s, alle 11,86 s |
 | Tauchen | 7 m tief, Zyklus 22 s, max 25,1° Nickwinkel |
+
+### Nachtrag: sie schwammen rückwärts
+
+Gemeldet: „die orcas springen rückwärts... Fahrtrichtung wäre um 180° gedreht".
+
+Nachgemessen am Längsschnitt (16 Bänder über die 8 m Länge):
+
+| Merkmal | Z-Position | Maß |
+|---|---|---|
+| Fluke (flach + breit) | 0,0 m | Höhe 0,12 m, Breite 2,06 m |
+| Rückenfinne (höchste Stelle) | 4,5 m | Höhe 3,01 m |
+| Brustflossen (breiteste Stelle) | 5,0–6,0 m | Breite 4,16–4,20 m |
+
+Beim Orca sitzen Brustflossen und Finne im vorderen Drittel, die Fluke am Ende — der Kopf liegt in diesem
+Modell also bei **hohem Z**, die Schnauze zeigt auf +Z. Das Spiel erwartet sie auf −Z.
+
+Derselbe Fall wie `rot180` beim Kreuzfahrtschiff und beim Liberty-Frachter. Ich hatte beim Orca nur nicht
+darauf geprüft: die Längsachse lag schon auf Z, damit sah der Loader fertig aus. Die Ausrichtung
+**innerhalb** der Achse ist aber eine zweite, unabhängige Frage — und bei den Schiffen steht genau dazu ein
+Kommentar, den ich hätte lesen können. Der Lernpunkt ist derselbe wie beim U-Boot: eine Messung, die
+plausibel aussieht, beantwortet nicht automatisch die Frage, die man eigentlich hat.
+
+`obj.rotation.y += Math.PI` steht vor der Zentrierung, weil `rotation.y` um den Objektursprung dreht und
+der hier nicht in der Modellmitte liegt (roh Z −916 bis 4). Nachgerechnet: nach dem Skalieren Z
+−7,967…0,035, nach der Drehung −0,035…7,967, nach dem Zentrieren symmetrisch −4,001…4,001 — und der Kopf,
+vorher bei Z-max, sitzt jetzt bei −4,0, also auf −Z.
