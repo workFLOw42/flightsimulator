@@ -3211,23 +3211,28 @@ function evaLeaveDinghy(x, z){
 // minutenlang unterwegs, waehrend man vor einer leeren Sternenkulisse steht.
 function jetSnapCam(){
   if(!eva) return;
-  // Genau dieselbe Formel wie in updateCamera: waagerecht 7 m mal Abstandsfaktor hinter dem
-  // Astronauten, 3,4 m mal Abstandsfaktor darüber, Blick auf ihn. Weicht sie ab, springt die Kamera
-  // im nächsten Bild um und der Ortswechsel sieht aus wie ein Ruckler.
-  //
-  // Der Nickwinkel steckt bewusst NICHT drin — weder im Platz noch im Blickziel. Er gehört an den
-  // Astronauten (updateJet legt ihn in Flugrichtung), nicht an die Kamera: auf der Flugachse
-  // sitzend stand sie bei steilem Steigflug unter ihm und das Bild kippte.
+  // GENAU dieselbe Formel wie im eva-Zweig von updateCamera — Abstand 7 m mal Faktor hinter ihm,
+  // 3,4 m mal Faktor darüber, beides um den geklemmten Nickwinkel mitgedreht, Blick auf ihn.
+  // Weicht sie ab, springt die Kamera im nächsten Bild um und der Ortswechsel sieht aus wie ein
+  // Ruckler. Wer hier etwas ändert, muss es dort auch ändern.
   const bt = eva.jet ? 1.9 : 1;
-  const back = new THREE.Vector3(Math.sin(eva.yaw), 0, Math.cos(eva.yaw));
-  camera.position.copy(eva.group.position).addScaledVector(back, 7*bt);
-  camera.position.y = eva.group.position.y + 3.4*bt;
-  camera.up.set(0, 1, 0);
-  const ziel = eva.group.position.clone()
-    .addScaledVector(new THREE.Vector3(-back.x, 0, -back.z), EVA_LOOK_AHEAD);
-  ziel.y = eva.group.position.y + ASTRONAUT_H*0.6;
+  const jp = eva.jet ? Math.max(-0.9, Math.min(0.9, eva.jetPitch)) : 0;
+  const q  = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, 0, 'YXZ'));
+  const back = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  const fwd  = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  camera.position.copy(eva.group.position)
+    .addScaledVector(back, 7*bt)
+    .addScaledVector(upV,  3.4*bt);
+  camera.up.copy(eva.jet ? upV : new THREE.Vector3(0, 1, 0));
+  const ziel = eva.group.position.clone().addScaledVector(fwd, EVA_LOOK_AHEAD * 0.35);
   camera.lookAt(eva.jet ? ziel : eva.group.position);
 }
+// Das Jetpack wechselt den ORT NICHT MEHR. Es zuendet dort, wo man steht: auf einer Insel, auf dem
+// Mond, auf dem Mars, im Hangar. Von dort fliegt man selbst weiter — auch ins Weltall, indem man
+// einfach hoch genug steigt (updateLocale macht das fuer den Astronauten jetzt genauso wie fuer den
+// Flieger). Vorher sprang es sofort auf locale = 'space' und beamte einen vor den Todesstern; das war
+// der gemeldete Fehler „er wechselt auf der Erde automatisch in den Weltraum".
 function evaStartJet(x, z, y){
   if(!eva || eva.jet) return;
   eva.jet = true;
@@ -3236,79 +3241,70 @@ function evaStartJet(x, z, y){
   eva.vy = 0; eva.onGround = false;
   evaJumpFrom = null;                   // ein laufender Sprung endet hier
   state.throttle = 0;                   // er soll schweben, nicht sofort losschiessen
-  // Wo man startet, wird gemerkt: von der ERDE aus soll das Andocken am Todesstern nicht in den
-  // Hangar fuehren, sondern dorthin zurueck, wo der eigene Flieger steht. Sonst laesst ein Kind
-  // seinen Airbus auf einer Insel stehen und findet ihn nie wieder.
+  // Wo der eigene Flieger steht, bleibt gemerkt: kommt man spaeter aus dem Weltall zurueck, fuehrt
+  // das Andocken dorthin und nicht in den Hangar. Sonst laesst ein Kind seinen Airbus auf einer
+  // Insel stehen und findet ihn nie wieder.
   jetFrom = { locale: locale, x: eva.planeAt.x, y: eva.planeAt.y, z: eva.planeAt.z };
+  // Ein Stueck ueber den Boden heben, damit er sichtbar abhebt statt in der Grasnarbe zu stehen.
+  eva.group.position.y += 1.2;
+  // Kamera hart hinter ihn: der Blickwinkel aendert sich beim Zuenden (sie folgt jetzt dem Nicken),
+  // und ohne Snap schwenkt sie sichtbar herum.
+  jetSnapCam();
+  showBig('\u{1F680}'); bigTimer = 1.2;
+  console.log('[Jetpack] gezuendet auf', locale, 'bei',
+              eva.group.position.x.toFixed(0), eva.group.position.y.toFixed(0), eva.group.position.z.toFixed(0));
+}
+// Vom Jetpack aus ins WELTALL: erreicht man, indem man hoch genug steigt — dieselbe Regel und
+// dieselbe Schwelle, die auch der Flieger hat (SPACE_Y auf der Erde, GROUNDS[..].leave auf Mond und
+// Mars, die Hallengrenzen im Hangar). Gerufen wird das aus updateLocale.
+function evaJetToSpace(){
+  if(!eva || !eva.jet) return;
   const vonErde = (locale === 'earth');
-  // Die Koerper um die AKTUELLE Stelle herum legen. Von der Erde aus zaehlt layoutBodies(true): dann
-  // liegt der Erdmittelpunkt genau EARTH_R unter dem Startpunkt, ihre Oberflaeche also dort, wo eben
-  // noch die Insel war — genau wie beim Flieger in enterSpace. Ohne das (der alte Aufruf lief nur
-  // bei !spacePlaced und ohne fromEarth) landete die Erdkugel weit ab, und der Rueckweg zeigte auf
-  // eine Stelle, an der gar keine Erde ist.
+  // Die Koerper um die AKTUELLE Stelle herum legen. Von der Erde aus mit fromEarth: dann liegt der
+  // Erdmittelpunkt genau EARTH_R unter dem Austrittspunkt, ihre Oberflaeche also dort, wo eben noch
+  // die Insel war — genau wie beim Flieger in enterSpace.
   if(vonErde) layoutBodies(true);
-  else if(!spacePlaced) layoutBodies();  // sonst liegen alle Koerper auf (0,0,0)
-  // Den alten Ort abraeumen und ins Weltall wechseln — dieselben Schritte wie in leaveHangar.
-  // Von der Erde aus gibt es KEINEN Gastgeber: man steigt von der Erde auf und kehrt zu ihr zurueck.
-  // Sonst haette hangarHost (noch vom letzten Hangarbesuch gesetzt) einen von der Insel weg direkt
-  // an den Todesstern gebeamt, und der eigene Flieger waere unerreichbar geblieben.
-  jetHost = vonErde ? null : hangarHost; // wohin man zurueckkehrt (Todesstern, Destroyer oder ISS)
-  // Die ERDWELT muss ausdruecklich weg: Inseln, Meer, Wolken, Traeger, Schiffe und der Flugverkehr
-  // stehen sonst weiter im Bild, waehrend man zwischen den Planeten fliegt. Im Hangar und auf
-  // Mond/Mars war das nie noetig, deshalb fehlte der Schritt — jetzt startet das Jetpack ueberall.
+  else if(!spacePlaced) layoutBodies();
+  // Wohin ein Andocken am Todesstern zurueckfuehrt: nur wenn man auch WIRKLICH aus dem Hangar kommt.
+  // Steigt man von der Erde, dem Mond oder dem Mars auf, ist der Hangar nicht der Heimatort — dort
+  // steht der eigene Flieger nicht. hangarHost traegt aber noch den Wert vom letzten Hangarbesuch,
+  // und mit dem waere man beim Andocken in die Halle geschickt worden, waehrend der Airbus auf einer
+  // Insel stehen bleibt. Den Rueckweg zum echten Startort kennt jetFrom (siehe evaEndJetToEarth und
+  // evaEndJetToGround), das in evaStartJet gesetzt wird.
+  jetHost = (locale === 'death') ? hangarHost : null;
   if(vonErde) earthWorldVisible(false);
   locale = 'space';
   if(hangarObj) hangarObj.visible = false;
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
   if(earthBall){ earthBall.position.copy(earthHome); earthBall.visible = true; }
-  if(vonErde){
-    // Von der Erde aus GERADE NACH OBEN heraus, an derselben Stelle. Auf SPACE_Y (4000 m), und das
-    // ist kein gerundeter Wert: die Rueckkehrschale liegt bei EARTH_R + EARTH_Y = 22200 m vom
-    // Erdmittelpunkt, der bei y = -20000 liegt. Auf 4000 m ist der Abstand 24000 m — 1800 m Luft.
-    // Bliebe er auf Inselhoehe stehen, saugte ihn die Erde nach Ablauf von dockLock sofort zurueck.
-    eva.group.position.set(eva.group.position.x, SPACE_Y, eva.group.position.z);
-  } else {
-    // Knapp ueber dem Gastgeber herauskommen, wie der Flieger. Nicht an der Hallenkante bleiben:
-    // der Hangar steht im Ursprung, die Himmelskoerper aber an ihren echten Plaetzen bis 900 km weit
-    // weg (ausgemessen) — dort saehe man sie als Punkte.
-    const host = jetHost || (bodyOf('death') ? { pos:bodyOf('death').center.clone(), up:bodyOf('death').def.r*1.4 } : null);
-    if(host) eva.group.position.copy(host.pos).add(new THREE.Vector3(0, host.up, 0));
-    else eva.group.position.set(x, y, z);
-  }
-  // Der X-Wing bleibt im Hangar stehen — aber eva.planeAt muss mitwandern, sonst zieht die
-  // EVA-Leine den Astronauten sofort um Kilometer zurueck (sie misst den Abstand dorthin).
-  eva.planeAt.copy(eva.group.position);
-  // state.pos MUSS gleich mitkommen, nicht erst im naechsten updateJet: daran haengt die gesamte
-  // Weltall-Logik, und updateLocale() laeuft in DEMSELBEN Frame weiter (auch waehrend der EVA).
-  // Bliebe es auf der Insel stehen, waere der Abstand zu earthHome genau EARTH_R — updateSpaceBodies
-  // sieht das als Wiedereintritt und ruft enterEarth, ohne dockLock zu beachten: das Jetpack waere
-  // im selben Frame wieder aus. Auch _segFrom wird neu gesetzt, sonst zieht pathDist eine
-  // Verbindungslinie vom alten Ort quer durch den halben Flugraum und trifft Koerper unterwegs.
-  state.pos.copy(eva.group.position);
-  state.vel.set(0, 0, 0);
-  _segFrom.copy(state.pos); _segOk = false;
-  // Andocken kurz sperren: sonst saugt der Todesstern einen im selben Moment wieder ein, in dem
-  // man vor ihm auftaucht (dieselbe Sperre benutzt leaveHangar).
-  dockLock = 6; warpBrakeLock = 6; warpDrive = 0; warpVis = 0;
   clearGroundTiles();
-  // Kamera HART hinter den Astronauten setzen. Ohne das bleibt sie im Hangar stehen und kriecht
-  // ueber 180 km hinterher (gemessen) — der Astronaut ist 1,9 m gross und damit unsichtbar: man
-  // sieht nur Sterne. Dasselbe macht leaveHangar mit snapCamera fuer den Flieger.
+  eva.planeAt.copy(eva.group.position);   // sonst zieht die EVA-Leine sofort zurueck
+  // state.pos traegt die gesamte Weltall-Logik (Anflug, Andocken, Asteroiden, Radar, Nebel).
+  // _segFrom mit zuruecksetzen, sonst zieht pathDist eine Verbindungslinie vom alten Ort quer durch
+  // den Flugraum und trifft Koerper unterwegs.
+  state.pos.copy(eva.group.position);
+  _segFrom.copy(state.pos); _segOk = false;
+  // Kurz nicht andocken und nicht bremsen: man taucht dicht an dem Koerper auf, von dem man kommt.
+  dockLock = 6; warpBrakeLock = 6; warpDrive = 0; warpVis = 0;
   jetSnapCam();
-  showBig('\u{1F680}'); bigTimer = 1.2;
   showSpaceHint('\u{1F680}');
   flashFade();
-  console.log('[Jetpack] ins Weltall bei', eva.group.position.x.toFixed(0), eva.group.position.y.toFixed(0), eva.group.position.z.toFixed(0));
+  console.log('[Jetpack] ins Weltall bei', eva.group.position.y.toFixed(0), 'm');
 }
 // Flug mit dem Jetpack — es verhaelt sich wie ein FAHRZEUG im Weltall, so wie der X-Wing.
 // Steuerung wie beim X-Wing (so gewuenscht): Schub gibt die Zielfahrt, der linke Stick dreht und
 // nickt, geflogen wird in Blickrichtung. Ein Jetpack hat keine Flaeche, die quer traegt, also gibt
 // es keinen Kurvenflug aus der Querlage.
 //
-// Weil locale hier 'space' ist, laufen Anflug, Andocken, Asteroiden, Schiffe und Radar ueber die
-// VORHANDENE Weltall-Logik — dafuer war keine eigene Zeile noetig. Nur der Antrieb ist eigen: ein
-// Astronaut fliegt nicht mit Warp, sondern mit 45 m/s.
+// Im WELTALL laufen Anflug, Andocken, Asteroiden, Schiffe und Radar ueber die VORHANDENE
+// Weltall-Logik — dafuer war keine eigene Zeile noetig. An einem Ort MIT Boden (Erde, Mond, Mars,
+// Hangar) gilt derselbe Antrieb, nur ist dort der Boden fest: wer aufsetzt, steht wieder zu Fuss da.
 function updateJet(dt, inp){
+  // Sicherheitsnetz: das Jetpack kann INNERHALB dieses Frames ausgehen (Aufsetzen am Boden, Andocken
+  // an einem Koerper). Danach ist eva.jetVel null, und ein zweiter Aufruf im selben Frame — oder ein
+  // Aufruf gleich danach — lief in „Cannot read properties of null". Vorher war das unmoeglich, weil
+  // das Jetpack nur ueber das Andocken endete und dabei immer der Ort wechselte.
+  if(!eva || !eva.jet || !eva.jetVel) return;
   const g = eva.group, v = eva.jetVel;
   eva.yaw -= (inp.yaw || 0) * JET_YAW * dt;
   // Nase heben und senken. Der Stick nach vorn (negativ) soll nach UNTEN zeigen, wie im Flieger.
@@ -3345,6 +3341,37 @@ function updateJet(dt, inp){
   // state.pos MUSS mitwandern: daran haengt die gesamte Weltall-Logik (Anflug, Andocken,
   // Asteroiden, Sternenkuppel, Nebel, Kamera-Bezug). Ohne das schaut das Spiel weiter auf die
   // Stelle, an der der X-Wing steht, und man fliegt an allem vorbei, ohne dass etwas naeher kommt.
+  // ---- Boden: an einem ORT MIT GRUND (Erde, Mond, Mars, Hangar) kann man nicht hindurchfliegen.
+  // Das Jetpack ist ueberall schwerelos (kein Fallen, kein Schweben-Anregeln), aber der Boden ist
+  // fest: wer aufsetzt, steht wieder und kann weiterlaufen. Im Weltall gibt es keinen Boden.
+  //
+  // WICHTIG: state.pos wird hier NICHT mitgezogen. Das gehoert dem stehenden Flieger, und auf der
+  // Erde haengen die Inselzellen daran (updateIslands baut um state.pos herum auf) — der Astronaut
+  // haette sonst die ganze Welt hinter sich hergeschleppt. Nur im Weltall unten ist state.pos der
+  // Astronaut selbst, weil dort die Weltall-Logik daran haengt und kein Flieger unterwegs ist.
+  if(locale !== 'space'){
+    const fy = (locale === 'death') ? hangarFloorY : evaFootY(g.position.x, g.position.z);
+    // Im Hangar traegt nur die ausgemessene Bodenflaeche; jenseits davon geht es hinunter ins Freie
+    // (dieselbe Regel wie zu Fuss, siehe evaSolid).
+    const traegt = (locale === 'death') ? onHangarFloor(g.position.x, g.position.z) : true;
+    if(traegt && g.position.y <= fy){
+      g.position.y = fy;
+      if(v.y < 0) v.y = 0;
+      // Aufgesetzt: das Jetpack aus, er steht wieder zu Fuss da. Genau wie beim X-Wing, der bei
+      // 0 % Schub aufsetzt — kein Absturz, sondern eine Landung.
+      eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+      eva.vy = 0; eva.onGround = true;
+      g.rotation.set(0, eva.yaw, 0);       // wieder aufrecht hinstellen
+      state.throttle = 0;
+      evaKmh = 0;
+      jetSnapCam();
+      showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
+      console.log('[Jetpack] aufgesetzt auf', locale, 'bei', fy.toFixed(1), 'm');
+      return;
+    }
+    evaKmh += (v.length()*3.6 - evaKmh) * Math.min(1, 8*dt);
+    return;
+  }
   state.pos.copy(g.position);
   state.vel.copy(v);
   eva.planeAt.copy(g.position);      // sonst zieht die EVA-Leine sofort zurueck
@@ -3418,12 +3445,20 @@ function evaEndJetToHangar(host){
   showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
   console.log('[Jetpack] angedockt, zurueck im Hangar');
 }
-// Auf Mond oder Mars aufsetzen: dort gibt es Boden, also laeuft man einfach weiter. Der X-Wing
-// bleibt im Hangar zurueck — man ist dann zu Fuss auf dem Mond, was ein schoener Anblick ist.
+// Auf Mond oder Mars aufsetzen: dort gibt es Boden, also laeuft man einfach weiter.
+//
+// Kommt man dorthin ZURUECK, wo man gestartet ist, wird der Flieger an seine gemerkte Stelle gesetzt
+// (jetFrom): sonst steht der X-Wing irgendwo auf dem Mond, waehrend man selbst am anderen Ende des
+// Kraters aufsetzt, und man findet ihn nicht wieder. Bei einem FREMDEN Koerper — vom Mond zum Mars
+// geflogen — gibt es dort keinen geparkten Flieger; dann setzt setupApproach den Landeplatz, und der
+// Flieger kommt einfach mit. Das ist gewollt: sonst waere man auf dem Mars gestrandet.
 function evaEndJetToGround(key){
   if(!eva) return;
   eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
   enterGround(key);
+  // Von HIER gestartet? Dann zurueck zum eigenen Flieger, nicht an einen zufaelligen Anflugpunkt.
+  const heim = (jetFrom && jetFrom.locale === key);
+  if(heim){ state.pos.x = jetFrom.x; state.pos.z = jetFrom.z; }
   const gy = vehicleGroundY(state.pos.x, state.pos.z);
   eva.group.position.set(state.pos.x, gy, state.pos.z);
   eva.group.rotation.set(0, eva.yaw, 0);
@@ -3431,9 +3466,10 @@ function evaEndJetToGround(key){
   eva.vy = 0; eva.onGround = true;
   state.pos.y = gy; state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
   planeGroup.position.copy(state.pos);
+  if(heim) jetFrom = null;
   jetSnapCam();   // auf den ASTRONAUTEN, nicht auf den Flieger (Sprung ueber Hunderte km)
   showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
-  console.log('[Jetpack] aufgesetzt auf', key);
+  console.log('[Jetpack] aufgesetzt auf', key, heim ? '(zurueck beim Flieger)' : '(fremder Koerper)');
 }
 // Zurueck auf die ERDE. Das ist der Rueckweg fuer alle, die von dort gestartet sind: Y auf einer
 // Insel zuendet das Jetpack, man fliegt zwischen den Planeten herum, und am Ende will man wieder
@@ -3799,10 +3835,11 @@ function updateEva(dt, inp){
   //
   // ANDERS als bei Boot und Rover wird state.pos hier NICHT auf eva.planeAt zurueckgesetzt.
   // Boot und Rover fahren auf der Erde bzw. auf dem Mond herum, waehrend der Flieger an seinem
-  // Platz stehen bleibt — dort ist das richtig. Das Jetpack ist im WELTALL, und daran haengt die
-  // ganze vorhandene Weltall-Logik: Anflug, Andocken, Asteroiden, Sternenkuppel, Nebel. Mit dem
-  // Zuruecksetzen schaute das Spiel weiter auf die Stelle im Hangar, und man flog an allem vorbei,
-  // ohne dass etwas naeher kam. updateJet fuehrt state.pos deshalb selbst mit.
+  // Platz stehen bleibt — dort ist das richtig. Das Jetpack fliegt an JEDEM Ort: auf der Erde, auf
+  // Mond und Mars, im Hangar und im Weltall. Nur im WELTALL fuehrt updateJet state.pos selbst mit,
+  // weil dort die ganze vorhandene Logik daran haengt (Anflug, Andocken, Asteroiden, Sternenkuppel,
+  // Nebel) und kein Flieger unterwegs ist. An einem Ort MIT Boden bleibt state.pos beim stehenden
+  // Flieger — auf der Erde haengen die Inselzellen daran.
   if(eva.jet){
     updateJet(dt, inp);
     return;
@@ -3884,8 +3921,9 @@ function updateEva(dt, inp){
       for(let s = 0.5; s <= JET_EDGE*2; s += 0.5){
         const px = g.position.x + jx*s, pz = g.position.z + jz*s;
         if(onHangarFloor(px, pz)) continue;        // noch Hallenboden davor -> weitersuchen
-        // evaStartJet wechselt jetzt wirklich ins Weltall und setzt ihn vor den Todesstern — die
-        // Koordinaten hier sind nur noch der Rueckfall, falls kein Gastgeber bekannt ist.
+        // Ueber die Hallenkante hinaus: das Jetpack zuendet, aber es bleibt IM HANGAR. Ins Weltall
+        // kommt man von hier aus, indem man selbst hinausfliegt (updateLocale) — vorher sprang es
+        // sofort vor den Todesstern, was ungewollt war.
         evaStartJet(px, pz, g.position.y + 0.6); return;
       }
     }
@@ -5549,6 +5587,26 @@ function leaveGround(){
 }
 function updateLocale(){
   if(state.crashed || state.ejected || state.falling) return;
+  // AM JETPACK zaehlt die Hoehe des ASTRONAUTEN, nicht die des stehenden Fliegers: er ist derjenige,
+  // der hinausfliegt. Dieselben Schwellen wie beim Flieger — auf der Erde SPACE_Y, auf Mond und Mars
+  // die Verlassehoehe des Ortes, im Hangar die Hallengrenzen. So kommt man ins Weltall, indem man
+  // selbst hoch genug steigt; das Jetpack springt nicht mehr von allein dorthin.
+  if(eva && eva.jet && locale !== 'space'){
+    const jp = eva.group.position;
+    if(locale === 'earth'){
+      if(jp.y >= SPACE_Y) evaJetToSpace();
+    } else if(locale === 'death'){
+      // Aus der Halle hinaus: seitlich ueber HANGAR_OUT_R oder unten unter den Boden. Nach oben ist
+      // die Decke fest, genau wie fuer den Flieger — dort stoesst man an und bleibt drin.
+      const top = hangarCeilY - 7;
+      if(jp.y > top){ jp.y = top; if(eva.jetVel && eva.jetVel.y > 0) eva.jetVel.y = 0; }
+      if(Math.hypot(jp.x, jp.z) > HANGAR_OUT_R || jp.y < hangarFloorY - 20) evaJetToSpace();
+    } else {
+      const G = GROUNDS[locale];
+      if(G && jp.y - surfaceY(jp.x, jp.z) > G.leave) evaJetToSpace();
+    }
+    return;
+  }
   if(locale === 'earth'){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
@@ -5642,6 +5700,10 @@ function pathDist(c){
 const WARP_BRAKE_AT  = 1.5;
 const WARP_BRAKE_THR = 0.9;
 function warpBrakeFor(center, d, r){
+  // Nie am Jetpack: dort gibt es keinen Hyperraum, aus dem man herausfallen koennte, und der
+  // gedrosselte Schub war der gemeldete Ruecksprung von 100 % auf 90 %. warpDrive ist am Jetpack
+  // jetzt ohnehin 0 (siehe updateWarp), aber die Bremse soll den Schub gar nicht erst anfassen.
+  if(eva && eva.jet) return;
   if(d >= r*WARP_BRAKE_AT || warpDrive <= 0.02 || warpBrakeLock > 0) return;
   const v = state.vel.length();
   const toward = v > 1 ? state.vel.dot(_bodyDir.copy(center).sub(state.pos).normalize())/v : 0;
@@ -5695,7 +5757,13 @@ function updateSpaceBodies(){
 function updateWarp(dt){
   if(warpBrakeLock > 0) warpBrakeLock -= dt;
   if(dockLock > 0) dockLock -= dt;
-  const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
+  // Am JETPACK gibt es keinen Hyperraumantrieb: ein Astronaut fliegt 45 m/s, nicht Lichtgeschwindigkeit.
+  // Ohne diese Ausnahme baute warpDrive auch am Jetpack auf, und sobald man auf irgendeinen Koerper
+  // zuflog, drosselte die Hyperraum-Bremse (warpBrakeFor) den Schub auf WARP_BRAKE_THR = 90 %.
+  // Genau das war der gemeldete Fehler „der Schub geht immer von 100 % auf 90 % zurueck": man hing
+  // im Jetpack staendig in der Naehe von irgendetwas, also passierte es dauernd.
+  const jetAn = !!(eva && eva.jet);
+  const full = (locale === 'space' && !jetAn && state.throttle >= 0.999 && !state.crashed);
   warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
   // Sicht-Anteil rein aus dem Tempo: der Ring erscheint erst AB Lichtgeschwindigkeit (Warp 1) und
   // ist bei Warp 10 voll da.
@@ -7790,28 +7858,40 @@ function updateCamera(){
     // Die Kamera steht bei ALLEN Sub-Modi schräg hinter und über dem Astronauten — zu Fuß, im Boot,
     // im Rover und am Jetpack gleich. Das ist die Ansicht, die man von einem Fahrzeug erwartet.
     //
-    // Am Jetpack folgte sie vorher dem Nickwinkel, saß also auf seiner Flugachse. Nachgerechnet ist
-    // das der gemeldete Fehler „von oben mit dem Kopf nach unten": bei 40 Grad Nick stand sie genau
-    // auf Augenhöhe (0,6 Grad), ab 60 Grad DARUNTER und schaute steil hinauf (bei 72 Grad, dem
-    // Anschlag JET_PMAX, um 44 Grad) — und weil camera.up fest (0,1,0) bleibt, kippt das Bild dabei
-    // um. Der Nickwinkel gehört an den Astronauten (das tut updateJet), nicht an die Kamera.
+    // AM JETPACK folgt sie zusätzlich dem NICKEN, genau wie die Verfolgerkamera des Fliegers. Ich
+    // hatte das Nicken erst ganz herausgenommen, weil die Kamera bei steilem Steigflug unter dem
+    // Astronauten stand und das Bild umkippte. Das war die falsche Abhilfe: gemeldet kam zurück
+    // „die Kamera bleibt starr, der Astronaut dreht sich" — er kippte im Bild, der Rahmen nicht,
+    // und damit sah man seine Flugrichtung nicht mehr.
     //
-    // Auch das BLICKZIEL kennt den Nickwinkel nicht. Beim ersten Versuch stand nur der Kameraplatz
-    // waagerecht, das Ziel folgte weiter dem Nicken — bei 72 Grad (JET_PMAX) liegt es dann 13,3 m
-    // ÜBER dem Astronauten, die Kamera schaut also an ihm vorbei in den leeren Raum, und er hängt
-    // unten am Bildrand. Das war der Rest des gemeldeten Fehlers.
+    // Richtig ist, was der Flieger tut (siehe die Verfolgerkamera weiter unten): den Nickwinkel
+    // KLEMMEN und camera.up MITKIPPEN lassen. Dann sitzt sie immer hinter ihm auf der Flugachse,
+    // und weil „oben" mitgeht, kippt das Bild nicht um. Geklemmt wird auf ±0,9 rad (51 Grad) —
+    // dieselbe Grenze wie beim Flieger; der Astronaut selbst darf steiler stehen (JET_PMAX, 72
+    // Grad), man sieht ihn dann noch steiler nicken als die Kamera.
     //
-    // Jetzt gilt für Jetpack, Rover und Boot dieselbe Regel: Kamera waagerecht schräg hinten, Blick
-    // auf den Astronauten. Wohin er fliegt, zeigt seine eigene Haltung — updateJet legt ihn in
-    // Flugrichtung, das sieht man von hinten deutlich.
-    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));   // waagerecht, wie im Rover
-    const fwd  = new THREE.Vector3(-back.x, 0, -back.z);               // waagerechte Blickrichtung
+    // Zu Fuß, im Boot und im Rover bleibt die Kamera waagerecht: dort gibt es kein Nicken, und der
+    // rechte Stick dient dem freien Umsehen (evaPitch).
+    const jetPitchCam = eva.jet ? Math.max(-0.9, Math.min(0.9, eva.jetPitch)) : 0;
+    const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(jetPitchCam, yaw, 0, 'YXZ'));
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camQ);   // hinter ihm, MIT Nicken
+    const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);   // Kamera-Oben kippt mit
+    const fwd  = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);  // Blickrichtung
     // Blickziel: vor dem Astronauten, um evaPitch gehoben bzw. gesenkt. Positiv = in den Himmel,
     // negativ = auf den Boden vor ihm. In jedem FAHRZEUG ist evaPitch 0 (der rechte Stick gibt dort
     // Schub statt umzusehen), die Rechnung fällt also von allein auf „geradeaus" zurück.
-    look.copy(g.position)
-        .addScaledVector(fwd, EVA_LOOK_AHEAD * Math.cos(evaPitch))
-        .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
+    //
+    // AM JETPACK schlicht auf IHN: fwd trägt den Nickwinkel schon, und die Kamera sitzt dank back/upV
+    // hinter ihm auf derselben Achse — sie sieht ihn also mittig, mit der Flugrichtung nach vorn aus
+    // dem Bild heraus. Ein zusätzlich vorausversetztes Ziel schöbe ihn wieder aus der Mitte, und
+    // genau daran war der erste Versuch gescheitert (13,3 m über ihm, er hing am Bildrand).
+    if(eva.jet){
+      look.copy(g.position).addScaledVector(fwd, EVA_LOOK_AHEAD * 0.35);
+    } else {
+      look.copy(g.position)
+          .addScaledVector(fwd, EVA_LOOK_AHEAD * Math.cos(evaPitch))
+          .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
+    }
     // Kamera: hinter ihm, gegenläufig zum Schwenk — schaut er hinauf, sinkt sie etwas, damit der
     // Blick über ihn hinweg in den Himmel geht statt auf seinen Helm.
     // Im Schlauchboot weiter weg und hoeher: bei 40 km/h ueber die Duenung braucht man Vorausblick
@@ -7831,11 +7911,17 @@ function updateCamera(){
     const desired = g.position.clone().addScaledVector(back, dist);
     // Höhe für ALLE gleich gerechnet: 3,4 m mal Abstandsfaktor über dem Astronauten. Am Jetpack
     // ergibt das mit bt = 1,9 gut 6,5 m auf 13,3 m Abstand — dieselben 26 Grad schräg von hinten,
-    // die man im Rover hat. Vorher addierte der Jetpack-Zweig nur 2,2 m auf einen Kameraplatz, der
-    // selbst dem Nickwinkel folgte; das war der gemeldete Blick von oben.
+    // die man im Rover hat.
     // Der evaPitch-Anteil (freies Umsehen mit dem rechten Stick) gilt nur, wo man sich umsieht — am
     // Jetpack lenkt derselbe Stick, dort ist evaPitch immer 0.
-    desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
+    //
+    // AM JETPACK entlang der MITGEKIPPTEN Hochachse (upV), nicht senkrecht: sonst hätte ein absolutes
+    // desired.y das Nicken wieder herausgerechnet, das back gerade eingebaut hat — die Kamera wäre
+    // bei steilem Steigflug erneut unter dem Astronauten gelandet. Genau so macht es die
+    // Verfolgerkamera des Fliegers (addScaledVector(upV, ...)).
+    const hoch = 3.4*bt - 2.2 * Math.sin(evaPitch);
+    if(eva.jet) desired.addScaledVector(upV, hoch);
+    else        desired.y = g.position.y + hoch;
     // Nicht unter den Boden: sonst schaut man durch das Gelände. Beim Blick nach oben darf sie
     // deshalb auch nicht beliebig tief — der Boden gewinnt.
     // Ueber Wasser zaehlt die WELLENhoehe: surfaceY gibt dort 0 zurueck, die Duenung reicht aber bis
@@ -7848,6 +7934,11 @@ function updateCamera(){
     }
     // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
     camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
+    // Kamera-Oben: am Jetpack die mitgekippte Hochachse. Weiter oben steht camera.up fest auf
+    // (0,1,0) — mit der bliebe der Horizont waagerecht, während die Kamera auf der Flugachse sitzt,
+    // und ab etwa 60 Grad Nicken stünde das Bild auf dem Kopf. Genau das war der Grund, warum ich
+    // das Nicken erst ganz herausgenommen hatte; mit mitkippendem up braucht es das nicht.
+    if(eva.jet) camera.up.copy(upV);
     camera.lookAt(look);
     return;
   }

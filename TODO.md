@@ -702,3 +702,117 @@ rechnet `dt` selbst aus der übergebenen Zeit und liefert mit vorgespulter Uhr U
 - Nachtrag zum ersten Anlauf: nach einem Crash läuft `resetPlane()` und stellt den X-Wing über
   `placeAtStart` in den **Hangar**. Wer danach ohne Aufräumen die nächste Landung messen will, misst
   auf Hangarhöhe. Reihenfolge im Testhelfer: erst Zustände löschen, dann Ort wechseln, dann Position.
+
+## Drei gemeldete Fehler am Jetpack (behoben)
+
+Wörtlich: „das jetpack feature funktiniert noch nicht. die kamera bleibt starr, der astronaut dreht
+sich. außerdem welchselt er auf der erde automatisch in den weltraum. ich wollte aber gerne auf der
+erde, auf dem mond oder mars rum fliegen können. oder im hangar und dann selbständig ins weltall
+fliegen. außerdem geht der schub immer von 100% auf 90% zurück"
+
+Rückgefragt und entschieden: das Jetpack ist **überall schwerelos** (eine Steuerung für alle Orte, nur
+der Boden ist fest), und ins Weltall kommt man, indem man **selbst hoch genug steigt** — kein
+Automatik-Sprung.
+
+### Fehler 1: Die Kamera blieb starr, der Astronaut drehte sich
+
+Mein Fehler aus der Runde davor. Ich hatte den Nickwinkel **ganz** aus der Kamera genommen, weil sie
+bei steilem Steigflug unter dem Astronauten stand und das Bild umkippte. Das war die falsche Abhilfe:
+so kippte nur noch **er** im Bild, der Rahmen nicht — und damit sah man seine Flugrichtung nicht mehr.
+
+Nachgemessen: das **Drehen** folgte die Kamera schon vorher exakt (0,00° Abweichung). Ich hatte in der
+Runde davor nur den Nickwinkel getestet, nie das Drehen — also genau den gemeldeten Fall nicht.
+
+Richtig ist, was die Verfolgerkamera des Fliegers längst tut: den Nickwinkel **klemmen** (±0,9 rad =
+51°, dieselbe Grenze) und `camera.up` **mitkippen** lassen. Dann sitzt sie immer hinter ihm auf der
+Flugachse, und weil „oben" mitgeht, kippt das Bild nicht um. Der Astronaut selbst darf steiler stehen
+(`JET_PMAX` = 72°), man sieht ihn also noch steiler nicken als die Kamera.
+
+Dazu musste dreierlei mitgehen, sonst hätte es sich gegenseitig aufgehoben:
+
+- die **Höhe** entlang der mitgekippten Hochachse (`addScaledVector(upV, …)`) statt als absolutes
+  `desired.y` — sonst rechnet ein absolutes y das Nicken wieder heraus, das `back` gerade eingebaut hat
+- das **Blickziel** auf die Flugachse (`fwd` trägt den Nickwinkel schon), nicht vorausversetzt
+- `jetSnapCam` mit **derselben** Formel, sonst springt die Kamera bei jedem Ortswechsel um
+
+Gemessen bei ±71,6°: Kamera +6,46 m flach → −10,82 m steil (sie kippt also mit), `camera.up` gekippt
+(0,62 statt 1,00), Blick 3,55° auf ihn, hinter ihm auf 6,15°.
+
+### Fehler 2: Auf der Erde sprang es automatisch ins Weltall
+
+`evaStartJet` schaltete sofort `locale = 'space'` und setzte den Astronauten vor den Todesstern. Ich
+hatte „Jetpack" mit „Weltall" gleichgesetzt — das war eine falsche Annahme, nicht nur ein Bug.
+
+Jetzt wechselt das Jetpack den Ort **nicht mehr**. Es zündet, wo man steht, und fliegt dort herum:
+
+- **Überall schwerelos** — kein Fallen, kein Schwebe-Anregeln, Schub gibt die Fahrt (45 m/s),
+  Nicken die Richtung. Dieselbe Steuerung auf Erde, Mond, Mars, im Hangar und im Weltall.
+- **Der Boden ist fest.** Wer aufsetzt, steht wieder zu Fuß da und kann weiterlaufen — wie der X-Wing
+  bei 0 % Schub: eine Landung, kein Absturz. Im Hangar trägt nur die ausgemessene Bodenfläche
+  (`onHangarFloor`), jenseits davon geht es hinunter ins Freie.
+- **Ins Weltall steigt man selbst**, mit genau den Schwellen des Fliegers: auf der Erde `SPACE_Y`
+  (4000 m), auf Mond und Mars die Verlassehöhe des Ortes (1000 bzw. 2000 m über Grund), im Hangar
+  seitlich über `HANGAR_OUT_R` hinaus — nach oben ist die Decke fest, wie für den Flieger. Neu dafür:
+  `evaJetToSpace()`, gerufen aus `updateLocale`.
+
+Zwei Dinge, die daran hingen:
+
+- `updateLocale` prüfte nur `state.pos`, also den **stehenden Flieger**. Am Jetpack zählt die Höhe des
+  **Astronauten** — er ist derjenige, der hinausfliegt.
+- `state.pos` wird an einem Ort mit Boden **nicht** mitgezogen. Es gehört dem stehenden Flieger, und
+  auf der Erde hängen die Inselzellen daran (`updateIslands` baut um `state.pos` herum auf) — der
+  Astronaut hätte sonst die ganze Welt hinter sich hergeschleppt. Nur im Weltall führt `updateJet`
+  `state.pos` selbst mit, weil dort die Weltall-Logik daran hängt und kein Flieger unterwegs ist.
+  (Die Inselwelt folgt ihm trotzdem: `updateIslands` nutzt `worldFocus()`, und das ist während der EVA
+  der Astronaut.)
+
+Außerdem den Rückweg vervollständigt: `jetHost` wird nur noch gesetzt, wenn man **wirklich** aus dem
+Hangar kommt (vorher trug `hangarHost` noch den Wert vom letzten Besuch und hätte einen beim Andocken
+in die Halle geschickt, während der Airbus auf einer Insel steht), und `evaEndJetToGround` setzt den
+Flieger auf seine gemerkte Stelle zurück, wenn man dorthin zurückkommt, wo man gestartet ist.
+
+### Fehler 3: Der Schub fiel von 100 % auf 90 %
+
+`warpDrive` baute sich auch am Jetpack auf, und sobald man auf irgendeinen Körper zuflog, drosselte die
+**Hyperraum-Bremse** (`warpBrakeFor`) den Schub auf `WARP_BRAKE_THR` = 0,9. Im Jetpack ist man
+ständig in der Nähe von irgendetwas, also passierte es dauernd.
+
+Ein Astronaut hat keinen Hyperraumantrieb — er fliegt 45 m/s, nicht Lichtgeschwindigkeit. Also baut
+`warpDrive` am Jetpack gar nicht mehr auf, und die Bremse fasst den Schub dort nicht an (zwei Stellen,
+damit es auch dann hält, wenn eine davon später wieder greift).
+
+Gemessen über 10 s bei Vollgas: Schub bleibt **1,00** (Minimum 1,00), `warpDrive` 0, Tempo 45 m/s =
+`JET_VMAX`.
+
+### Ein echter Fehler, den der Test dabei gefunden hat
+
+`updateJet` prüfte am Anfang nicht, ob das Jetpack überhaupt noch an ist. Das Aufsetzen setzt
+`eva.jetVel` auf null, und der nächste Aufruf lief in `Cannot read properties of null (reading 'dot')`.
+Vorher war das unmöglich: das Jetpack endete nur beim Andocken, und dabei wechselte immer der Ort.
+
+### Verifiziert im Browser, 0 Konsolenfehler
+
+| Ort | zündet | bleibt am Ort (3 s Flug) | setzt auf | Astronaut steht auf |
+|---|---|---|---|---|
+| Erde | ✓ | `earth`, 49 Inselzellen unverändert | ✓ | 0,30 m = Bodenhöhe |
+| Mond | ✓ | `moon` | ✓ | −0,70 m = Bodenhöhe |
+| Hangar | ✓ | `death` | ✓ | 6,20 m = Hallenboden |
+
+- Auf der Erde steht der **Flieger still** (x = 40 = `planeAt`), die Inselwelt wandert nicht mit.
+- Ins Weltall selbst gestiegen: Erde bei **4000 m** (= `SPACE_Y`), Mond bei **953 m** über Grund
+  (Grenze 1000), Mars bei **1923 m** (Grenze 2000) — der Grund lag bei −22,5 bzw. −71,6 m.
+- Rückflug: landet **6 m** vom eigenen Flieger, einsteigbar, nicht im Boot.
+- Y im Hangar mit X-Wing daneben steigt weiterhin **ein** — Fahrzeuge haben Vorrang.
+
+### Drei Testfehler, die nach Spielfehlern aussahen
+
+- **„Der Hangar springt trotzdem ins Weltall."** Ich hatte `planeAt` auf 3000 m weggesetzt, damit Y
+  nicht einsteigt. Das liegt außerhalb `HANGAR_OUT_R` (200 m), und weil `updateEva` zu Fuß
+  `state.pos = eva.planeAt` hält, warf `updateLocale` den **stehenden Flieger** aus der Halle — noch
+  bevor Y gedrückt war. Mit realistischen 40 m (außer Einstiegsreichweite `EVA_BOARD_R` = 8 m, aber in
+  der Halle) bleibt alles im Hangar.
+- **„Auf der Erde zündet es im Hangar."** `wantHangarStart` wechselt 1,5 s nach dem Laden von allein in
+  den Todesstern-Hangar — dort beginnt der X-Wing, so gewollt. Mein isolierter Erd-Test wartete länger
+  als das. Im Test abschalten, dann stimmt es.
+- **Der Astronaut auf `y = -999999999`.** Folge des ersten Testfehlers: im Weltall gibt `evaFootY`
+  −1e9 zurück (dort gibt es keinen Boden). Kein eigener Fehler, sondern die Anzeige des ersten.
