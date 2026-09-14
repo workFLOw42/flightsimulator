@@ -3084,6 +3084,15 @@ const JET_ACCEL  = 18;     // m/s^2, mit der er die Zielfahrt erreicht
 const JET_YAW    = 1.3;    // Drehgeschwindigkeit (rad/s)
 const JET_PITCH  = 1.0;    // Nickgeschwindigkeit (rad/s)
 const JET_PMAX   = 1.25;   // rad (~72 Grad): so steil geht es hoch und runter, kein Ueberkopf
+// Rollen mit LT/RT, wie beim Flieger. 2,2 rad/s liegt zwischen Airbus (1,4) und X-Wing (3,8) — ein
+// Astronaut legt sich fixer als ein Verkehrsflugzeug, aber nicht so schnell wie ein Kunstflugjet.
+const JET_ROLL   = 2.2;
+// Querlage-Anschlag 60 Grad: der X-Wing darf ueber Kopf (Kunstflug), ein Astronaut soll nicht kopfueber
+// haengen. 60 Grad reichen fuer eine deutliche Kurve und sehen noch nach Absicht aus.
+const JET_RMAX   = 1.05;
+// Kurve aus der Querlage (beim Flieger spec.turn, dort 0,7 bis 1,6). 1,1 bei voller Querlage von
+// 1,05 rad ergibt gut 1,1 rad/s Drehung — vergleichbar mit dem Stick allein (JET_YAW 1,3).
+const JET_TURN   = 1.1;
 const JET_DAMP   = 0.6;    // Restschwung pro Sekunde, wenn das Gas aus ist (Bremsduesen)
 // So weit hinter der Hangarkante beginnt das freie Weltall. Ohne diesen Saum stuende er genau auf
 // der Kante und wechselte bei jedem Schritt hin und her (dasselbe Problem, das beim Schlauchboot
@@ -3223,8 +3232,9 @@ function jetSnapCam(){
   // Weicht sie ab, springt die Kamera im nächsten Bild um und der Ortswechsel sieht aus wie ein
   // Ruckler. Wer hier etwas ändert, muss es dort auch ändern.
   const bt = eva.jet ? 1.9 : 1;
-  const jp = eva.jet ? Math.max(-0.9, Math.min(0.9, eva.jetPitch)) : 0;
-  const q  = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, 0, 'YXZ'));
+  const jp = eva.jet ? eva.jetPitch : 0;
+  const jr = eva.jet ? (eva.jetRoll || 0) : 0;
+  const q  = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, jr, 'YXZ'));
   const back = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
   const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
   const fwd  = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
@@ -3245,6 +3255,7 @@ function evaStartJet(x, z, y){
   eva.jet = true;
   eva.jetVel = new THREE.Vector3(0, 0, 0);
   eva.jetPitch = 0;
+  eva.jetRoll = 0;
   eva.vy = 0; eva.onGround = false;
   evaJumpFrom = null;                   // ein laufender Sprung endet hier
   // Startschub: an einem Ort MIT BODEN auf Schwebestufe, im Weltall auf null.
@@ -3327,10 +3338,15 @@ function evaJetToSpace(){
   flashFade();
   console.log('[Jetpack] ins Weltall bei', eva.group.position.y.toFixed(0), 'm');
 }
-// Flug mit dem Jetpack — es verhaelt sich wie ein FAHRZEUG im Weltall, so wie der X-Wing.
-// Steuerung wie beim X-Wing (so gewuenscht): Schub gibt die Zielfahrt, der linke Stick dreht und
-// nickt, geflogen wird in Blickrichtung. Ein Jetpack hat keine Flaeche, die quer traegt, also gibt
-// es keinen Kurvenflug aus der Querlage.
+// Flug mit dem Jetpack — es wird wie ein FLUGGERAET behandelt, so wie der X-Wing, und zwar mit
+// DERSELBEN Belegung: Schub gibt die Zielfahrt, der linke Stick dreht und nickt, LT/RT rollen, und
+// aus der Querlage entsteht eine Kurve. Losgelassen richtet sich die Querlage von allein auf.
+//
+// Frueher stand hier „ein Jetpack hat keine Flaeche, die quer traegt, also gibt es keinen Kurvenflug
+// aus der Querlage" — und LT/RT waren unbelegt. Das war meine Annahme, nicht die Anforderung: der
+// Astronaut hat sichtbar Duesen ringsum, mit denen er sich legen und ziehen kann. Gemeldet als
+// „schau auch, ob der jetpack nicht wie ein flieger behandelt wird, dann muesste ja auch lt und rt
+// gehen". Jetzt gilt: was der X-Wing kann, kann das Jetpack auch.
 //
 // Im WELTALL laufen Anflug, Andocken, Asteroiden, Schiffe und Radar ueber die VORHANDENE
 // Weltall-Logik — dafuer war keine eigene Zeile noetig. An einem Ort MIT Boden (Erde, Mond, Mars,
@@ -3342,11 +3358,27 @@ function updateJet(dt, inp){
   // das Jetpack nur ueber das Andocken endete und dabei immer der Ort wechselte.
   if(!eva || !eva.jet || !eva.jetVel) return;
   const g = eva.group, v = eva.jetVel;
+  if(eva.jetRoll === undefined) eva.jetRoll = 0;      // Querlage, wie beim Flieger (rad)
   eva.yaw -= (inp.yaw || 0) * JET_YAW * dt;
   // Nase heben und senken. Der Stick nach vorn (negativ) soll nach UNTEN zeigen, wie im Flieger.
   eva.jetPitch += (inp.pitch || 0) * JET_PITCH * dt;
   eva.jetPitch = Math.max(-JET_PMAX, Math.min(JET_PMAX, eva.jetPitch));
+  // ---- ROLLEN mit LT/RT, genau wie im Flieger (dort inp.roll * spec.roll). Vorzeichen wie dort:
+  // RT (positiv) legt nach rechts. Begrenzt auf JET_RMAX, damit ein Kind nicht auf dem Kopf haengt —
+  // der X-Wing darf ueber Kopf, weil er Kunstflug kann; ein Astronaut soll das nicht.
+  eva.jetRoll -= (inp.roll || 0) * JET_ROLL * dt;
+  eva.jetRoll = Math.max(-JET_RMAX, Math.min(JET_RMAX, eva.jetRoll));
+  // Losgelassen richtet sich die Querlage von allein auf — dieselbe Eigenstabilitaet, die der Flieger
+  // hat (AUTO_LEVEL_RATE). Ohne das bleibt man schraeg liegen und driftet dauernd aus dem Kurs.
+  if(!(inp.roll)) eva.jetRoll += (0 - eva.jetRoll) * Math.min(1, AUTO_LEVEL_RATE * dt);
+  // ---- KURVE aus der Querlage, wie beim Flieger (dort bank * spec.turn). Wer sich legt, zieht
+  // herum, ohne den Stick zu drehen — das ist die Haelfte des Flieger-Fluggefuehls und fehlte hier.
+  // Mit cos(bank) gewichtet, damit die Kurve bei extremer Querlage nicht kippt (dieselbe Ueberlegung
+  // wie beim Flieger, dort fuer den Ueberkopfflug).
+  eva.yaw += eva.jetRoll * JET_TURN * Math.max(0, Math.cos(eva.jetRoll)) * dt;
   // Blickrichtung im Raum: yaw um Y, dann der Nickwinkel. Genau die Richtung, in die er schiebt.
+  // Die Querlage aendert die Flugrichtung NICHT (sie erzeugt die Kurve oben) — genau wie beim
+  // Flieger, dessen forward auch nur aus Nase und Nicken kommt.
   const cp = Math.cos(eva.jetPitch), sp = Math.sin(eva.jetPitch);
   const dir = new THREE.Vector3(-Math.sin(eva.yaw)*cp, sp, -Math.cos(eva.yaw)*cp);
   // Spitzentempo: an einem Ort mit Boden gemuetliche 45 m/s, im WELTALL genau dieselbe Formel wie
@@ -3457,7 +3489,7 @@ function updateJet(dt, inp){
   // gedreht, wodurch die schon gekippte Laengsachse mitwandert und der Astronaut SEITLICH haengt —
   // gemessen 45,8 Grad Querlage bei halbem Nickwinkel und 71,6 Grad am Anschlag. Genau das war das
   // gemeldete Drehen nach rechts. Der Rest des Spiels rechnet ueberall in YXZ.
-  g.setRotationFromEuler(new THREE.Euler(-eva.jetPitch, eva.yaw, 0, 'YXZ'));
+  g.setRotationFromEuler(new THREE.Euler(-eva.jetPitch, eva.yaw, eva.jetRoll, 'YXZ'));
   eva.vy = 0; eva.onGround = false;
   // state.pos MUSS mitwandern: daran haengt die gesamte Weltall-Logik (Anflug, Andocken,
   // Asteroiden, Sternenkuppel, Nebel, Kamera-Bezug). Ohne das schaut das Spiel weiter auf die
@@ -3480,7 +3512,7 @@ function updateJet(dt, inp){
       if(v.y < 0) v.y = 0;
       // Aufgesetzt: das Jetpack aus, er steht wieder zu Fuss da. Genau wie beim X-Wing, der bei
       // 0 % Schub aufsetzt — kein Absturz, sondern eine Landung.
-      eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+      eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
       eva.vy = 0; eva.onGround = true;
       g.rotation.set(0, eva.yaw, 0);       // wieder aufrecht hinstellen
       state.throttle = 0;
@@ -3546,7 +3578,7 @@ function updateJet(dt, inp){
 // Zurueck in den Hangar: andocken und wieder auf dem Hallenboden stehen.
 function evaEndJetToHangar(host){
   if(!eva) return;
-  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
   // enterHangar macht die ganze Arbeit: Ort umschalten, Koerper ausblenden, Halle einblenden,
   // Flieger setzen, Kamera, Ueberblendung. Die dockLock-Sperre gilt fuer den ANFLUG, nicht fuers
   // Andocken selbst — also kurz aufheben, sonst weist enterHangar einen ab.
@@ -3575,7 +3607,7 @@ function evaEndJetToHangar(host){
 // Flieger kommt einfach mit. Das ist gewollt: sonst waere man auf dem Mars gestrandet.
 function evaEndJetToGround(key){
   if(!eva) return;
-  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
   enterGround(key);
   // Von HIER gestartet? Dann zurueck zum eigenen Flieger, nicht an einen zufaelligen Anflugpunkt.
   const heim = (jetFrom && jetFrom.locale === key);
@@ -3602,7 +3634,7 @@ function evaEndJetToGround(key){
 // garantiert eine Insel traegt (islandInfo: isStart), also gibt es dort immer festen Grund.
 function evaEndJetToEarth(){
   if(!eva) return;
-  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0;
+  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
   // Zielstelle BEVOR die Erdwelt aufgebaut wird: earthWorldVisible(true) ruft updateIslands(), und
   // das baut die Zellen um state.pos herum. Stuende state.pos noch im Weltall, entstuenden die
   // Inseln Hunderttausende Meter entfernt und man landete auf leerem Wasser.
@@ -7981,12 +8013,20 @@ function updateCamera(){
   //      Bild bei steilem Steigflug nicht um.
   if(eva && eva.jet){
     const g = eva.group.position;
-    // Nickwinkel wie beim Flieger auf ±0,9 rad (51°) geklemmt: der Astronaut selbst darf steiler
-    // stehen (JET_PMAX = 72°), man sieht ihn dann noch steiler nicken als die Kamera.
-    const jp = Math.max(-0.9, Math.min(0.9, eva.jetPitch));
+    // Der VOLLE Nickwinkel, NICHT geklemmt. Erst hatte ich ihn wie beim Flieger auf ±0,9 rad (51°)
+    // begrenzt — dort ist das richtig, weil ein Flieger Loopings macht und ueber Kopf gehen kann.
+    // Das Jetpack kann das nicht: eva.jetPitch ist in updateJet schon hart auf ±JET_PMAX (72°)
+    // begrenzt, ein Ueberkopf gibt es also nie. Die Klemme setzte die Kamera bei Vollnicken dafuer um
+    // 20 Grad NEBEN die Flugachse, und genau das war „die kamera bleibt nicht hinter dem jetpack".
+    const jp = eva.jetPitch;
     // Der rechte Stick lenkt am Jetpack (Schub), umsehen gibt es nicht — evaOrbit bleibt 0 und wird
     // hier deshalb gar nicht gebraucht. Bei LB/RB (sideView) schaut man wie im Flieger von der Seite.
-    const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, 0, 'YXZ'));
+    // Die Querlage nimmt die Kamera GENAUSO mit wie beim Flieger: über camRoll, das gleitend zwischen
+    // Erdatmosphäre (0 — Horizont bleibt unten) und Weltall (1 — es gibt kein oben, die Kulisse dreht
+    // mit) blendet. Ohne das rollte der Astronaut, das Bild aber nicht, und man sah der Querlage nicht
+    // an, dass sie eine Kurve zieht.
+    const jrCam = (eva.jetRoll || 0) * camRoll;
+    const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, jrCam, 'YXZ'));
     const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camQ);
     const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);
     // Grundabstand 13,3 m (7 m mal Abstandsfaktor 1,9) plus ein Tempo-Zuschlag wie beim Flieger, aber
@@ -8003,15 +8043,25 @@ function updateCamera(){
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camQ);
       desired.copy(g).addScaledVector(right, dist*sideView*0.7).addScaledVector(upV, hoch*0.5);
     }
-    // Den ABSTAND nachziehen, nicht die Position: sonst waechst der Rueckstand mit der Fahrt (bei
-    // 45 m/s gemessene 20,8 m statt 13,3 m). Die Rate waechst mit dem Tempo, genau wie beim Flieger
-    // (dort cfg.lerp * (1 + v/120)) — ohne das bliebe bei Warp ein Rueckstand von Hunderten Metern.
+    // Die RICHTUNG wird HART gesetzt, nur die LAENGE weich nachgezogen. Vorher wurde der ganze
+    // Abstandsvektor gelerpt, und damit hing die Kamera beim Lenken hinter der Achse zurueck:
+    // nachgerechnet 6,2 Grad beim Drehen (JET_YAW 1,3 rad/s bei Lerp 12/s) und 4,8 Grad beim Nicken.
+    // Zusammen mit der frueheren Nickwinkel-Klemme waren das bis 26 Grad — das ist das gemeldete
+    // „die kamera bleibt nicht hinter dem jetpack (exakt wie ein flieger)". Jetzt sitzt sie in jedem
+    // Bild genau auf der Flugachse; weich bleibt nur, wie schnell sie bei Tempowechseln aufholt.
+    //
+    // Die Laenge braucht das Nachziehen, weil der Tempo-Zuschlag (camBackExtra) mit der Fahrt
+    // waechst: beim Beschleunigen auf Warp waechst der Sollabstand von 14 auf 55 m, und ohne
+    // Nachziehen sprang die Kamera dabei.
+    const richtung = _camDes.copy(desired).sub(g);          // Sollrichtung samt Solllaenge
+    const sollLen  = richtung.length();
+    const istLen   = camera.position.distanceTo(g);
     const vJ = eva.jetVel ? eva.jetVel.length() : 0;
-    const kJ = Math.min(1, (12 + vJ*0.25) * dtCam);
-    _camOff.copy(camera.position).sub(g);
-    _camDes.copy(desired).sub(g);
-    _camOff.lerp(_camDes, kJ);
-    camera.position.copy(g).add(_camOff);
+    const kJ = Math.min(1, (6 + vJ*0.05) * dtCam);          // nur fuer die Laenge
+    const neueLen = (istLen > 0.001) ? istLen + (sollLen - istLen) * kJ : sollLen;
+    if(sollLen > 0.001){
+      camera.position.copy(g).addScaledVector(richtung.multiplyScalar(1/sollLen), neueLen);
+    }
     camera.up.copy(upV);
     // Auf IHN schauen — das ist der Kern des Ganzen (siehe oben, Punkt 1).
     camera.lookAt(g);

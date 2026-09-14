@@ -1125,3 +1125,64 @@ rundlich, der Schwerpunkt sagt kaum, wo das Visier ist), und wäre die Drehung f
 **rückwärts** statt „leicht seitwärts". Außerdem nutzen der Astronaut zu Fuß, im Rover und am
 Fallschirm dieselbe Funktion. Falls im Spiel doch etwas rückwärts aussieht: dort liegt es, und dann
 gehört die Zeile geprüft — mit einem Blick aufs Bild, nicht mit einer Schwerpunktrechnung.
+
+## Jetpack: die Kamera sitzt jetzt exakt auf der Achse — und LT/RT gehen
+
+Gemeldet: „jetzt fliegt er gerade, aber die kamera bleibt nicht hinter dem jetpack (exakt wie ein
+flieger)" und, entscheidend: „schau auch, ob der jetpack nicht wie ein flieger behandelt wird. dann
+müsste ja auch lt und rt gehen. aber er ist für dich ja nicht exakt wie ein flieger".
+
+Der zweite Satz traf den Kern. Ich hatte das Jetpack die ganze Zeit *ähnlich* wie einen Flieger
+gebaut, mit eigenen Abweichungen — statt es wie einen zu behandeln.
+
+### Die Kamera: zwei Abweichungen vom Flieger, beide meine
+
+- **Der Nickwinkel war geklemmt** auf ±0,9 rad (51°), wie beim Flieger. Dort ist das richtig: ein
+  Flieger macht Loopings und geht über Kopf. Das Jetpack kann das nicht — `eva.jetPitch` ist in
+  `updateJet` schon hart auf ±`JET_PMAX` (72°) begrenzt. Die Klemme setzte die Kamera bei Vollnicken
+  also um **20° neben die Flugachse**.
+- **Die Richtung wurde gelerpt**, nicht nur der Abstand. Nachgerechnet: 6,2° Rückstand beim Drehen
+  (`JET_YAW` 1,3 rad/s bei Lerp 12/s) und 4,8° beim Nicken. Zusammen mit der Klemme bis 26°.
+
+Jetzt wird die **Richtung hart gesetzt** und nur die **Länge** weich nachgezogen (die braucht es, weil
+der Tempo-Zuschlag mit der Fahrt von 14 auf 55 m wächst). Nachgerechnet über den ganzen Nickbereich:
+
+| Nickwinkel | 0° | 20° | 40° | 51,6° | 60° | 71,6° |
+|---|---|---|---|---|---|---|
+| Abweichung Kamera zu Flugachse | 0,00° | 0,00° | 0,00° | 0,00° | 0,00° | 0,00° |
+
+### LT/RT: das Rollen fehlte komplett
+
+Im Code stand als Begründung: „Ein Jetpack hat keine Fläche, die quer trägt, also gibt es keinen
+Kurvenflug aus der Querlage." Das war **meine Annahme**, nicht die Anforderung — und der Astronaut hat
+sichtbar Düsen ringsum. `updateJet` las nur `inp.yaw` und `inp.pitch`; `inp.roll` (LT/RT) lief ins
+Leere. Damit fehlte die Hälfte des Flieger-Fluggefühls: wer sich legt, zieht herum.
+
+Jetzt gilt dieselbe Mechanik wie beim X-Wing, mit denselben Bausteinen:
+
+| | Flieger | Jetpack |
+|---|---|---|
+| Rollen | `inp.roll * spec.roll` (1,4–3,8) | `JET_ROLL` = 2,2 |
+| Querlage-Anschlag | über Kopf erlaubt (Kunstflug) | `JET_RMAX` = 60° |
+| Kurve aus Querlage | `bank * spec.turn` (0,7–1,6) | `JET_TURN` = 1,1 |
+| Aufrichten losgelassen | `AUTO_LEVEL_RATE` | dieselbe Konstante |
+| Kamera rollt mit | `camE.z * camRoll` | `eva.jetRoll * camRoll` |
+
+Durchgerechnet: 0,48 s bis zur Vollquerlage von 60°, dann 33°/s Kurve (der Stick allein gibt 74°/s),
+und 1,37 s zum Aufrichten. Der Anschlag ist bewusst enger als beim X-Wing — der darf über Kopf, weil
+er Kunstflug kann; ein Astronaut soll nicht kopfüber hängen.
+
+`camRoll` ist dieselbe Größe, die der Flieger benutzt: sie blendet gleitend zwischen Erdatmosphäre
+(0 — der Horizont bleibt unten) und Weltall (1 — es gibt kein oben, die Sternenkulisse dreht mit).
+
+Die Querlage wird an fünf Stellen zurückgesetzt, überall dort, wo auch `jetPitch` zurückgeht — sonst
+startet man beim nächsten Zünden schief.
+
+### Was daraus zu lernen ist
+
+Drei Runden lang habe ich am Jetpack einzelne Symptome behoben (Kamera dreht, Astronaut driftet, Ring
+schief), und jedes Mal war die Ursache dieselbe: **eine Abweichung vom Flieger, die ich selbst
+eingebaut hatte** — meist mit einer plausibel klingenden Begründung im Kommentar. Die Anforderung war
+von Anfang an „wie der X-Wing". Wo ein Fahrzeug „wie X" sein soll, ist die kürzeste Prüfung, die
+Eingaben und Bausteine von X einmal durchzuzählen und zu fragen, was fehlt — nicht, das Verhalten
+nachzuempfinden.
