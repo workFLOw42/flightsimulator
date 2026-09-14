@@ -1911,3 +1911,42 @@ Luft ein grauer Strich auf blauem Wasser. Richtig sind die **2,4 m**, die der Ru
 heraussteht: dann liegt das Deck auf der Linie und der Turm steht voll heraus, wie beschrieben.
 
 Getaucht ist es damit mehr als dreimal so hoch sichtbar wie vorher.
+
+## Das Tauchen war da, nur nicht zu sehen
+
+Gefragt: „ich habe das uboot entdeckt, aber auch bei langem anflug, langsam mit dem mustang, habe ich es
+nicht abtauchen oder auftauchen gesehen. wie ist denn da die logik?"
+
+### Die Logik
+
+Ein halber Kosinus über `subPeriod` Sekunden, mit dem eigenen x-Wert als Phase (damit mehrere Boote nicht
+im Gleichschritt tauchen), zusätzlich mit `smoothstep` abgeflacht — es verweilt oben und unten und
+wechselt dazwischen zügig, statt gleichmäßig durchzufahren wie ein Kolben. Die Kollisions-Obergrenze
+sinkt mit, damit über dem getauchten Boot keine unsichtbare Wand bleibt.
+
+Die lief auch. Nur waren die Werte zu zurückhaltend, und zwar in beidem:
+
+| | vorher | jetzt |
+|---|---|---|
+| Tauchweg | 2,4 m | **6,4 m** |
+| Zyklus | 34 s | **26 s** |
+
+### Warum man es nicht sah
+
+**Der Weg war kleiner als die Dünung.** Die schwankt um ±1,6 m, also 3,2 m Hub — bei 2,4 m Tauchweg
+bewegte die *Welle* das Boot stärker als das Tauchen, und das Tauchen ging darin unter.
+
+Jetzt sind es 6,4 m, also das Doppelte der Dünung. Der Wert ist nicht gewählt, sondern gerechnet:
+aufgetaucht steht die Turmspitze 10,3 m über Wasser, getaucht soll der Rumpf ganz weg sein und der Turm
+bis zur halben Höhe einsinken — Spitze bei 4,0 m. Differenz 6,4 m.
+
+**Und ein Zyklus war länger als ein Anflug.** Bei 34 s dauert eine Richtung 17 s; wer 20 s lang anfliegt,
+sieht einen Teil davon, und der liegt womöglich in der flachen Phase oben oder unten. Mit 26 s sind es
+13 s pro Richtung — ein Anflug von 15 bis 30 s zeigt also mindestens eine vollständige Bewegung.
+
+Die Spitzengeschwindigkeit liegt damit bei 2,3 m/s. Ein echtes U-Boot taucht mit 0,5 bis 1 m/s, aber im
+Spiel muss man es auch bemerken — das ist bewusst schneller als die Realität.
+
+Nachgeprüft, dass die Kollisionsgrenze positiv bleibt: aufgetaucht 10,3 m, getaucht 3,9 m (im
+Rückfall ohne Vermessung 7,6 → 1,2 m). `hitsSeaShip` gibt ab `top + 4` frei, ein Flieger auf 10 m Höhe
+fliegt also darüber.

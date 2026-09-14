@@ -1366,14 +1366,24 @@ const SHIP_TYPES = [
   //
   // wl 0.060 senkt es um 5,7 m, also 70 % der Rumpfhoehe: aufgetaucht schauen 2,4 m Rumpf und der
   // ganze Turm heraus — ein U-Boot liegt tief im Wasser, anders als ein Frachter.
-  // subDive ist der zusaetzliche Tauchweg, bis das Rumpfdeck auf der Wasserlinie liegt und nur noch
-  // der Turm herausragt. Das sind genau die 2,4 m, die der Rumpf aufgetaucht heraussteht — NICHT die
-  // ganze Rumpfhoehe von 8,1 m, wie hier erst stand. Nachgerechnet drueckte der falsche Wert das Deck
-  // 5,7 m unter Wasser, und vom 7,9 m hohen Turm blieben nur 2,2 m stehen: aus der Luft ein grauer
-  // Strich auf blauem Wasser. Genau deshalb war das Boot nicht zu finden.
+  // subDive ist der Tauchweg, subPeriod die Dauer eines ganzen Zyklus (auf und ab).
+  //
+  // Aufgetaucht liegt das Rumpfdeck 2,4 m ueber Wasser (wl 0,060 senkt den 8,1 m hohen Rumpf um
+  // 5,7 m), die Turmspitze also bei 10,3 m. Getaucht soll der Rumpf ganz verschwinden und der Turm
+  // bis zur halben Hoehe einsinken — Spitze bei 4,0 m. Das ergibt 6,4 m Weg.
+  //
+  // Der Weg MUSS deutlich groesser sein als die Duenung, sonst sieht man ihn nicht: die schwankt um
+  // +/-1,6 m, also 3,2 m Hub. Mit den vorherigen 2,4 m bewegte die WELLE das Boot staerker als das
+  // Tauchen, und das Tauchen ging darin unter — gemeldet als „auch bei langem anflug habe ich es
+  // nicht abtauchen oder auftauchen gesehen". 6,4 m sind das Doppelte der Duenung.
+  //
+  // 26 s statt 34: eine halbe Periode (einmal ganz runter) dauert damit 13 s, ein Anflug 15 bis 30 s
+  // — man sieht also mindestens eine vollstaendige Bewegung. Die Spitzengeschwindigkeit liegt bei
+  // 2,3 m/s; ein echtes U-Boot taucht mit 0,5 bis 1 m/s, aber im Spiel muss man es auch bemerken.
+  //
   // Tempo 1,8 m/s = 6,5 km/h, das langsamste Schiff auf dem Meer (die Frachter fahren 16-20 km/h).
   { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.0600, spd:1.8, sym:'🛥️',
-    subDive:2.4, subPeriod:34 },
+    subDive:6.4, subPeriod:26 },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
 // belebt wirken, ohne dass man ständig ausweichen muss.
@@ -1738,8 +1748,9 @@ function updateShipsSea(dt){
     // ---- U-BOOT: langsam auf und ab tauchen. Der Sinus laeuft ueber subPeriod Sekunden, mit dem
     // eigenen x-Wert als Phase — so sind mehrere Boote nicht im Gleichschritt.
     //
-    // Nur die HAELFTE des Sinus wird genutzt (0..1 statt -1..1): oben liegt es auf seiner Wasserlinie,
-    // unten ragt genau der Turm heraus. Ganz verschwinden soll es nicht.
+    // Nur die HAELFTE des Sinus wird genutzt (0..1 statt -1..1): oben liegt es auf seiner Wasserlinie
+    // mit Rumpf und Turm, unten ist der Rumpf weg und der halbe Turm steht noch heraus. Ganz
+    // verschwinden soll es nicht (siehe subDive in SHIP_TYPES).
     //
     // Die Bewegung ist zusaetzlich abgeflacht (smoothstep): ein U-Boot verweilt oben und unten und
     // wechselt dazwischen zuegig, statt gleichmaessig durchzufahren wie ein Kolben.
