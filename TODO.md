@@ -816,3 +816,90 @@ Vorher war das unmöglich: das Jetpack endete nur beim Andocken, und dabei wechs
   als das. Im Test abschalten, dann stimmt es.
 - **Der Astronaut auf `y = -999999999`.** Folge des ersten Testfehlers: im Weltall gibt `evaFootY`
   −1e9 zurück (dort gibt es keinen Boden). Kein eigener Fehler, sondern die Anzeige des ersten.
+
+## Jetpack: Schubstufen am Boden, Tempo im Weltall, 20-%-Rücksprung (behoben)
+
+Wörtlich: „es fehlen noch die schubeigenschaften wie beim x wing auf der erde. 20%, 10% & 0%. so kommt
+man nicht mehr zurück auf den boden. außerdem kommt man im weltall nicht von der stelle. es wird zwar
+eine geschwindigkeit angezeigt, aber der abstand zu einem planeten verringert sich nicht mit der zeit.
+außerdem geht er ständig zurück auf 20% (ggf weil noch nahe der iss und man nicht weg kommt)"
+
+Rückgefragt und entschieden: die Schubstufen gelten **nur an Orten mit Boden** (im Weltall sind
+0/10/20 % Fahrstufen), und im Weltall fliegt das Jetpack **so schnell wie der X-Wing, samt Hyperraum**.
+
+### Punkt 1: Man kam nicht mehr auf den Boden
+
+Das Jetpack war überall schwerelos — bei wenig Schub blieb der Astronaut einfach stehen, wo er war.
+Jetzt gelten an einem Ort mit Boden dieselben Stufen wie beim X-Wing, mit denselben Konstanten:
+
+| Schub | Verhalten | gemessen |
+|---|---|---|
+| 20 % (`VTOL_HOVER`) | schweben, Höhe halten | 0,0 m/s |
+| 10 % (`VTOL_SINK`) | ruhig sinken | −10,0 m/s |
+| 5 % (durchgeblendet) | dazwischen | −15,0 m/s |
+| 0 % (`VTOL_DROP`) | zügig sinken | −20,0 m/s |
+| ab 30 % (`VTOL_FWD`) | vorwärts fliegen | — |
+
+Zwischen 0 und 10 % wird durchgeblendet, nicht gestuft — ein Analogstick geht durch alle Werte.
+Unter `VTOL_FWD` gilt die Zielfahrt nicht, sonst schöbe er beim Landen noch nach vorn.
+
+Zwei Dinge, die dabei erst schiefgingen:
+
+- **Das Jetpack ging im selben Frame wieder aus, in dem es zündete.** `evaStartJet` setzte den Schub
+  auf 0 — und 0 % heißt am Boden jetzt „zügig sinken". Im Log stand „gezündet" und „aufgesetzt"
+  direkt nacheinander. Jetzt startet es auf Schwebestufe (`VTOL_HOVER`) und hebt 3 m ab, genau wie
+  `enterHangar` es für den X-Wing tut.
+- **Alle Sinkraten waren 12,5 % zu langsam** (−17,5 statt −20). Die Bremsdüsen-Dämpfung (`JET_DAMP`)
+  greift bei `want < 0.01`, und unter `VTOL_FWD` ist `want` immer 0 — sie lief also jeden Frame und
+  zog auch an der Y-Achse, gegen die Sinkregelung. Nachgerechnet ergibt das ein Gleichgewicht bei
+  86,8 % der Sollrate, gemessen waren es 87,5 %. Im VTOL-Bereich ist sie jetzt ausgeschlossen; dort
+  dämpft der VTOL-Block die Horizontalfahrt selbst.
+
+### Punkt 2: Im Weltall kam man nicht von der Stelle
+
+Das Jetpack flog technisch völlig korrekt — gemessen 403 m in 9 s bei 45 m/s. Nur ist der Mond
+**150 km** weit weg: der Abstand sank von 149.662 auf 149.259 m. Das sind 56 Minuten zum Mond und
+148 Minuten zum Mars, und genau deshalb sah es wie Stillstand aus. Kein Rechenfehler, ein Maßstabsfehler
+von mir: 45 m/s sind 162 km/h, und damit ist der Flugraum unbenutzbar.
+
+Im Weltall gilt jetzt dieselbe Formel wie beim Flieger: `SPACE_C * warpFactor()`. Das Modelltempo
+spielt im Vakuum auch beim X-Wing keine Rolle. Am Boden bleibt es bei den gemütlichen 45 m/s — dort
+will man schauen, nicht rasen.
+
+Gemessen, Nase auf den Mond, Vollgas:
+
+| nach | Abstand zum Mond | Tempo | Warp |
+|---|---|---|---|
+| 1 s | 148.232 m | 3.043 m/s | 0,1 |
+| 5 s | 112.426 m | 14.213 m/s | 0,4 |
+| 9 s | 37.501 m | 23.213 m/s | 0,7 |
+| 10 s | **auf dem Mond gelandet** | — | — |
+
+Dazu musste der Hyperraum-Aufbau am Jetpack wieder zugelassen werden (ich hatte ihn in der Runde davor
+ganz abgeschaltet, um den 90-%-Rücksprung zu beheben). Die Hyperraum-**Bremse** bleibt gesperrt — die
+war die Ursache jenes Fehlers, nicht der Aufbau. Und die Beschleunigung wächst im Vakuum mit
+(`SPACE_C` statt `JET_ACCEL`): mit 18 m/s² hätte das Hochlaufen auf Warp-Tempo Minuten gedauert.
+
+### Punkt 3: Der Schub sprang ständig auf 20 %
+
+Die Vermutung war richtig — es lag an der ISS. `updateShips` dockt bei Annäherung direkt über
+`enterHangar` an, **ohne zu prüfen, ob man im Jetpack sitzt**. `enterHangar` setzt
+`state.throttle = VTOL_HOVER` (das ist für den X-Wing richtig, er soll dort schweben), aber `eva.jet`
+blieb an und der Ortswechsel passierte im Hintergrund. Man dockte also immer wieder an, ohne es zu
+merken — daher auch das Gefühl, nicht von der ISS wegzukommen.
+
+Dieselbe Lücke hatte der Star Destroyer. Beide gehen jetzt über `evaEndJetToHangar`, das das Jetpack
+sauber beendet und den Astronauten in die Halle stellt.
+
+Gemessen: Jetpack aus, Ort `death`, Schub **0** (nicht 0,2), Astronaut steht auf dem Hallenboden
+(6,2 m = `hangarFloorY`), Log „angedockt, zurueck im Hangar".
+
+### Nebenbei
+
+`JET_VMAX_SPACE` war ein Zwischenschritt (686 m/s als eigene Konstante) und ist wieder entfernt: mit
+`686 * warpFactor()` wären es bei Warp 10 nur 6.860 m/s gewesen, also 22 s zum Mond statt 5. Die
+Fliegerformel ist die richtige. Verifiziert, dass die Konstante nirgends mehr vorkommt.
+
+**Merken:** Python schreibt im Google-Drive-Ordner nicht (`OSError: Bad file descriptor` bei
+`io.open(...,'w')`) — auch nicht für kleine Kommentar-Korrekturen. Lesen geht, schreiben nur über
+PowerShell `[IO.File]::WriteAllText`.

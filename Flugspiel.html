@@ -3072,7 +3072,14 @@ function roverSeatY(loc){
 // Gas, der linke Stick dreht (<->) und nickt (hoch/runter), und geflogen wird in Blickrichtung.
 // Anders als der Flieger hat er keine Traegheitsachse quer dazu — ein Jetpack driftet nicht, es
 // schiebt dorthin, wohin der Astronaut schaut. Das ist fuer ein Kind die einfachere Regel.
-const JET_VMAX   = 45;     // m/s Spitze bei 100 % Schub (162 km/h) — zuegig, aber beherrschbar
+// Tempo an einem Ort MIT BODEN (Erde, Mond, Mars, Hangar): dort will man herumfliegen und schauen,
+// nicht rasen — 45 m/s sind 162 km/h und damit schon zuegig.
+const JET_VMAX   = 45;
+// Im WELTALL gilt JET_VMAX NICHT: dort rechnet updateJet mit SPACE_C * warpFactor(), genau wie der
+// Flieger. Mit 45 m/s war das Weltall unbenutzbar — der Mond ist ausgemessen 150 km weit weg, das
+// waeren 56 Minuten Flug, der Mars 148 Minuten. Gemessen bewegte man sich voellig korrekt (403 m in
+// 9 s), aber der Abstand zum Mond sank nur von 149.662 auf 149.259 m: das sieht aus wie Stillstand,
+// und genau so wurde es gemeldet.
 const JET_ACCEL  = 18;     // m/s^2, mit der er die Zielfahrt erreicht
 const JET_YAW    = 1.3;    // Drehgeschwindigkeit (rad/s)
 const JET_PITCH  = 1.0;    // Nickgeschwindigkeit (rad/s)
@@ -3240,13 +3247,19 @@ function evaStartJet(x, z, y){
   eva.jetPitch = 0;
   eva.vy = 0; eva.onGround = false;
   evaJumpFrom = null;                   // ein laufender Sprung endet hier
-  state.throttle = 0;                   // er soll schweben, nicht sofort losschiessen
+  // Startschub: an einem Ort MIT BODEN auf Schwebestufe, im Weltall auf null.
+  // 0 % heisst am Boden jetzt „zuegig sinken" (VTOL_DROP, -20 m/s) — mit throttle = 0 ging das
+  // Jetpack deshalb im selben Moment wieder aus, in dem es zuendete: gemessen kam „gezuendet" und
+  // „aufgesetzt" im gleichen Frame. Genau dasselbe tut enterHangar fuer den X-Wing (VTOL_HOVER).
+  // Im Weltall gibt es kein Schweben, dort ist 0 % einfach Stillstand.
+  state.throttle = (locale === 'space') ? 0 : VTOL_HOVER;
   // Wo der eigene Flieger steht, bleibt gemerkt: kommt man spaeter aus dem Weltall zurueck, fuehrt
   // das Andocken dorthin und nicht in den Hangar. Sonst laesst ein Kind seinen Airbus auf einer
   // Insel stehen und findet ihn nie wieder.
   jetFrom = { locale: locale, x: eva.planeAt.x, y: eva.planeAt.y, z: eva.planeAt.z };
-  // Ein Stueck ueber den Boden heben, damit er sichtbar abhebt statt in der Grasnarbe zu stehen.
-  eva.group.position.y += 1.2;
+  // Deutlich ueber den Boden heben, damit er sichtbar abhebt und nicht in derselben Sekunde wieder
+  // aufsetzt: die Schwebehoehe wird ohnehin auf VTOL_HOVER_ALT angeregelt, das ist der Weg dorthin.
+  eva.group.position.y += 3;
   // Kamera hart hinter ihn: der Blickwinkel aendert sich beim Zuenden (sie folgt jetzt dem Nicken),
   // und ohne Snap schwenkt sie sichtbar herum.
   jetSnapCam();
@@ -3313,23 +3326,67 @@ function updateJet(dt, inp){
   // Blickrichtung im Raum: yaw um Y, dann der Nickwinkel. Genau die Richtung, in die er schiebt.
   const cp = Math.cos(eva.jetPitch), sp = Math.sin(eva.jetPitch);
   const dir = new THREE.Vector3(-Math.sin(eva.yaw)*cp, sp, -Math.cos(eva.yaw)*cp);
+  // Spitzentempo: an einem Ort mit Boden gemuetliche 45 m/s, im WELTALL genau dieselbe Formel wie
+  // beim Flieger — SPACE_C * warpFactor(). Bei Vollgas ohne Hyperraum ist das Warp 1 (3000 m/s, Mond
+  // in 50 s), mit aufgebautem Hyperraum bis Warp 10 (Mond in 5 s). Das Modelltempo spielt im Vakuum
+  // auch beim X-Wing keine Rolle.
+  const imAll = (locale === 'space');
+  const vMaxJ = imAll ? (SPACE_C * warpFactor()) : JET_VMAX;
+  // Beschleunigung: im Weltall muss sie mitwachsen, sonst braucht er bei 686 m/s Zielfahrt mit
+  // 18 m/s^2 gut 38 Sekunden zum Hochlaufen. Der X-Wing zieht im Vakuum mit SPACE_C durch.
+  const accelJ = imAll ? SPACE_C : JET_ACCEL;
   // Schub = Zielgeschwindigkeit, angeregelt — dieselbe Formel wie beim Flieger und beim Boot.
-  const want = Math.max(0, state.throttle);
-  const targetV = JET_VMAX * want;
+  // An einem Ort MIT BODEN steuert der Schub unter 30 % nicht die Fahrt, sondern das senkrechte
+  // Steigen und Sinken (siehe der VTOL-Block unten) — genau wie beim X-Wing. Die Zielfahrt gilt
+  // dort erst ab VTOL_FWD, sonst wuerde er beim Landen noch nach vorn schieben.
+  const roh = Math.max(0, state.throttle);
+  const want = (!imAll && roh < VTOL_FWD) ? 0 : roh;
+  const targetV = vMaxJ * want;
   const fwdSpeed = v.dot(dir);
   const dv = targetV - fwdSpeed;
-  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), JET_ACCEL);
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), accelJ);
   v.addScaledVector(dir, push * dt);
   // Gas aus: die Bremsduesen holen ihn zum Stehen. Im Vakuum gibt es keinen Luftwiderstand, aber
   // ein Jetpack, das man nicht anhalten kann, ist fuer ein Kind unbrauchbar — und der Astronaut
   // hat sichtbar Duesen ringsum. Schwerelos bleibt es trotzdem: kein Fallen, kein Auftrieb.
-  if(want < 0.01){ const k = Math.max(0, 1 - JET_DAMP*dt); v.multiplyScalar(k); }
+  //
+  // NICHT im VTOL-Bereich am Boden (unter 30 % Schub): dort ist `want` immer 0, die Daempfung liefe
+  // also jeden Frame — und sie zieht auch an der Y-Achse, gegen die Sinkregelung weiter unten.
+  // Gemessen ergab das ein Gleichgewicht bei 86,8 % der Sollrate: -17,5 statt -20 m/s bei 0 % Schub,
+  // -8,8 statt -10 bei 10 %. Dort daempft der VTOL-Block die Horizontalfahrt selbst.
+  if(want < 0.01 && (imAll || roh >= VTOL_FWD)){
+    const k = Math.max(0, 1 - JET_DAMP*dt); v.multiplyScalar(k);
+  }
   // Harte Deckelung, wie sie der Flieger auch hat. Ohne sie summiert sich Fahrt auf: die Schub-
   // regelung sieht nur die Fahrt LAENGS der Blickrichtung, und beim Nicken bleibt die alte Fahrt
   // quer dazu stehen. Gemessen wurden so 68,5 m/s statt der erlaubten 45 — beide Anteile addieren
   // sich geometrisch. Ein Kind kurvt viel, also passiert das dauernd.
   const vl = v.length();
-  if(vl > JET_VMAX) v.multiplyScalar(JET_VMAX / vl);
+  if(vl > vMaxJ) v.multiplyScalar(vMaxJ / vl);
+  // ---- Schubstufen an einem Ort MIT BODEN: genau wie beim X-Wing (VTOL_HOVER/LAND/DROP).
+  // 20 % schweben, 10 % ruhig sinken, 0 % zuegig sinken, ab 30 % vorwaerts fliegen. Ohne das kam man
+  // gar nicht mehr herunter: das Jetpack war ueberall schwerelos, also blieb er einfach stehen, wo er
+  // war. Im Weltall gilt es nicht — dort gibt es keinen Boden, und 0/10/20 % sind Fahrstufen.
+  if(!imAll && roh < VTOL_FWD){
+    const fyJ = (locale === 'death') ? hangarFloorY : evaFootY(g.position.x, g.position.z);
+    const aglJ = g.position.y - fyJ;                       // Hoehe ueber Grund
+    let tvJ;
+    if(roh <= VTOL_LAND){
+      // Zwischen 0 und 10 % durchgeblendet, wie beim Flieger — ein Analogstick geht durch alle Werte.
+      const kL = Math.min(1, Math.max(0, roh / VTOL_LAND));
+      tvJ = VTOL_DROP + (VTOL_SINK - VTOL_DROP) * kL;
+    } else {
+      // Schweben: die Schwebehoehe wird angeregelt, nicht endlos gestiegen. Darueber bleibt er
+      // stehen — sonst koennte man in der Luft nicht warten.
+      const hov = Math.max(0, Math.min(VTOL_CLIMB, (VTOL_HOVER_ALT - aglJ) * 0.5));
+      const kH  = Math.min(1, (roh - VTOL_LAND) / (VTOL_HOVER - VTOL_LAND));
+      tvJ = VTOL_SINK + (hov - VTOL_SINK) * kH;
+    }
+    // Senkrechtrate anregeln, Horizontalfahrt austrudeln lassen (wie im VTOL-Block des Fliegers).
+    v.y += (tvJ - v.y) * Math.min(1, 4*dt);
+    const dampJ = Math.max(0, 1 - 1.2*dt);
+    v.x *= dampJ; v.z *= dampJ;
+  }
   g.position.addScaledVector(v, dt);
   // Er liegt in Flugrichtung, wie ein Astronaut am Manoevriergeraet.
   // WICHTIG die Reihenfolge YXZ: bei der three.js-Vorgabe XYZ wird erst um X genickt und dann um Y
@@ -5757,13 +5814,11 @@ function updateSpaceBodies(){
 function updateWarp(dt){
   if(warpBrakeLock > 0) warpBrakeLock -= dt;
   if(dockLock > 0) dockLock -= dt;
-  // Am JETPACK gibt es keinen Hyperraumantrieb: ein Astronaut fliegt 45 m/s, nicht Lichtgeschwindigkeit.
-  // Ohne diese Ausnahme baute warpDrive auch am Jetpack auf, und sobald man auf irgendeinen Koerper
-  // zuflog, drosselte die Hyperraum-Bremse (warpBrakeFor) den Schub auf WARP_BRAKE_THR = 90 %.
-  // Genau das war der gemeldete Fehler „der Schub geht immer von 100 % auf 90 % zurueck": man hing
-  // im Jetpack staendig in der Naehe von irgendetwas, also passierte es dauernd.
-  const jetAn = !!(eva && eva.jet);
-  const full = (locale === 'space' && !jetAn && state.throttle >= 0.999 && !state.crashed);
+  // Der Hyperraum baut auch am Jetpack auf: ohne ihn ist das Weltall unbenutzbar, weil der Mond
+  // 150 km weit weg ist (siehe JET_VMAX). Was NICHT gilt, ist die Hyperraum-BREMSE — die
+  // drosselte den Schub bei jedem Zuflug auf einen Koerper auf 90 %, und weil man im Jetpack
+  // staendig in der Naehe von etwas ist, passierte das dauernd (siehe warpBrakeFor).
+  const full = (locale === 'space' && state.throttle >= 0.999 && !state.crashed);
   warpDrive = full ? Math.min(1, warpDrive + dt/WARP_RAMP) : Math.max(0, warpDrive - dt*0.6);
   // Sicht-Anteil rein aus dem Tempo: der Ring erscheint erst AB Lichtgeschwindigkeit (Warp 1) und
   // ist bei Warp 10 voll da.
@@ -6086,6 +6141,11 @@ function updateDestroyers(dt){
     // sie treiben nur langsam mit, damit sie nicht sofort außer Sicht sind
     d.obj.position.addScaledVector(state.vel, 0.9*dt);
     const dist = d.obj.position.distanceTo(state.pos);
+    // Am Jetpack ueber evaEndJetToHangar (siehe die ISS weiter unten): direkt gerufen blieb das
+    // Jetpack an und enterHangar setzte den Schub auf VTOL_HOVER — der gemeldete 20-%-Ruecksprung.
+    if(dist < DESTROYER_DOCK && eva && eva.jet){
+      evaEndJetToHangar({ pos: d.obj.position.clone(), up: DESTROYER_LEN*0.8 }); return;
+    }
     if(dist < DESTROYER_DOCK && enterHangar({ pos: d.obj.position.clone(), up: DESTROYER_LEN*0.8 })) return;
     if(dist > 30000) placeDestroyer(d);
   }
@@ -6200,6 +6260,12 @@ function updateShips(dt){
   // Anflug auf die Station: sie ist wie Todesstern und Star Destroyer anfliegbar — nur wenn ihr
   // Modell auch wirklich zu sehen ist, sonst dockte man an einer unsichtbaren Station an.
   if(issObj && issObj.visible && issCenter.distanceTo(state.pos) < ISS_DOCK){
+    // Am JETPACK ueber evaEndJetToHangar andocken, nicht direkt ueber enterHangar: das beendet das
+    // Jetpack sauber und stellt den Astronauten in die Halle. Direkt gerufen blieb eva.jet an, der
+    // Ort wechselte im Hintergrund, und enterHangar setzte state.throttle auf VTOL_HOVER — das war
+    // der gemeldete Ruecksprung „er geht staendig zurueck auf 20 %", inklusive des Gefuehls, nicht
+    // von der ISS wegzukommen: man dockte immer wieder an, ohne es zu merken.
+    if(eva && eva.jet){ evaEndJetToHangar({ pos: issCenter.clone(), up: 400 }); return; }
     if(enterHangar({ pos: issCenter.clone(), up: 400 })) return;
   }
   // Mit 2400 m Größe ist sie auch auf 15 km noch gut zu erkennen (rund 100 px hoch), darf also
