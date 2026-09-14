@@ -138,6 +138,7 @@
 <script src="liberty_glb.js"></script>
 <script src="container_glb.js"></script>
 <script src="empty_glb.js"></script>
+<script src="submarine_glb.js"></script>
 <script src="firetruck_glb.js"></script>
 <script src="mustang_glb.js"></script>
 <script src="ford_glb.js"></script>
@@ -865,6 +866,20 @@ function buildIsland(cx, cz) {
     g.add(h);
     g.userData.harbor = h;   // fürs spätere Ersetzen, falls GLB später fertig lädt
   }
+  // ---- Feuerwehrboot am Kai: an JEDEM Hafen liegt eines, zum Hinlaufen und Einsteigen mit Y.
+  // Es liegt auf der Wasserlinie (BOAT_DRAFT unter dem Kiel, wie das fahrende Boot) und ruehrt sich
+  // nicht — es ist Kulisse, bis man einsteigt. Dann wechselt das Modell (siehe harborBoatNear).
+  // Nicht, waehrend man SELBST das Boot faehrt: dann sitzt man ja darin, und ein zweites am Kai
+  // waere dasselbe Boot doppelt. refreshIslands baut die Zellen bei jedem Ein- und Aussteigen neu
+  // (siehe evaBoardHarborBoat), der Wechsel ist also sofort sichtbar.
+  const hbl = isBoat() ? null : harborBoatLocal(cx, cz);
+  if(hbl){
+    const fb = makeFireBoat();
+    fb.position.set(hbl.x, -BOAT_DRAFT, hbl.z);
+    fb.rotation.y = hbl.rot;
+    g.add(fb);
+    g.userData.harborBoat = fb;   // fuers spaetere Ersetzen, falls das GLB spaeter fertig laedt
+  }
 
   // ---- Startrampe mit Rakete (auf jeder zweiten Nicht-Stadt-Insel) ----
   const rl = rocketLocal(cx, cz);
@@ -924,6 +939,44 @@ function harborLocal(cx, cz){
   const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // seitlich (nicht auf der Bahn-Achse Z)
   const rr = r * 1.02;                                    // knapp an der Sandkante
   return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang + Math.PI/2 };
+}
+// Das FEUERWEHRBOOT am Kai: an jedem Hafen liegt eines, zu dem man hinlaufen und mit Y einsteigen
+// kann (so gewuenscht). Es liegt WASSERSEITIG vom Hafen, sonst steckte es im Kai oder im Sand.
+//
+// Gerechnet in derselben lokalen Inselkoordinate wie harborLocal: dieselbe Richtung, nur weiter
+// hinaus. Der Hafen ist HARBOR_SIZE = 60 m gross (Halbmass 30), das Boot 16 m lang — 34 m nach
+// aussen setzt es frei vor die Kaikante, laengs zum Ufer gedreht.
+const HARBOR_BOAT_OUT = 34;
+// So weit um das Kai-Boot herum darf das SCHLAUCHBOOT nicht anspringen. Ohne diese Zone gab es einen
+// echten Konflikt: das Boot liegt 34 m von der Hafenmitte, die Hafen-Kollisionshuelle reicht nur
+// 27 m (HARBOR_SIZE*0.45) — die letzten 7 m zum Boot sind also offenes Wasser. Wer zum Feuerwehrboot
+// laufen will, traete dort ins Wasser, und genau dann setzt evaEnterDinghy ein: man saesse im
+// Schlauchboot, statt einzusteigen. 26 m deckt das Boot (16 m lang) samt Einstiegsreichweite ab.
+const HARBOR_BOAT_NODINGHY = 26;
+function harborBoatLocal(cx, cz){
+  const info = islandInfo(cx, cz);
+  if(!info) return null;
+  const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // GLEICHER Winkel wie der Hafen
+  const rr = info.radius * 1.02 + HARBOR_BOAT_OUT;
+  // Laengs zum Ufer: der Bug zeigt quer zur Radialrichtung, wie ein Boot, das am Kai festgemacht ist.
+  return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang };
+}
+// Steht (x,z) so dicht an einem Kai-Feuerwehrboot, dass das Schlauchboot NICHT anspringen darf?
+// Wird von evaEnterDinghy gefragt (beide Ausloeser: hineinlaufen und hineinfallen).
+// Wo der eigene Flieger wartet, waehrend man das Kai-Feuerwehrboot faehrt:
+// { model, x, y, z, yaw }. null heisst, man ist NICHT ueber den Kai ins Boot gekommen (etwa per
+// Modellauswahl) — dann fuehrt Y auch nicht zurueck, sondern verhaelt sich wie bisher.
+// Steht HIER und nicht bei den Boot-Funktionen weiter unten: buttonY liest es, und das steht davor.
+let harborBoatFrom = null;
+function nearHarborBoat(x, z){
+  if(locale !== 'earth') return false;
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const bl = harborBoatLocal(pcx+dx, pcz+dz); if(!bl) continue;
+    if(Math.hypot(x - (info.wx + bl.x), z - (info.wz + bl.z)) < HARBOR_BOAT_NODINGHY) return true;
+  }
+  return false;
 }
 
 // ---- Raketen-Startplatz auf der Insel ----------------------------------------------------
@@ -1266,6 +1319,22 @@ const SHIP_TYPES = [
   { key:'liberty',   glb:()=>window.LIBERTY_GLB,   len:135, wl:0.0607, spd:4.5, sym:'🚢', rot180:true },
   { key:'container', glb:()=>window.CONTAINER_GLB, len:300, wl:0.0286, spd:5.0, sym:'🚢' },
   { key:'sail',      glb:()=>window.EMPTY_GLB,     len:90,  wl:0.0556, spd:3.0, sym:'⛵' },
+  // U-Boot (submarine by Helindu): faehrt langsam und TAUCHT im Wechsel — aufgetaucht liegt es auf
+  // seiner Wasserlinie, getaucht ragt nur der Turm heraus. Es verschwindet nie ganz, man sieht es
+  // also immer, mal mehr, mal weniger (so gewuenscht).
+  //
+  // Ausgemessen am Rohmodell (C:/tmp, ohne das duenne „Cube"-Blatt, das Periskop/Antenne ist und die
+  // Bounding-Box um 8,4 m verfaelscht): 23,67 lang, 3,61 breit, Rumpf von y -1,00 bis 1,03, Turm bis
+  // y 3,01. Auf 95 m Spiellaenge skaliert (Faktor 4,01) ergibt das 8,1 m Rumpfhoehe und 7,9 m Turm
+  // darueber. 95 m liegt zwischen Typ VII (67 m) und Los-Angeles-Klasse (110 m).
+  //
+  // wl 0.060 senkt es um 5,7 m, also 70 % der Rumpfhoehe: aufgetaucht schauen 2,4 m Rumpf und der
+  // ganze Turm heraus — ein U-Boot liegt tief im Wasser, anders als ein Frachter.
+  // subDive ist der zusaetzliche Tauchweg bis zum Turm (siehe updateShipsSea): 8,1 m mehr, dann liegt
+  // das Rumpfdeck genau auf der Wasserlinie.
+  // Tempo 1,8 m/s = 6,5 km/h, das langsamste Schiff auf dem Meer (die Frachter fahren 16-20 km/h).
+  { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.0600, spd:1.8, sym:'🛥️',
+    subDive:8.1, subPeriod:34 },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
 // belebt wirken, ohne dass man ständig ausweichen muss: bei 3.500 m Radius liegt selten mehr als
@@ -1445,6 +1514,10 @@ function refreshSeaShip(sh){
   sh.cx = h ? (h.cx || 0) : 0;
   sh.prof = h ? (h.prof || null) : null;      // Halbbreiten-Profil (siehe shipHalf), null = Rechteck
   sh.top = h ? h.top : sh.len*0.08;
+  // Der Wert bei AUFGETAUCHTEM Boot, von dem der Tauchweg abgezogen wird (siehe updateShipsSea).
+  // Muss hier mitgesetzt werden: refreshSeaShip laeuft auch, wenn ein GLB nachtraeglich fertig laedt,
+  // und sh.top aendert sich dabei von der Schaetzung auf den vermessenen Wert.
+  sh.top0 = sh.top;
 }
 // Ist der Platz für ein Schiff dieser Länge frei? Ein 300 m langes Schiff braucht viel Wasser:
 // keine Insel (auch nicht deren Strand), kein Träger, kein anderes Schiff, kein Hafen.
@@ -1487,7 +1560,11 @@ function spawnSeaShips(){
   for(let i=0; i<SHIP_COUNT; i++){
     const def = SHIP_TYPES[i % SHIP_TYPES.length];
     const sh = { key:def.key, group:null, x:0, z:0, heading:0, len:def.len,
-                 spd:def.spd*(0.8+Math.random()*0.4), placed:false };
+                 spd:def.spd*(0.8+Math.random()*0.4), placed:false,
+                 // Tauchweg und -dauer nur beim U-Boot gesetzt (siehe SHIP_TYPES); bei allen anderen
+                 // bleibt dive 0, und der Tauch-Block in updateShipsSea laeuft dann gar nicht.
+                 dive:def.subDive || 0,
+                 divePeriod:(def.subPeriod || 30) * (0.85 + Math.random()*0.3) };
     refreshSeaShip(sh);
     sh.placed = placeSeaShip(sh, F.x, F.z);
     if(!sh.placed && sh.group){ scene.remove(sh.group); sh.group = null; }
@@ -1611,6 +1688,26 @@ function updateShipsSea(dt){
     // statt dass der ganze Rumpf mitschaukelt. Der Segler (90 m) schwingt mit, das 300-m-Contain-
     // erschiff praktisch nicht.
     sh.group.position.y = seaYAt(sh.x, sh.z, dt) * SHIP_HEAVE_MAX * wf;
+    // ---- U-BOOT: langsam auf und ab tauchen. Der Sinus laeuft ueber subPeriod Sekunden, mit dem
+    // eigenen x-Wert als Phase — so sind mehrere Boote nicht im Gleichschritt.
+    //
+    // Nur die HAELFTE des Sinus wird genutzt (0..1 statt -1..1): oben liegt es auf seiner Wasserlinie,
+    // unten ragt genau der Turm heraus. Ganz verschwinden soll es nicht.
+    //
+    // Die Bewegung ist zusaetzlich abgeflacht (smoothstep): ein U-Boot verweilt oben und unten und
+    // wechselt dazwischen zuegig, statt gleichmaessig durchzufahren wie ein Kolben.
+    if(sh.dive){
+      const t = 0.5 - 0.5*Math.cos(seaTime*(2*Math.PI/sh.divePeriod) + sh.x*0.0007);
+      const g = t*t*(3 - 2*t);                       // smoothstep: langsam an den Enden
+      sh.group.position.y -= sh.dive * g;
+      // Getaucht liegt es ruhiger: die Duenung greift am Turm weniger an als am ganzen Rumpf.
+      sh.group.rotation.x *= (1 - 0.7*g);
+      // Die KOLLISIONS-Obergrenze sinkt mit: sonst bliebe ueber dem getauchten Boot eine unsichtbare
+      // Wand stehen, an der man abstuerzt, wo nichts mehr ist. sh.top wird an vier Stellen gelesen
+      // (hitsSeaShip, pushOutOfSeaShip, aiObstacleTopAt, aiShipAhead) — alle bekommen damit denselben
+      // aktuellen Wert. sh.top0 ist der vermessene Wert bei aufgetauchtem Boot.
+      sh.top = sh.top0 - sh.dive * g;
+    }
   }
 }
 // Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
@@ -1953,6 +2050,10 @@ function buttonB(){
 // Die Reihenfolge zaehlt: wer in einem Fahrzeug sitzt, will heraus; wer daneben steht, hinein.
 function buttonY(){
   if(eva){ evaBoardY(); return; }
+  // Im FEUERWEHRBOOT am Kai eingestiegen? Dann fuehrt Y zurueck zum eigenen Flieger (siehe
+  // harborBoatFrom). Das muss VOR evaAllowed stehen: das Boot schwimmt, und dort ist Aussteigen
+  // grundsaetzlich verboten — sonst kaeme man nie zurueck.
+  if(isBoat() && harborBoatFrom){ leaveHarborBoat(); return; }
   // Im Flieger: aussteigen, wo es erlaubt ist (am Boden, auf festem Grund - siehe evaAllowed).
   if(evaAllowed()){ evaExit(); return; }
 }
@@ -1973,6 +2074,8 @@ function evaBoardY(){
   const pn = parkPlaneNear();
   if(pn){ evaBoardParked(pn.name, pn.cx, pn.cz); return; } // auf dem Vorfeld -> einsteigen
   if(evaCanBoard()){ evaBoard(); return; }                // am eigenen Flieger -> einsteigen
+  const hbn = harborBoatNear();
+  if(hbn){ evaBoardHarborBoat(hbn.cx, hbn.cz); return; }  // am Kai -> ins Feuerwehrboot
   // Nichts da zum Einsteigen — also selbst abheben. Die Koordinaten sind nur der Rueckfall:
   // evaStartJet setzt ihn vor den Todesstern, wenn ein Gastgeber bekannt ist.
   evaStartJet(eva.group.position.x, eva.group.position.z, eva.group.position.y + 0.6);
@@ -3253,6 +3356,10 @@ function evaAfloat(){ return !!(eva && eva.boat); }
 // sonst treibt es beim Einstieg unkontrolliert los, und ein Kind muesste erst gegensteuern.
 function evaEnterDinghy(x, z){
   if(!eva || eva.boat) return;
+  // NICHT am Kai-Feuerwehrboot: dort will man einsteigen, nicht ins Schlauchboot fallen (siehe
+  // nearHarborBoat). Die Sperre steht HIER und nicht an den beiden Ausloesern, damit sie fuer beide
+  // gilt — hineinlaufen und hineinfallen.
+  if(nearHarborBoat(x, z)) return;
   const b = makeDinghy();
   b.position.set(x, seaYAt(x, z) - DINGHY_DRAFT, z);
   b.rotation.y = eva.yaw;
@@ -4190,6 +4297,17 @@ function updateEva(dt, inp){
   // "landet im Boot" soll genau so aussehen.
   if(locale === 'earth' && !evaSolid(g.position.x, g.position.z)
      && isOpenWater(g.position.x, g.position.z)){
+    // AM KAI-FEUERWEHRBOOT: dort ist das Schlauchboot gesperrt (siehe nearHarborBoat), und ohne
+    // eigene Behandlung fiele der Astronaut endlos weiter. Er steht dort auf der Wasserlinie — die
+    // Zone ist nur die Bootslaenge breit, also flaches Hafenwasser direkt am Kai, in dem man watet.
+    // So kann man ums Boot herumlaufen und mit Y einsteigen.
+    if(nearHarborBoat(g.position.x, g.position.z)){
+      const wlH = seaYAt(g.position.x, g.position.z, dt);
+      if(g.position.y <= wlH){ g.position.y = wlH; eva.vy = 0; eva.onGround = true; }
+      else { eva.vy -= grav * dt; g.position.y += eva.vy * dt; eva.onGround = false; }
+      state.pos.copy(eva.planeAt);
+      return;
+    }
     const wl = seaYAt(g.position.x, g.position.z, dt) - DINGHY_DRAFT + (dinghyFloorY || 0);
     if(g.position.y <= wl){ evaEnterDinghy(g.position.x, g.position.z); return; }
     // noch in der Luft ueber dem Wasser: weiterfallen
@@ -4926,6 +5044,77 @@ function evaBoardParked(name, cx, cz){
   // Inseln neu bauen: der Platz des neuen Modells wird leer, der des alten bekommt sein Flugzeug
   // zurueck. Ohne das stuende das gerade bestiegene Flugzeug noch auf seinem Stellplatz.
   refreshIslands();
+  showBig('\u{2708}\u{FE0F}'); bigTimer = 1.2;
+}
+// ---------- Feuerwehrboot am Kai: einsteigen und zurueck ----------
+// An jedem Hafen liegt ein Feuerwehrboot, zu dem man hinlaufen und mit Y einsteigen kann. Technisch
+// ist es ein MODELLWECHSEL (das Boot ist ein eigenes Modell mit eigener Physik und dem Loeschstrahl,
+// kein Sub-Modus wie der Rover) — aber der Platz des eigenen Fliegers wird gemerkt, damit man
+// zurueckkommt. Fuer ein Kind fuehlt es sich wie Einsteigen an.
+//
+// Steht der Astronaut neben einem Kai-Boot? Gibt { cx, cz } der Inselzelle oder null.
+function harborBoatNear(){
+  if(!eva || eva.rover || eva.boat || eva.jet) return null;
+  if(locale !== 'earth') return null;
+  if(isBoat()) return null;                     // im Boot sitzt man schon
+  const p = eva.group.position;
+  const pcx = Math.round(p.x / CELL), pcz = Math.round(p.z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const bl = harborBoatLocal(pcx+dx, pcz+dz); if(!bl) continue;
+    // 12 m: das Boot ist 16 m lang, man soll auch am Heck oder Bug einsteigen koennen.
+    if(Math.hypot(p.x - (info.wx + bl.x), p.z - (info.wz + bl.z)) < 12)
+      return { cx:pcx+dx, cz:pcz+dz };
+  }
+  return null;
+}
+function evaBoardHarborBoat(cx, cz){
+  const idx = MODEL_NAMES.indexOf('Boat');
+  if(idx < 0) return;
+  const info = islandInfo(cx, cz);
+  const bl = harborBoatLocal(cx, cz);
+  if(!info || !bl) return;
+  // Den Platz des eigenen Fliegers merken, BEVOR das Modell wechselt: eva.planeAt ist die Stelle, an
+  // der er wartet (der Astronaut ist ja ausgestiegen).
+  harborBoatFrom = { model: MODEL_NAMES[currentModel],
+                     x: eva.planeAt.x, y: eva.planeAt.y, z: eva.planeAt.z,
+                     yaw: new THREE.Euler().setFromQuaternion(state.quat, 'YXZ').y };
+  clearEva();
+  currentModel = idx;
+  document.getElementById('mdl').textContent = MODEL_NAMES[idx];
+  buildModel(MODEL_NAMES[idx]);
+  spec = PLANE_SPECS[MODEL_NAMES[idx]] || DEFAULT_SPEC;
+  // placeAtStart raeumt auf (Fallschirm, Rettung, Absturzflags) und setzt dann die modelltypische
+  // Startposition — die ist hier falsch, deshalb danach an den Kai umsetzen. Dasselbe Muster wie in
+  // evaBoardParked.
+  placeAtStart('Boat');
+  state.pos.set(info.wx + bl.x, -BOAT_DRAFT, info.wz + bl.z);
+  state.quat.setFromEuler(new THREE.Euler(0, bl.rot, 0, 'YXZ'));
+  state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  snapCamera();      // Kamera mitnehmen, sonst kriecht sie ueber die halbe Insel hinterher
+  refreshIslands();  // das Kai-Boot verschwindet: man sitzt jetzt darin
+  showBig('\u{1F692}'); bigTimer = 1.2;
+}
+// Zurueck zum eigenen Flieger. Er steht dort, wo man ihn gelassen hat — deshalb wurde der Platz beim
+// Einsteigen gemerkt. Ohne das waere der Flieger nach einer Bootsfahrt unerreichbar.
+function leaveHarborBoat(){
+  if(!harborBoatFrom) return;
+  const f = harborBoatFrom;
+  const idx = MODEL_NAMES.indexOf(f.model);
+  if(idx < 0){ harborBoatFrom = null; return; }
+  harborBoatFrom = null;
+  currentModel = idx;
+  document.getElementById('mdl').textContent = MODEL_NAMES[idx];
+  buildModel(MODEL_NAMES[idx]);
+  spec = PLANE_SPECS[MODEL_NAMES[idx]] || DEFAULT_SPEC;
+  placeAtStart(MODEL_NAMES[idx]);
+  state.pos.set(f.x, f.y, f.z);
+  state.quat.setFromEuler(new THREE.Euler(0, f.yaw, 0, 'YXZ'));
+  state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  snapCamera();
+  refreshIslands();  // das Kai-Boot liegt wieder da
   showBig('\u{2708}\u{FE0F}'); bigTimer = 1.2;
 }
 // In den geparkten X-Wing umsteigen. Er startet auf der LANDEBAHN, nicht am Parkplatz: von der

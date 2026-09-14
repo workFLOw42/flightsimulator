@@ -1601,3 +1601,68 @@ Eingabewege nutzen (Tastatur und Gamepad — vorher stand die Rechnung zweimal d
   jedem Bild neu. Sie endet beim Loslassen und beim Reset.
 
 Jedes andere Modell und der schon fliegende X-Wing bekommen wie bisher direkt 100 %.
+
+## U-Boot auf dem Meer, Feuerwehrboote in den Häfen
+
+Gewünscht: „kulisse auf dem meer. als ki schiff. bis zum turm abgetaucht und dann im wechsel auftauchen
+mit realistischer wasserlinie. langsam fahren. auf und abtauchend." Dazu: „es sollte an jedem hafen ein
+feuerwehrboot liegen zu dem man hinlaufen und einsteigen kann." Das Fahren des U-Boots kommt später,
+zusammen mit der Unterwasserwelt.
+
+### Das U-Boot (submarine by Helindu)
+
+Beim Ausmessen fiel eine Falle auf: die Bounding-Box des Rohmodells ist 8,39 m hoch, was für ein U-Boot
+absurd wäre (Verhältnis 2,8:1). Ursache ist ein einzelnes `Cube`-Teil von 1,01 × 8,39 × 0,33 — ein
+dünnes hohes Blatt, also Periskop oder Antenne. Ohne dieses Teil sind es 4,72 m, und das lange
+Rumpfteil (`Cylinder.004`, 14,1 m) reicht von y = −1,00 bis +1,03, darüber der Turm bis y = 3,01.
+
+| | Rohmodell | auf 95 m skaliert (Faktor 4,01) |
+|---|---|---|
+| Länge | 23,67 | 95 m |
+| Rumpfhöhe | 2,03 | 8,1 m |
+| Turm darüber | 1,98 | 7,9 m |
+
+95 m liegt zwischen Typ VII (67 m) und Los-Angeles-Klasse (110 m).
+
+Die Tauchbewegung läuft über einen Sinus mit 34 s Periode, je Boot um 15 % gestreut (der eigene
+x-Wert als Phase — sonst tauchen mehrere im Gleichschritt). Genutzt wird nur die halbe Amplitude, und
+sie ist mit `smoothstep` abgeflacht: es verweilt oben und unten und wechselt dazwischen zügig, statt
+gleichmäßig durchzufahren wie ein Kolben.
+
+- **aufgetaucht:** 2,4 m Rumpf und der ganze Turm sichtbar (`wl` 0,060 senkt es um 5,7 m, also 70 % der
+  Rumpfhöhe — ein U-Boot liegt tief)
+- **getaucht:** nur die 7,9 m Turm (weitere 8,1 m ab, dann liegt das Rumpfdeck auf der Wasserlinie)
+- Getaucht liegt es ruhiger: die Dünung greift am Turm weniger an, deshalb wird das Nicken um 70 %
+  gedämpft
+- Tempo 1,8 m/s = **6,5 km/h**, das langsamste Schiff auf dem Meer (die Frachter fahren 16–20 km/h)
+
+Wichtig dabei: **die Kollisions-Obergrenze sinkt mit** (`sh.top`). Ohne das bliebe über dem getauchten
+Boot eine unsichtbare Wand stehen, an der man abstürzt, wo nichts mehr ist. `sh.top` wird an vier
+Stellen gelesen (`hitsSeaShip`, `pushOutOfSeaShip`, `aiObstacleTopAt`, `aiShipAhead`), alle bekommen
+damit denselben aktuellen Wert. Der Ausgangswert `top0` wird in `refreshSeaShip` mitgesetzt, weil sich
+`sh.top` beim Nachladen des GLB von der Schätzung auf den vermessenen Wert ändert.
+
+### Feuerwehrboote in den Häfen
+
+An jedem Hafen liegt eines, 34 m wasserseitig der Hafenmitte (der Hafen ist 60 m groß, das Boot 16 m
+lang), längs zum Ufer. Mit Y steigt man ein — technisch ein **Modellwechsel**, weil das Feuerwehrboot
+ein eigenes Modell mit eigener Physik und dem Löschstrahl ist, kein Sub-Modus wie der Rover.
+
+Damit der eigene Flieger nicht verloren geht, wird sein Platz gemerkt (`harborBoatFrom`): Y im Boot
+führt zurück, und er steht dort, wo man ihn gelassen hat. Das Kai-Boot verschwindet, während man es
+fährt — man sitzt ja darin.
+
+### Der Konflikt mit dem Schlauchboot — die Rückfrage war goldwert
+
+Nachgerechnet: die Hafen-Kollisionshülle reicht 27 m (`HARBOR_SIZE*0.45`), das Boot liegt bei 34 m. Die
+letzten **7 m zum Boot sind offenes Wasser** — wer hinlaufen will, tritt hinein, und genau dann setzt
+`evaEnterDinghy` ein. Man hätte im Schlauchboot gesessen, statt einzusteigen.
+
+Behoben mit einer Sperrzone von 26 m um jedes Kai-Boot (deckt die 16 m Bootslänge samt
+Einstiegsreichweite ab). Die Sperre steht **in `evaEnterDinghy`**, nicht an den beiden Auslösern —
+damit gilt sie für beide Wege, Hineinlaufen und Hineinfallen.
+
+Dabei entstand ein Folgeproblem, das ich gleich mitbehoben habe: mit gesperrtem Schlauchboot wäre der
+Astronaut dort endlos gefallen. In der Zone steht er jetzt auf der Wasserlinie und watet — die Zone ist
+nur die Bootslänge breit, also flaches Hafenwasser direkt am Kai. So kann man ums Boot herumlaufen und
+einsteigen.
