@@ -4577,6 +4577,10 @@ function preloadBoat(){
     // Steuert man beim Laden schon das Boot, das Behelfs-Boot sofort gegen das echte tauschen
     // (analog preloadGLB bei den Flugzeugen).
     if(MODEL_NAMES[currentModel] === 'Boat') buildModel('Boat');
+    // Und die Inseln neu bauen: an jedem Strand liegt ein Feuerwehrboot, und wer schneller auf einer
+    // Insel ist als dieses 30-MB-GLB geladen war, haette dort sonst dauerhaft das Behelfs-Boot
+    // (Zylinder mit Kegel) liegen. Dasselbe macht preloadGLB fuer die Flugzeuge auf dem Vorfeld.
+    refreshIslands();
   }, (err)=>{ console.warn('Boot-GLB Ladefehler:', err); });
 }
 
@@ -5158,12 +5162,27 @@ function evaBoardHarborBoat(cx, cz){
 }
 // Zurueck zum eigenen Flieger. Er steht dort, wo man ihn gelassen hat — deshalb wurde der Platz beim
 // Einsteigen gemerkt. Ohne das waere der Flieger nach einer Bootsfahrt unerreichbar.
+// An Land aussteigen: man steht ZU FUSS am Strand, nicht ploetzlich wieder im Flieger. Der wartet
+// dort, wo man ihn gelassen hat — man laeuft also zurueck und steigt mit Y ein, wie beim Rover.
+//
+// Vorher setzte diese Funktion einen direkt ins Flugzeug: „wenn man aus einem flugzeug aussteigt, in
+// ein boot einsteigt, an land fährt und mit y aussteigt ist man wieder im flugzeug". Das ueberspringt
+// den Weg und fuehlt sich wie Teleportieren an.
 function leaveHarborBoat(){
   if(!harborBoatFrom) return;
   const f = harborBoatFrom;
   const idx = MODEL_NAMES.indexOf(f.model);
   if(idx < 0){ harborBoatFrom = null; return; }
   harborBoatFrom = null;
+  // Wo der Astronaut hinsoll: an Land vor dem Bug. Das Boot selbst liegt im Wasser, also ein Stueck
+  // voraus suchen, bis fester Grund kommt (dieselbe Idee wie beim Schlauchboot-Ausstieg).
+  const bf = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  let ex = state.pos.x, ez = state.pos.z;
+  for(let s = BOAT_LOOK; s <= BOAT_LOOK*3; s += 2){
+    const px = state.pos.x + bf.x*s, pz = state.pos.z + bf.z*s;
+    if(evaSolid(px, pz)){ ex = px; ez = pz; break; }
+  }
+  // Zurueck auf das Modell, in dem man vorher sass — es steht ja an seinem gemerkten Platz.
   currentModel = idx;
   document.getElementById('mdl').textContent = MODEL_NAMES[idx];
   buildModel(MODEL_NAMES[idx]);
@@ -5173,9 +5192,20 @@ function leaveHarborBoat(){
   state.quat.setFromEuler(new THREE.Euler(0, f.yaw, 0, 'YXZ'));
   state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
-  snapCamera();
-  refreshIslands();  // das Kai-Boot liegt wieder da
-  showBig('\u{2708}\u{FE0F}'); bigTimer = 1.2;
+  // Und JETZT aussteigen: der Astronaut steht am Strand, der Flieger wartet an seinem Platz.
+  // clearEva zuerst, damit kein alter Astronaut aus einer frueheren Runde stehen bleibt.
+  clearEva();
+  const g = makeAstronaut();
+  const eul = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  g.position.set(ex, evaFootY(ex, ez), ez);
+  g.rotation.y = eul.y;
+  scene.add(g);
+  eva = { group:g, vy:0, onGround:true, yaw:eul.y,
+          planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
+  state.throttle = 0;
+  refreshIslands();  // das Kai-Boot liegt wieder da (man faehrt es ja nicht mehr)
+  jetSnapCam();      // Kamera auf den ASTRONAUTEN, nicht auf den Flieger
+  showBig('\u{1F9D1}'); bigTimer = 1.2;
 }
 // In den geparkten X-Wing umsteigen. Er startet auf der LANDEBAHN, nicht am Parkplatz: von der
 // Wiese zwischen Haeusern wegzurollen waere muehsam, und placeAtStart setzt ohnehin schon alles
@@ -7258,6 +7288,10 @@ spec = PLANE_SPECS[MODEL_NAMES[0]] || DEFAULT_SPEC;
 
 function cycleModel() {
   if(locale !== 'earth') enterEarth();       // nur der X-Wing kann im Weltall sein
+  // Wer per Taste das Modell wechselt, verlaesst die Kai-Einstiegs-Kette bewusst: der gemerkte
+  // Flieger-Platz gilt dann nicht mehr (sonst setzte Y einen spaeter dorthin zurueck, obwohl man
+  // ueber die Auswahl eingestiegen ist).
+  harborBoatFrom = null;
   currentModel = (currentModel+1) % MODEL_NAMES.length;
   document.getElementById('mdl').textContent = MODEL_NAMES[currentModel];
   buildModel(MODEL_NAMES[currentModel]);
@@ -7265,6 +7299,12 @@ function cycleModel() {
   placeAtStart(MODEL_NAMES[currentModel]);   // neues Flugzeug an passender Startposition am Boden
   // Der X-Wing gehört in den Todesstern-Hangar — auch wenn man ihn per Modellwechsel wieder wählt.
   if(MODEL_NAMES[currentModel] === 'XWing' && hangarObj) enterHangar();
+  // Inseln neu bauen: das Modell, das man SELBST fahrt, darf nicht zusaetzlich als Kulisse dastehen.
+  // Beim Vorfeld war das schon so geloest (parkPlaneAt laesst den eigenen Platz frei), aber
+  // cycleModel baute die Zellen nie neu — beim Wechsel per Taste blieb der alte Stand stehen.
+  // Am Feuerwehrboot fiel das sofort auf: es liegt am Strand, und wer es per M waehlte, sass mitten
+  // im Kulissenboot. Gemeldet als „jetzt sind wenn man das boot nimmt 2 boote uebereinander".
+  refreshIslands();
   // Motorsound wird von updateEngineSound automatisch nachgezogen (erkennt Modellwechsel)
 }
 

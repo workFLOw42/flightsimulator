@@ -1763,3 +1763,46 @@ Geprüft, dass die Höhen der anderen dort stimmen: `canLandHere` erlaubt Canada
 (`isOnLand` fragt nur die Grasfläche), `evaFootY` gibt dem Astronauten dort ausdrücklich `ISLAND_Y`, und
 die Canadair schwimmt über `floatCanadair` auf der Wasserlinie — für ein Flugboot am Strand genau
 richtig.
+
+## Zwei Boote übereinander, und der Ausstieg übersprang den Weg
+
+Gemeldet mit Screenshot: „jetzt sind wenn man das boot nimmt 2 boote übereinander" (dazu: „zu beginn
+sind die beiden deckungsgleich, aber es darf keine 2 boote geben") und „wenn man aus einem flugzeug
+aussteigt, in ein boot einsteigt, an land fährt und mit y aussteigt ist man wieder im flugzeug".
+
+### Das doppelte Boot: cycleModel baute die Inseln nie neu
+
+`buildIsland` lässt das Kulissenboot weg, solange man selbst das Boot fährt (`isBoat() ? null : …`) —
+das greift aber nur, wenn die Zelle **neu gebaut** wird. `cycleModel` (Modellwechsel per M oder D-Pad)
+tat das nie: es setzte `currentModel`, baute das Flugmodell und ließ die Welt stehen.
+
+Beim Vorfeld war dasselbe Problem schon gelöst (`parkPlaneAt` lässt den eigenen Platz frei), fiel dort
+aber nicht auf — die geparkten Flugzeuge stehen ja neben der Bahn, nicht unter einem. Am Feuerwehrboot
+sitzt man mitten im Kulissenboot.
+
+Jetzt ruft `cycleModel` `refreshIslands()`. Damit sind alle fünf Wege ins Boot abgedeckt:
+
+| Weg | ruft refreshIslands |
+|---|---|
+| `cycleModel` (Taste) | ✓ neu |
+| `evaBoardHarborBoat` (Y am Strand) | ✓ |
+| `leaveHarborBoat` (Y an Land) | ✓ |
+| `evaBoardParked`, `evaBoardXwing` | ✓ |
+| nach dem Nachladen des Boot-GLB | ✓ neu |
+
+Der letzte Punkt war eine eigene Lücke: das Boot-GLB ist 30 MB und lädt asynchron. Wer schneller auf
+einer Insel war, hatte dort dauerhaft das Behelfs-Boot (Zylinder mit Kegel) liegen.
+
+Dazu ein Randfall: wechselt man per Taste, während man das Kai-Boot fährt, wird der gemerkte
+Flieger-Platz gelöscht — sonst setzte Y einen später dorthin zurück, obwohl man über die Auswahl
+eingestiegen ist.
+
+### Der Ausstieg setzte direkt ins Flugzeug
+
+`leaveHarborBoat` schaltete auf das alte Modell zurück und setzte einen hinein. Das übersprang den Weg
+und fühlt sich wie Teleportieren an.
+
+Jetzt steigt man **zu Fuß** am Strand aus: der Astronaut wird an Land vor dem Bug gesetzt (ein Stück
+voraus gesucht, bis fester Grund kommt — dieselbe Idee wie beim Schlauchboot-Ausstieg), der Flieger
+wartet an seinem gemerkten Platz. Man läuft also zurück und steigt mit Y ein, wie beim Rover. Die
+Kamera geht auf den Astronauten, nicht auf den Flieger.
