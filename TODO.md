@@ -903,3 +903,90 @@ Fliegerformel ist die richtige. Verifiziert, dass die Konstante nirgends mehr vo
 **Merken:** Python schreibt im Google-Drive-Ordner nicht (`OSError: Bad file descriptor` bei
 `io.open(...,'w')`) — auch nicht für kleine Kommentar-Korrekturen. Lesen geht, schreiben nur über
 PowerShell `[IO.File]::WriteAllText`.
+
+## Jetpack: Hangar-Reset und Kamera-Nachlauf (behoben)
+
+Gemeldet: „im hangar resettet der jetpack immer wieder. kein übregang ins weltall möglich" und „auf der
+erde (mindestens) bleibt die kamera nicht hinter dem jetpack, sauberes fliegen nicht möglich".
+
+Ab hier ohne Browser-Messungen geprüft (auf Wunsch: sie fressen zu viele Token) — stattdessen Code
+gegen die Anforderungen gelesen und die Physik separat durchgerechnet.
+
+### Der Hangar-Reset: eine Falle, die ich selbst gebaut hatte
+
+Mit den neuen Schubstufen hatte ich die Vorwärtsfahrt unter 30 % Schub **ganz abgeschaltet**
+(`want = 0`). Beim X-Wing ist das richtig, der landet senkrecht. Am Jetpack wurde es zur Sackgasse:
+
+- Der Hallenausgang liegt **seitlich bei 200 m** (`HANGAR_OUT_R`) — man muss dorthin fliegen.
+- Bei 20 % schwebte man auf der Stelle, bei 10 % und 0 % sank man nur.
+- Der einzige Weg hinaus wäre ≥ 30 % Schub gewesen, und das sieht man nirgends.
+- Gemessen: Schub loslassen → nach **0,4 s** wieder auf dem Hallenboden. Das war das „resettet immer
+  wieder".
+
+Zwei Anläufe: erst auf ein Drittel gedrosselt, das ergab gemessene **66 s** bis zum Ausgang — für ein
+Kind dasselbe wie „geht nicht". Jetzt volle Fahrt, also 9 m/s bei 20 % Schub und **22 s** bis zum
+Ausgang. Das Landen stört das nicht, weil der VTOL-Block die Sinkrate unabhängig regelt: man setzt
+auf, während man noch vorwärts gleitet — genau wie ein Astronaut es tun würde.
+
+Nachgerechnet, dass die Landestufen davon unberührt bleiben (aus 400 m, 2 s):
+
+| Schub | 0 % | 5 % | 10 % | 15 % | 20 % |
+|---|---|---|---|---|---|
+| Sinkrate | −19,99 | −15,00 | −10,00 | −5,00 | 0,00 |
+
+### Dabei gefunden: die Sinkfahrt blieb hängen
+
+Beim Durchlesen aufgefallen, nicht gemeldet: die Schubregelung wirkt nur **längs** der Blickrichtung,
+quer dazu bleibt alte Fahrt stehen. Wer also mit 0 % sank (−20 m/s) und dann waagerecht Vollgas gab,
+sank nachgerechnet **weiter mit −20 m/s** und setzte im Vorwärtsflug auf dem Boden auf, statt
+abzuheben. Vor den Landestufen gab es am Boden gar kein Sinken, deshalb war das neu.
+
+Ab 30 % Schub wird die Senkrechtfahrt jetzt der Blickrichtung nachgeführt. Durchgerechnet, aus −20 m/s
+heraus, nach 3 s:
+
+| Haltung | Schub | v.y danach |
+|---|---|---|
+| waagerecht | 50 % | **−0,00** (kein Sinken mehr) |
+| waagerecht | 100 % | **−0,00** |
+| Nase 30° hoch | 100 % | +22,4 (steigt) |
+| Nase 40° runter | 100 % | −29,0 (sinkt gewollt) |
+
+Gewolltes Sinken bleibt also möglich, nur das ungewollte Hängenbleiben ist weg.
+
+### Die Kamera: falsche Art des Nachziehens
+
+`camera.position.lerp(...)` zieht die **absolute Position** nach — damit wächst der Rückstand mit der
+Fahrt. Bei 6 pro Sekunde und 45 m/s sind das 7,5 m: die Kamera hängt 20,8 m statt der vorgesehenen
+13,3 m zurück (+56 %) und schwimmt hinter dem Astronauten her, statt hinter ihm zu **stehen**. Die
+Richtung war übrigens schon vorher exakt (gemessen 0,00° hinter ihm) — es war reiner Nachlauf.
+
+Jetzt wird der **Abstand** nachgezogen, wie bei der Verfolgerkamera des Fliegers, und straffer
+(20 statt 8 pro Sekunde): rechnerisch 2,3 m Rest statt 5,6 m.
+
+Beim Nachrechnen kam heraus, dass das allein nicht reicht: auch beim Abstands-Lerp bleibt ein
+Gleichgewicht bei v/k, und im Weltall wären das bei Warp 1 rund **150 m**, bei Warp 10 gut **1500 m**.
+Der Flieger lebt damit, weil ein X-Wing groß ist und `camBackExtra` ihm ohnehin bis 125 m gibt — ein
+1,9 m großer Astronaut wäre dabei unsichtbar. Deshalb wird der Abstand hart geklemmt: höchstens das
+Doppelte des Sollwerts.
+
+| Tempo | Abstand mit Klemme | Soll |
+|---|---|---|
+| 45 m/s (Erde/Mond/Mars) | 14,8 m | 13,3 m |
+| Warp 1 (3000 m/s) | 13,3 m | 13,3 m |
+| Warp 10 (30000 m/s) | 13,3 m | 13,3 m |
+
+### Nebenbei aufgeräumt
+
+- `if(want < 0.01 && (imAll || want >= VTOL_FWD))` — die zweite Hälfte war unerfüllbar (`want` kann
+  nicht gleichzeitig unter 0,01 und über 0,30 liegen), ein Rest der `roh`/`want`-Umstellung. Jetzt
+  schlicht `want < 0.01 && imAll`.
+- `roh` war nach der Umstellung mit `want` identisch, aber an fünf Stellen noch benutzt und **nicht
+  mehr deklariert** — das hätte einen `ReferenceError` geworfen. Alle fünf auf `want` umgestellt.
+
+### Zwei Testfehler auf meiner Seite
+
+- **Der Testlauf hing über zwei Stunden.** Ich hatte `await warte(...)` in Echtzeit-Frames für einen
+  Flug benutzt, der 66 Sekunden Spielzeit dauert — bei gedrosselter Hintergrund-Bildrate wird daraus
+  ein Vielfaches. Wer lange Flüge messen will, taktet die Physik direkt (`updateJet(1/60, inp)`).
+- **Python schreibt im Google-Drive-Ordner nicht** (`OSError: Bad file descriptor`), auch nicht für
+  kleine Kommentar-Korrekturen. Lesen geht, schreiben nur über PowerShell `WriteAllText`.
