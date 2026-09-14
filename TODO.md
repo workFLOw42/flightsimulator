@@ -1242,3 +1242,56 @@ Statt aufs nächste Symptom zu warten, habe ich alle Instrumente durchgezählt, 
 
 Damit ist die Liste leer. Der Lernpunkt aus der Runde davor hat hier gezogen: erst durchzählen, dann
 beheben — nicht das nächste gemeldete Symptom abwarten.
+
+## Jetpack: der Warp-Ring dreht mit, und die Planeten werden angeflogen
+
+Gemeldet: „jetzt bitte noch den warp ring anpassen. und den anflug an die planeten. der jetpack soll
+bitte auch so anfliegen wie der x wing und nicht einfach auf der erde sein." Zum Ring auf Rückfrage
+präzisiert: „der ring bleibt steht still. dreht sich also nicht mit dem astronauten."
+
+### Der Ring: zwei Fehler in derselben Zeile
+
+Ich hatte ihn in der Runde davor an `eva.yaw`/`eva.jetPitch` gehängt, aber mit zwei Fehlern:
+
+- **Das Vorzeichen des Nickwinkels war negativ** — dieselbe Verwechslung, die auch das Modell hatte
+  (eine Nase auf −Z wird von `+pitch` gehoben). Beim Modell hatte ich es korrigiert, hier nicht.
+- **Die Querlage fehlte ganz.** `jetRoll` kam erst später dazu, der Ring kannte es nie.
+
+Der Ring stand damit bei jedem Steigflug und in jeder Kurve anders als der Astronaut — und weil die
+Kamera mit **ihm** dreht, sah der Ring im Bild aus, als bliebe er stehen. Jetzt nimmt er exakt dieselbe
+Lage: `Euler(eva.jetPitch, eva.yaw, eva.jetRoll)`.
+
+### Der Anflug: neu, nach dem Muster von setupApproach
+
+Vorher setzte das Jetpack beim Andocken sofort auf dem Boden auf — man kam aus dem Weltall und **stand**
+plötzlich auf der Insel. Der X-Wing wird über `setupApproach` 1600 m entfernt und 900 m hoch eingesetzt,
+Nase aufs Ziel, 110 m/s.
+
+Neu ist `jetApproach(key, tx, tz)`, das Gegenstück für den Astronauten. Das Jetpack bleibt dabei **an**:
+man fliegt selbst herunter und landet mit den Schubstufen, wie man es auf dem Hinweg gelernt hat.
+
+Die Werte sind aufs Astronauten-Tempo umgerechnet — mit `JET_VMAX` = 45 m/s wären 1600 m fast zwei
+Minuten. Beim ersten Ansatz (500 m / 300 m / 14° Nase) passten die Zeiten nicht zusammen:
+
+| Variante | waagerecht am Ziel | am Boden |
+|---|---|---|
+| 500 m / 300 m / −14° | 23 s | **54 s** |
+| **500 m / 180 m / −20°** | **24 s** | **23 s** |
+
+Mit der ersten wäre er in voller Höhe über das Ziel hinweggeflogen. Die zweite bringt ihn tief am Ziel
+an, wie ein echter Anflug.
+
+Gilt für Erde, Mond und Mars. Der **Hangar** setzt weiterhin direkt in der Halle auf — dort landet auch
+der X-Wing direkt, ein Anflug in einem Innenraum wäre unsinnig.
+
+Zwei Dinge, auf die ich beim Bauen geachtet habe:
+
+- **`updateIslands` nimmt während der EVA den Astronauten als Bezug** (`worldFocus`), nicht `state.pos`.
+  Der Anflugpunkt muss also **vor** `earthWorldVisible(true)` stehen, sonst entstehen die Inselzellen um
+  den Flieger und man fliegt über leeres Wasser.
+- **Keine Andock-Schleife:** der Ortswechsel passiert vor dem Anflug, `locale` ist also nicht mehr
+  `space`. Damit greifen weder der Andock-Block in `updateJet` noch die Weltall-Prüfungen in
+  `updateLocale` — nachgerechnet für alle drei Orte (Erde 4000 m, Mond 1000 m, Mars 2000 m Schwelle
+  gegen 180 m Anflughöhe).
+- Das **Höhenraster von Mond und Mars** wird über Frames aufgebaut, `groundHeightAt` liefert am Anfang
+  also 0. Unkritisch: 180 m darüber ist genug Luft, und bis er unten ist, steht das Raster längst.

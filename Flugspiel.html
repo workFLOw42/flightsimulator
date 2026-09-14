@@ -3613,22 +3613,29 @@ function evaEndJetToHangar(host){
 // Flieger kommt einfach mit. Das ist gewollt: sonst waere man auf dem Mars gestrandet.
 function evaEndJetToGround(key){
   if(!eva) return;
-  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
+  // Das Jetpack bleibt AN: man fliegt Mond oder Mars an wie der X-Wing und landet selbst. Vorher
+  // setzte es hier sofort auf — man kam aus dem Weltall und stand ploetzlich im Krater.
+  eva.jetRoll = 0;
   enterGround(key);
   // Von HIER gestartet? Dann zurueck zum eigenen Flieger, nicht an einen zufaelligen Anflugpunkt.
   const heim = (jetFrom && jetFrom.locale === key);
-  if(heim){ state.pos.x = jetFrom.x; state.pos.z = jetFrom.z; }
-  const gy = vehicleGroundY(state.pos.x, state.pos.z);
-  eva.group.position.set(state.pos.x, gy, state.pos.z);
-  eva.group.rotation.set(0, eva.yaw, 0);
-  eva.planeAt.set(state.pos.x, gy, state.pos.z);
-  eva.vy = 0; eva.onGround = true;
-  state.pos.y = gy; state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
+  const tx = heim ? jetFrom.x : state.pos.x;
+  const tz = heim ? jetFrom.z : state.pos.z;
+  // Der Flieger steht am Ziel auf dem Boden (bei einem FREMDEN Koerper setzt enterGround ihn ueber
+  // setupApproach an seinen eigenen Anflug — dann ist state.pos schon gesetzt und wird nur geerdet).
+  const gy = vehicleGroundY(tx, tz);
+  state.pos.set(tx, gy, tz);
+  state.vel.set(0,0,0); state.onGround = true;
   planeGroup.position.copy(state.pos);
+  // Und der Astronaut fliegt es an — das Hoehenraster von Mond und Mars wird ueber Frames aufgebaut,
+  // groundHeightAt liefert am Anfang also 0. Das ist unkritisch: jetApproach setzt ihn 300 m ueber
+  // diesen Wert, und bis er unten ist, steht das Raster laengst (8 Zeilen pro Frame, 128 noetig).
+  jetApproach(key, tx, tz);
+  // planeAt ist ab jetzt wieder der FLIEGER — dorthin fuehrt das Radar beim Anflug.
+  eva.planeAt.set(state.pos.x, state.pos.y, state.pos.z);
   if(heim) jetFrom = null;
-  jetSnapCam();   // auf den ASTRONAUTEN, nicht auf den Flieger (Sprung ueber Hunderte km)
-  showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
-  console.log('[Jetpack] aufgesetzt auf', key, heim ? '(zurueck beim Flieger)' : '(fremder Koerper)');
+  showBig(key === 'mars' ? '\u{1F534}' : '\u{1F319}'); bigTimer = 1.2;
+  console.log('[Jetpack] Anflug auf', key, heim ? '(zurueck zum Flieger)' : '(fremder Koerper)');
 }
 // Zurueck auf die ERDE. Das ist der Rueckweg fuer alle, die von dort gestartet sind: Y auf einer
 // Insel zuendet das Jetpack, man fliegt zwischen den Planeten herum, und am Ende will man wieder
@@ -3640,15 +3647,18 @@ function evaEndJetToGround(key){
 // garantiert eine Insel traegt (islandInfo: isStart), also gibt es dort immer festen Grund.
 function evaEndJetToEarth(){
   if(!eva) return;
-  eva.jet = false; eva.jetVel = null; eva.jetPitch = 0; eva.jetRoll = 0;
+  // Das Jetpack bleibt AN: man fliegt die Erde an, wie der X-Wing es tut, und landet selbst mit den
+  // Schubstufen. Vorher wurde hier eva.jet abgeschaltet und der Astronaut auf den Boden gesetzt —
+  // man kam aus dem Weltall und STAND ploetzlich auf der Insel.
+  eva.jetRoll = 0;
   // Zielstelle BEVOR die Erdwelt aufgebaut wird: earthWorldVisible(true) ruft updateIslands(), und
-  // das baut die Zellen um state.pos herum. Stuende state.pos noch im Weltall, entstuenden die
-  // Inseln Hunderttausende Meter entfernt und man landete auf leerem Wasser.
+  // das baut die Zellen um den Bezugspunkt herum. Stuende der noch im Weltall, entstuenden die
+  // Inseln Hunderttausende Meter entfernt und man flog ueber leeres Wasser.
   const zurueck = (jetFrom && jetFrom.locale === 'earth');
   const tx = zurueck ? jetFrom.x : 0;
   const tz = zurueck ? jetFrom.z : 0;
   state.pos.set(tx, 0, tz);
-  state.vel.set(0, 0, 0); state.throttle = 0;
+  state.vel.set(0, 0, 0);
   locale = 'earth';
   warpDrive = 0; warpVis = 0;
   if(earthBall) earthBall.visible = false;
@@ -3656,26 +3666,24 @@ function evaEndJetToEarth(){
   if(issObj) issObj.visible = false;
   if(hangarObj) hangarObj.visible = false;
   clearGroundTiles();
-  earthWorldVisible(true);          // baut die Inselzellen um state.pos herum auf
-  // Erst JETZT die Hoehe holen: vor updateIslands() kennt islandInfo die Zelle zwar (sie ist
-  // gerechnet, nicht gezeichnet), aber der Traegertest haengt an gesetzten Gruppen.
+  // Den Astronauten SCHON auf den Anflugpunkt setzen, bevor die Welt gebaut wird: updateIslands
+  // nimmt waehrend der EVA ihn als Bezug (worldFocus), nicht state.pos.
+  jetApproach('earth', tx, tz);
+  earthWorldVisible(true);          // baut die Inselzellen um den Astronauten herum auf
+  // Der eigene Flieger steht dort, wo man ihn gelassen hat — auf Bodenhoehe, damit man ihn beim
+  // Landen wiederfindet. Erst JETZT die Hoehe holen: vor updateIslands kennt islandInfo die Zelle
+  // zwar (sie ist gerechnet, nicht gezeichnet), aber der Traegertest haengt an gesetzten Gruppen.
   const gy = surfaceY(tx, tz);
   state.pos.y = gy; state.onGround = true; state.stalling = false;
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
-  // Der Astronaut daneben, auf FUSSHOEHE (evaFootY kennt den Sandrand, surfaceY nicht) — 6 m
-  // seitlich, wie beim Aussteigen im Hangar, damit er nicht im Flieger steht.
-  const ex = tx + 6, ez = tz;
-  eva.group.position.set(ex, evaFootY(ex, ez), ez);
-  eva.group.rotation.set(0, eva.yaw, 0);
+  // planeAt ist ab jetzt wieder der FLIEGER (jetApproach hat es auf den Astronauten gesetzt, damit
+  // die EVA-Leine beim Einsetzen nicht zieht) — dorthin fuehrt das Radar beim Anflug.
   eva.planeAt.set(state.pos.x, state.pos.y, state.pos.z);
-  eva.vy = 0; eva.onGround = true;
   jetFrom = null;
-  jetSnapCam();   // auf den ASTRONAUTEN, nicht auf den Flieger (Sprung ueber Hunderte km)
-  showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
+  showBig('\u{1F30D}'); bigTimer = 1.2;
   showSpaceHint('\u{1F30D}');
-  flashFade();
-  console.log('[Jetpack] gelandet auf der Erde bei', tx.toFixed(0), gy.toFixed(1), tz.toFixed(0),
-              zurueck ? '(zurueck beim Flieger)' : '(Startinsel)');
+  console.log('[Jetpack] Anflug auf die Erde, Ziel', tx.toFixed(0), tz.toFixed(0),
+              zurueck ? '(zurueck zum Flieger)' : '(Startinsel)');
 }
 // ---- Die Rover als FAHRZEUGE (Mond und Mars) ---------------------------------------------
 // Frueher war der Rover reine Deko: roverBesideEva() setzte ihn jeden Frame neben den Astronauten,
@@ -5697,6 +5705,45 @@ function setupApproach(key, tx, tz, dist, alt){
   snapCamera();
 }
 
+// Anflug fuer das JETPACK — das Gegenstueck zu setupApproach, nur fuer den Astronauten.
+//
+// Vorher setzte das Jetpack einfach auf dem Boden auf: man kam aus dem Weltall und STAND ploetzlich
+// auf der Insel. Der X-Wing fliegt an, und das Jetpack soll es genauso tun („der jetpack soll bitte
+// auch so anfliegen wie der x wing und nicht einfach auf der erde sein").
+//
+// Die Werte sind aufs Astronauten-Tempo umgerechnet: der Flieger startet 1600 m entfernt und 900 m
+// hoch mit 110 m/s, was 15 s Anflug ergibt. Mit JET_VMAX = 45 m/s waeren dieselben 1600 m knapp zwei
+// Minuten. 500 m und 180 m Hoehe ergeben bei halbem Schub 24 s — dieselbe Ordnung wie beim Flieger.
+//
+// Das Jetpack bleibt dabei AN (eva.jet bleibt true): man fliegt selbst herunter und landet mit den
+// Schubstufen, wie man es auf dem Hinweg gelernt hat. Genau das ist der Unterschied zum bisherigen
+// „ist einfach da".
+const JET_APPROACH_DIST = 500;    // m vom Ziel entfernt einsetzen
+const JET_APPROACH_ALT  = 180;    // m ueber dem Grund am Einsetzpunkt
+function jetApproach(key, tx, tz){
+  if(!eva) return;
+  const a = Math.random()*Math.PI*2;
+  const px = tx + Math.cos(a)*JET_APPROACH_DIST, pz = tz + Math.sin(a)*JET_APPROACH_DIST;
+  // Mond und Mars haben ein Hoehenraster, die Erde nicht — dort zaehlt die Meereshoehe (wie in
+  // setupApproach).
+  const gy = GROUNDS[key] ? groundHeightAt(key, px, pz) : 0;
+  eva.group.position.set(px, gy + JET_APPROACH_ALT, pz);
+  // Nase auf das Ziel, leicht gesenkt: er kommt von oben herunter und sieht dabei, wohin es geht.
+  const dir = new THREE.Vector3(tx - px, 0, tz - pz).normalize();
+  eva.yaw = Math.atan2(-dir.x, -dir.z);
+  // Nase 20 Grad runter: so passen Sinkzeit und Anflugzeit zusammen. Bei halbem Schub (22,5 m/s)
+  // sind das 24 s fuer die 500 m waagerecht und 23 s fuer die 180 m Hoehe — er kommt also TIEF am
+  // Ziel an, nicht darueber. Mit 300 m Hoehe und 14 Grad waeren es 23 s gegen 54 s gewesen: er waere
+  // in voller Hoehe darueber hinweggeflogen.
+  eva.jetPitch = -0.35;
+  eva.jetRoll = 0;
+  eva.jetVel = new THREE.Vector3(dir.x*JET_VMAX*0.5, 0, dir.z*JET_VMAX*0.5);
+  eva.vy = 0; eva.onGround = false;
+  state.throttle = 0.5;                    // halber Schub: zuegig heran, aber beherrschbar
+  eva.planeAt.copy(eva.group.position);    // sonst zieht die EVA-Leine sofort zurueck
+  jetSnapCam();                            // Sprung ueber Hunderte km — Kamera mitnehmen
+  flashFade();
+}
 // Auf eine Oberfläche wechseln (Mond oder Mars).
 function enterGround(key){
   locale = key;
@@ -5950,7 +5997,13 @@ function updateWarp(dt){
       // „sieht aus als waere er nach rechts verdreht": man steigt im Hangar mit yaw -1,57 aus
       // (Nase zum Ausgang), fliegt dann in eine andere Richtung, und der Ring blieb quer stehen.
       if(jetAn){
-        warpRing.quaternion.setFromEuler(new THREE.Euler(-eva.jetPitch, eva.yaw, 0, 'YXZ'));
+        // GENAU dieselbe Lage wie der Astronaut selbst (siehe updateJet): +jetPitch, yaw, jetRoll.
+        // Zwei Fehler steckten hier: das Vorzeichen des Nickwinkels war negativ (dieselbe Verwechslung
+        // wie beim Modell — eine Nase auf -Z wird von +pitch gehoben), und die Querlage fehlte ganz.
+        // Damit stand der Ring bei jedem Steigflug und in jeder Kurve anders als der Astronaut, und
+        // weil die Kamera mit IHM dreht, sah der Ring im Bild aus, als bliebe er stehen.
+        warpRing.quaternion.setFromEuler(
+          new THREE.Euler(eva.jetPitch, eva.yaw, eva.jetRoll || 0, 'YXZ'));
       } else {
         warpRing.quaternion.copy(state.quat);
       }
