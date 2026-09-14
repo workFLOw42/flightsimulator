@@ -1497,3 +1497,40 @@ gewollt — sie sind eine Navigationshilfe und sollen nie von Terrain oder Welle
 Selbstverdecken ist beim Flieger kein Thema: der Schatten liegt auf Wasserhöhe + 0,15 m, der Flieger
 mehrere Meter darüber. Beim ovalen Schatten war das Verdecken sogar gewollt, damit das Boot seinen
 eigenen Schatten überdeckt.
+
+## Der Schatten kannte das Trägerdeck nicht — und fehlte auf Mond, Mars und im Hangar
+
+Gemeldet: „jetzt sieht man den schatten auf dem wasser durch den carrier hindurch", und auf meinen ersten
+Fix hin der entscheidende Hinweis: „es liegt wohl eher daran, dass vorher die deckhöhe 23m war, jetzt
+14m. und die schattengrenze liegt bei 20m." Dann: „und bitte baue den schatten auch auf mars und mond
+ein. und in der halle."
+
+### Der Hinweis traf es, und dahinter lag mehr
+
+Nachgerechnet mit `SHADOW_MAXALT` = 20 m, gerechnet ab der Oberfläche:
+
+| Flieger auf dem Deck | Rechnung | Ergebnis |
+|---|---|---|
+| Deck vorher 23,4 m über Wasser | 23,4 − 0 = 23,4 > 20 | Schatten **aus** — der Fehler war unsichtbar |
+| Deck jetzt 14,6 m | 14,6 − 0 = 14,6 < 20 | Schatten **an**, aber im **Wasser** |
+| nach dem Fix | 14,6 − 14,6 = 0 | Schatten **an**, auf dem **Deck** |
+
+Denn die eigentliche Lücke war: `updateShadow` fragte `isOnCarrier` **überhaupt nicht ab**. Über dem
+Träger rechnete der Flieger-Schatten mit Wasserhöhe 0, lag also im Wasser statt auf dem Deck — der
+ovale Schatten (Boote, Astronaut) kennt `onCar` längst, der Flieger-Schatten nie. Solange das Deck über
+der 20-m-Grenze lag, kam der Fall gar nicht vor.
+
+Mein erster Fix (`depthTest:true` statt `false`) war deshalb nicht der Kern, aber richtig und bleibt:
+der Schatten wurde sonst über **alles** gezeichnet, auch über Objekte zwischen ihm und der Kamera. Gegen
+das z-fighting im Wasser hilft `polygonOffset`, wie beim ovalen Schatten seit längerem.
+
+### Schatten auf Mond, Mars und im Hangar
+
+`updateShadow` begann mit `if(locale !== 'earth') → aus`, begründet mit „auf dem Mond keine
+Insel-Referenzhöhe". Das stimmte für die alte Rechnung mit festem `ISLAND_Y`, ist aber überholt:
+`surfaceY` kennt inzwischen jeden Ort — `hangarFloorY` in der Halle, das Höhenraster von Mond und Mars
+samt exaktem Raycast, und die Fläche der Mondbasis.
+
+Jetzt ist nur noch das **Weltall** ausgenommen (dort gibt es keinen Boden). An allen anderen Orten
+nutzen beide Schatten `surfaceY`, und die Wellen- und Träger-Sonderfälle gelten nur noch in der
+Erdwelt. Damit hat auch der Astronaut zu Fuß auf dem Mond und im Hangar einen Schatten.

@@ -2889,7 +2889,11 @@ function updateOvalShadow(){
   // 88 Grad verdreht (C:/tmp/v18.js). Verworfen — die Reihenfolge ZYX mischt die Winkel anders, als
   // es aussieht. Der Umweg ueber das Maximum kostet nur die paar Zentimeter Anstieg und ist sicher.
   let surf;
-  if(onCar) surf = fordDeckY;
+  // Ausserhalb der Erdwelt (Hangar, Mond, Mars) liefert surfaceY die Bodenhoehe direkt — dort gibt es
+  // kein Wasser, keinen Strand und keinen Traeger. Damit hat auch der Astronaut zu Fuss auf dem Mond
+  // und im Hangar einen Schatten, so wie in der Inselwelt.
+  if(locale !== 'earth') surf = surfaceY(px, pz);
+  else if(onCar) surf = fordDeckY;
   // Der SANDRAND zaehlt als Land: er ist gezeichnet (buildIsland bis radius*1.12) und traegt den
   // Astronauten (siehe evaFootY). Vorher fragte hier nur isOnLand, also fiel der Schatten am Strand
   // in den Wasser-Zweig und lag auf Wellenhoehe statt auf dem Sand — gemeldet als „der astronaut hat
@@ -2919,8 +2923,12 @@ function updateOvalShadow(){
   ovalShadowMat.opacity = 0.18 + 0.22*(1-f);
 }
 function updateShadow(){
-  // Im Weltall gibt es keinen Boden, auf dem Mond keine Insel-Referenzhöhe -> Schatten aus.
-  if(locale !== 'earth'){
+  // Im WELTALL gibt es keinen Boden, auf den ein Schatten fallen koennte -> aus. Ueberall sonst gibt
+  // es einen: die Inselwelt, der Hangarboden, Mond und Mars. Vorher war der Schatten ausserhalb der
+  // Erde ganz abgeschaltet ("auf dem Mond keine Insel-Referenzhoehe"), was nur fuer die alte
+  // Rechnung mit ISLAND_Y stimmte — surfaceY kennt inzwischen jeden Ort: hangarFloorY in der Halle,
+  // das Hoehenraster samt exaktem Raycast auf Mond und Mars, und die Flaeche der Mondbasis.
+  if(locale === 'space'){
     if(planeShadow) planeShadow.visible = false;
     if(ovalShadow) ovalShadow.visible = false;
     return;
@@ -2941,9 +2949,22 @@ function updateShadow(){
   // sich im wasser alleine". (Damals kam dazu, dass der Schatten mit depthTest:false immer davor
   // gezeichnet wurde; auch das ist inzwischen behoben, siehe shadowMat.)
   // Der Sandrand zaehlt als Land, sonst springt der Schatten am Ufer (dort ist der Boden bei 0,30 m).
-  const overLand = isOnLand(state.pos.x, state.pos.z) || isOnBeach(state.pos.x, state.pos.z);
-  const seaHere = overLand ? 0 : seaYAt(state.pos.x, state.pos.z);
-  const surfY = overLand ? ISLAND_Y : seaHere;
+  // Das TRÄGERDECK zaehlt als eigene Oberflaeche — der ovale Schatten (Boote, Astronaut) kennt das
+  // laengst ueber onCar, hier fehlte es. Ueber dem Traeger rechnete der Flieger-Schatten also mit
+  // Wasserhoehe 0 und lag im Wasser statt auf dem Deck.
+  //
+  // Aufgefallen ist das erst jetzt, und der Hinweis darauf war goldwert: solange das Deck 23,4 m ueber
+  // Wasser lag, war der Schatten dort ohnehin AUS (SHADOW_MAXALT ist 20 m, gerechnet ab Wasser). Seit
+  // der Traeger eintaucht, liegt das Deck bei 14,6 m — unter der Grenze, und der Fehler wurde sichtbar:
+  // „man sieht den schatten auf dem wasser durch den carrier hindurch".
+  // Ausserhalb der Erdwelt gibt es kein Wasser und keinen Traeger: dort liefert surfaceY die
+  // Bodenhoehe direkt (Hangarboden, Hoehenraster von Mond und Mars samt Mondbasis-Flaeche).
+  const erde = (locale === 'earth');
+  const onCar = erde && isOnCarrier(state.pos.x, state.pos.z);
+  const overLand = erde && (isOnLand(state.pos.x, state.pos.z) || isOnBeach(state.pos.x, state.pos.z));
+  const seaHere = (!erde || onCar || overLand) ? 0 : seaYAt(state.pos.x, state.pos.z);
+  const surfY = !erde ? surfaceY(state.pos.x, state.pos.z)
+              : (onCar ? fordDeckY : (overLand ? ISLAND_Y : seaHere));
   const alt = state.pos.y - surfY;            // echte Höhe über der jeweiligen Oberfläche
   if(alt > SHADOW_MAXALT || alt < 0){ planeShadow.visible = false; return; }
   planeShadow.visible = true;
@@ -2951,8 +2972,10 @@ function updateShadow(){
   // Mittelwert gelegt taucht der Rand ein. Deshalb der HOECHSTE Wellenpunkt unter seiner Flaeche —
   // dieselbe Ueberlegung wie beim ovalen Schatten, dort mit acht Randpunkten nachgemessen.
   // 5,5 m ist die halbe Spannweite des Umrisses (shWing.scale.x), das groesste Mass des Schattens.
+  // Nur ueber offenem Wasser die Wellen abtasten: an Land und auf dem TRAEGERDECK ist die Flaeche
+  // eben, und ein seaYAt in der Naehe des Traegers wuerde den Schatten vom Deck ins Wasser ziehen.
   let shadowY = surfY + 0.15;
-  if(!overLand){
+  if(erde && !overLand && !onCar){
     for(let a = 0; a < 6.283; a += Math.PI/4){
       const s2 = seaYAt(state.pos.x + Math.sin(a)*5.5, state.pos.z + Math.cos(a)*5.5);
       if(s2 + 0.15 > shadowY) shadowY = s2 + 0.15;
