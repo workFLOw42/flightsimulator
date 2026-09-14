@@ -167,6 +167,7 @@
 <script src="enterprise_glb.js"></script>
 <script src="rocket_glb.js"></script>
 <script src="pad_glb.js"></script>
+<script src="orca_glb.js"></script>
 <script>
 // ============================================================
 //  Flugspiel v2 – FMS-Modelle, Start & Landung, Land+Meer.
@@ -1814,6 +1815,296 @@ function updateHarborBoats(dt){
     const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
     const bow = seaYAt(wx + fbx*7, wz + fbz*7, dt);
     fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 0.35;
+  }
+}
+// ---- ORCAS ------------------------------------------------------------------------------------
+// Killerwale (killer_whale_by_Trouvaille) in zwei Rollen, die sich EINE Herde teilt:
+//   - SPRINGER: durchbricht die Oberflaeche, fliegt einen flachen Bogen und taucht wieder ein.
+//   - SCHULE:   schwimmt an der Oberflaeche, taucht ganz ab, kommt wieder hoch (wie das U-Boot,
+//               aber NICHT mit derselben Mechanik — siehe ORCA_DIVE, das ging hier nicht).
+//
+// AUSGEMESSEN mit Node-Matrizen (1.656 Punkte, siehe Memory glb-node-transformationen): roh
+// 482,98 x 366,55 x 919,85, Laengsachse Z. Auf ORCA_LEN skaliert ist das Tier 8,00 m lang, 4,20 m
+// breit und 3,19 m hoch. Die Breite sind die BRUSTFLOSSEN — der Koerper selbst ist rund 1,4 m dick.
+// Der Aufbau in Modellhoehe (bei 8 m Laenge):
+//    0,00 .. 0,20 m   Brustflossen, 4,20 m Spannweite
+//    0,20 .. 1,40 m   Koerper, rund, bis 2,06 m breit
+//    1,60 .. 3,19 m   Rueckenfinne, nur 0,12 bis 0,53 m breit
+// 8 m ist die Laenge eines ausgewachsenen Bullen, passt also unskaliert.
+const ORCA_LEN   = 8;
+const ORCA_H     = 3.19;    // Modellhoehe im Spielmassstab
+const ORCA_BACK  = 1.40;    // Ruecken (Koerperoberkante) ueber Modellunterkante
+//
+// SPRUNG: 45 Grad Abwurf, 10 m Scheitelhoehe, 40 m Weite, 2,86 s in der Luft.
+//
+// Die Werte sind gerechnet, nicht gewaehlt, und zwar gegen drei Grenzen:
+//  1. Die Form. Ein Halbkreis mit Radius R ist 2R weit und R hoch — eine Wurfparabel dieser Form
+//     braucht 63 Grad Abwurf und startet damit fast senkrecht. Das ist eine Delfin-Bahn; ein
+//     5-t-Orca kommt flacher heraus, und gewuenscht war "leicht gebogen". Bei 45 Grad ist die
+//     Weite das VIERFACHE der Hoehe (H = W/4), der Bogen also lang und flach.
+//  2. Die Duenung. AMP 3,0 heisst +/-1,6 m, also 3,2 m Hub. Ein realistischer Sprung (echte Orcas
+//     kommen 2 bis 3 m heraus) waere nur doppelt so hoch wie die Welle und ginge darin unter —
+//     genau der Fehler, der beim U-Boot zu "nicht abtauchen gesehen" gefuehrt hat. 10 m sind das
+//     Dreifache der Wellenhoehe. Bewusst ueberzeichnet.
+//  3. Das Bildfeld. Die Bootskamera sitzt 32 m hinter dem Spieler bei 60 Grad FOV (viewConfigs[1]
+//     mal CAM_CFG.Boat). Ein Sprung von 40 x 10 m passt ab 30 m Entfernung ganz ins Bild — deshalb
+//     springen sie ab ORCA_SPAWN_MIN Metern querab und nicht direkt vor dem Bug.
+const ORCA_JUMP_H = 10;                                   // Scheitelhoehe ueber der Wasserlinie
+const ORCA_JUMP_A = Math.PI/4;                            // Abwurfwinkel, 45 Grad
+const ORCA_G      = 9.81;
+// v0 aus der Steighoehe: H = (v0 sin a)^2 / 2g  ->  v0 = sqrt(2 g H) / sin a = 19,8 m/s.
+// Nicht als Zahl hinschreiben: wer ORCA_JUMP_H aendert, soll nicht drei Werte nachrechnen muessen.
+const ORCA_JUMP_V = Math.sqrt(2*ORCA_G*ORCA_JUMP_H) / Math.sin(ORCA_JUMP_A);
+const ORCA_JUMP_T = 2*ORCA_JUMP_V*Math.sin(ORCA_JUMP_A) / ORCA_G;   // 2,86 s in der Luft
+// Zwischen zwei Spruengen schwimmt ein Springer eine Weile normal weiter — sonst huepft er wie ein
+// Flummi. 9 s Pause auf 2,86 s Flug heisst: man sieht ihn ueberwiegend schwimmen und wird vom
+// Sprung ueberrascht.
+const ORCA_JUMP_CYCLE = ORCA_JUMP_T + 9;
+//
+// SCHULE: das U-Boot-Verfahren (Modell heben und senken) geht hier NICHT.
+// Beim U-Boot sind 5,8 m Tauchweg moeglich, weil das Modell 30 m hoch ist. Der Orca ist 3,19 m
+// hoch — also KLEINER als der Wellenhub von 3,2 m. Jeder Weg, der ins Tier passt, verschwindet in
+// der Duenung; man saehe ein Auf und Ab, das die Welle sowieso macht.
+// Deshalb taucht die Schule RICHTIG: ORCA_DIVE m unter die Oberflaeche, mit Nickwinkel wie beim
+// Sprung. Der Wechsel ist damit "da / nicht da" und bei jeder Wellenhoehe sichtbar. Das ist auch,
+// was Orcas tun: 20 bis 40 s tauchen, dann zum Blasen hoch.
+const ORCA_DIVE   = 7;      // Tauchtiefe: doppelte Wellenhoehe unter Wasser, sicher weg
+const ORCA_PERIOD = 22;     // ein ganzer Zyklus (unten -> oben -> unten)
+const ORCA_SURF   = 0.45;   // Ruecken so weit ueber Wasser, wenn oben (ein Wal liegt flach)
+// Wie viele, wie weit weg, wie schnell.
+// Die Herde begleitet den Spieler wie die Handelsflotte, aber viel naeher: die Schiffe tauchen erst
+// ab 1.200 m auf (SHIP_SPAWN_MIN), damit keins vor der Nase erscheint. Ein 8-m-Tier ist auf 1.200 m
+// zwei Pixel gross — es MUSS naeher heran, sonst sieht man es nie. 60 bis 220 m ist die Spanne, in
+// der ein Sprung ganz ins Bild passt (ab 30 m) und man ihn noch als Tier erkennt.
+const ORCA_COUNT     = 6;
+const ORCA_SPAWN_MIN = 60;
+const ORCA_SPAWN_MAX = 220;
+const ORCA_DESPAWN   = 420;     // weiter weg -> an neuer Stelle aussetzen
+const ORCA_SPD       = 3.2;     // 11,5 km/h Reisetempo; Orcas schwimmen 8-12, in Spitzen 50
+const ORCA_POD       = 26;      // Radius, in dem eine Gruppe zusammenbleibt
+const orcas = [];               // {group, mixer, x, z, heading, t, jumper, y, pitch, placed}
+let orcaTpl = null;             // Vorlage; Klone brauchen cloneSkinned (siehe unten)
+let orcaLoading = false;        // laeuft gerade ein gl.parse? (siehe preloadOrca)
+// Ein Modell mit Skeleton laesst sich NICHT mit .clone(true) vervielfaeltigen: SkinnedMesh.copy in
+// three.js r128 uebernimmt das Skeleton PER REFERENZ (this.skeleton = t.skeleton, im Minifikat
+// nachgelesen). Alle Klone haengen dann am selben Knochensatz und nehmen zwangslaeufig dieselbe Pose
+// ein — sechs Orcas wuerden im Gleichschritt zappeln, egal wie die Mixer laufen.
+// Genau das loest three.js' SkeletonUtils.clone; die Datei liegt nicht im Repo, und fuer einen
+// Klon-Helfer lohnt sie nicht. Die Kurzfassung: normal klonen, dabei die Knochen-Klone nach Namen
+// einsammeln, und jedem SkinnedMesh ein NEUES Skeleton aus genau diesen Knochen binden.
+function cloneSkinned(src){
+  const dst = src.clone(true);
+  // Knochen im Klon nach Namen finden. Die Namen sind im Modell eindeutig (_rootJoint, joint2_00,
+  // joint6_01, ... — 12 Joints, alle verschieden).
+  const bones = {};
+  dst.traverse((o)=>{ if(o.isBone) bones[o.name] = o; });
+  // Die SkinnedMeshes beider Baeume in derselben Reihenfolge durchlaufen: traverse ist
+  // deterministisch (Tiefensuche in Kind-Reihenfolge), und der Klon hat denselben Aufbau.
+  const orig = [];
+  src.traverse((o)=>{ if(o.isSkinnedMesh) orig.push(o); });
+  let i = 0;
+  dst.traverse((o)=>{
+    if(!o.isSkinnedMesh) return;
+    const src2 = orig[i++];
+    if(!src2 || !src2.skeleton) return;
+    const nb = src2.skeleton.bones.map((b)=> bones[b.name] || b);
+    const inv = src2.skeleton.boneInverses.map((m)=> m.clone());
+    // bindMatrix des Originals MITGEBEN, nicht neu berechnen lassen: bind() ohne zweites Argument
+    // nimmt die aktuelle matrixWorld, und die haengt davon ab, wo der Klon gerade steht. Das Tier
+    // wuerde je nach Spawnstelle verzerrt.
+    o.bind(new THREE.Skeleton(nb, inv), src2.bindMatrix);
+  });
+  return dst;
+}
+// Die Vorlage einmal bauen: laden, auf ORCA_LEN normieren, Nase auf -Z (wie alle Flugzeuge und
+// Schiffe), Unterkante auf y = 0. Die Animation wird hier NICHT gestartet — jeder Klon bekommt
+// seinen eigenen Mixer mit eigenem Zeitversatz, sonst schlagen alle Fluken im Takt.
+function preloadOrca(){
+  // orcaLoading MUSS mitgeprueft werden, nicht nur orcaTpl: gl.parse arbeitet asynchron und setzt
+  // orcaTpl erst im Callback. updateOrcas ruft diese Funktion aber JEDEN FRAME, solange die Vorlage
+  // fehlt — ohne das Flag liefen bei 60 fps dutzende Parse-Vorgaenge parallel auf demselben GLB.
+  if(!window.ORCA_GLB || !THREE.GLTFLoader || orcaTpl || orcaLoading) return;
+  orcaLoading = true;
+  const gl = new THREE.GLTFLoader();
+  const b64 = window.ORCA_GLB.split(',')[1];
+  const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  gl.parse(bytes.buffer, '', (gltf)=>{
+    const obj = gltf.scene;
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3(); box.getSize(size);
+    obj.scale.setScalar(ORCA_LEN / Math.max(0.001, Math.max(size.x, size.z)));
+    // Laengsachse auf Z (beim Orca liegt sie schon dort, die Zeile ist die gleiche Absicherung wie
+    // bei den Schiffen). ZUERST drehen, DANN zentrieren — rotation.y dreht um den Objektursprung.
+    if(size.x > size.z) obj.rotation.y = Math.PI/2;
+    obj.updateMatrixWorld(true);
+    const b2 = new THREE.Box3().setFromObject(obj);
+    const c = new THREE.Vector3(); b2.getCenter(c);
+    obj.position.x -= c.x; obj.position.z -= c.z;
+    obj.position.y -= b2.min.y;               // Unterkante auf 0, wie bei den Schiffen
+    // frustumCulled aus: die Bounding-Box eines SkinnedMesh gilt fuer die BINDEPOSE, nicht fuer die
+    // verformte Haltung. three.js wuerde das Tier am Bildrand wegschneiden, waehrend die Fluke noch
+    // sichtbar sein muesste. Schatten wirft es keinen (es liegt im Wasser).
+    obj.traverse((o)=>{ if(o.isMesh || o.isSkinnedMesh){ o.castShadow = false; o.frustumCulled = false; } });
+    const wrap = new THREE.Group();
+    wrap.add(obj);
+    orcaTpl = wrap;
+    orcaTpl.userData.clips = gltf.animations || [];
+    // Bereits ausgesetzte Tiere nachziehen: das GLB kann nach dem ersten Spawn fertig werden.
+    for(const o of orcas) if(o.placed && !o.group) buildOrcaBody(o);
+  }, ()=>{ orcaLoading = false; });   // Fehlerfall: Flag zuruecksetzen, sonst laedt es nie wieder
+}
+// Einem Orca seinen Koerper geben: eigener Klon, eigener Mixer, eigener Zeitversatz.
+function buildOrcaBody(o){
+  if(!orcaTpl) return;
+  o.group = cloneSkinned(orcaTpl);
+  o.group.position.set(o.x, 0, o.z);
+  scene.add(o.group);
+  const clips = orcaTpl.userData.clips || [];
+  if(clips.length){
+    o.mixer = new THREE.AnimationMixer(o.group);
+    o.mixer.clipAction(clips[0]).play();
+    // Eigener Startpunkt und leicht eigenes Tempo — sonst schwimmt die Herde im Gleichschritt.
+    // Die Schleife ist 2,03 s lang und laeuft nahtlos (2,2 Grad Differenz zwischen erstem und
+    // letztem Frame), ein Versatz faellt also nirgends auf.
+    o.mixer.setTime(Math.random()*2.03);
+    o.mixer.timeScale = 0.85 + Math.random()*0.3;
+  }
+}
+// Einen Orca (neu) aussetzen. Anders als bei den Schiffen wird KEIN freier Platz gesucht: ein Tier
+// von 8 m braucht keine 260-m-Schneise (SHIP_CLEAR), und es soll ausdruecklich nahe herankommen.
+// Geprueft wird nur, dass es im offenen Wasser landet und nicht in einem Rumpf steckt.
+function placeOrca(o, fx, fz){
+  for(let tries=0; tries<20; tries++){
+    const a = Math.random()*Math.PI*2;
+    const d = ORCA_SPAWN_MIN + Math.random()*(ORCA_SPAWN_MAX-ORCA_SPAWN_MIN);
+    const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
+    if(isOnLand(x, z) || isOnBeach(x, z) || isOnCarrier(x, z)) continue;
+    if(hitsSeaShip(x, ISLAND_Y+2, z)) continue;
+    o.x = x; o.z = z;
+    o.heading = Math.random()*Math.PI*2;
+    // Wer springt und wer nur taucht: jedes dritte Tier ist ein Springer. Alle springen zu lassen
+    // waere Zirkus; keiner waere schade. Der Rest bildet die Schule.
+    o.jumper = (Math.random() < 0.34);
+    o.t = Math.random() * (o.jumper ? ORCA_JUMP_CYCLE : ORCA_PERIOD);
+    if(o.group) o.group.position.set(o.x, 0, o.z);
+    return true;
+  }
+  return false;
+}
+function spawnOrcas(){
+  const F = worldFocus();
+  // Sie kommen in Gruppen: ein Leittier setzt die Stelle, die naechsten zwei bleiben in ORCA_POD
+  // Metern daneben. So schwimmen sie als Rudel und nicht als sechs Einzelgaenger im Kreis.
+  for(let i=0; i<ORCA_COUNT; i++){
+    const o = { group:null, mixer:null, x:0, z:0, heading:0, t:0, jumper:false, y:0, pitch:0, placed:false };
+    const lead = orcas.length ? orcas[orcas.length-1] : null;
+    if(i % 3 === 0 || !lead || !lead.placed){
+      o.placed = placeOrca(o, F.x, F.z);
+    } else {
+      const a = Math.random()*Math.PI*2, d = 8 + Math.random()*ORCA_POD;
+      o.x = lead.x + Math.cos(a)*d; o.z = lead.z + Math.sin(a)*d;
+      o.heading = lead.heading + (Math.random()-0.5)*0.5;
+      o.jumper = (Math.random() < 0.34);
+      o.t = Math.random() * (o.jumper ? ORCA_JUMP_CYCLE : ORCA_PERIOD);
+      o.placed = !isOnLand(o.x, o.z) && !isOnBeach(o.x, o.z) && !isOnCarrier(o.x, o.z);
+      if(!o.placed) o.placed = placeOrca(o, F.x, F.z);
+    }
+    if(o.placed) buildOrcaBody(o);
+    orcas.push(o);
+  }
+}
+function clearOrcas(){
+  for(const o of orcas) if(o.group) scene.remove(o.group);
+  orcas.length = 0;
+}
+// Jeden Frame: schwimmen, springen oder tauchen.
+//
+// Die Hoehe bezieht sich immer auf die SICHTBARE Wasseroberflaeche an der Stelle des Tieres
+// (seaYAt, nicht waveY — das Meeresgitter spannt flache Dreiecke zwischen seinen Stuetzpunkten und
+// liegt darum bis zu 1 m ueber waveY). Ein Wal, der in der Welle steckt statt auf ihr zu liegen,
+// sieht falsch aus; beim Astronauten am Strand war genau das schon ein gemeldeter Fehler.
+//
+// Orcas sind KEINE Hindernisse: sie stehen in keiner Kollisionsliste. Ein Tier von 8 m, das dicht
+// am Boot auftaucht, wuerde sonst zum Absturz fuehren, wo man nichts falsch gemacht hat — und ein
+// Wal weicht aus, ein Frachter nicht.
+function updateOrcas(dt){
+  if(locale !== 'earth'){ if(orcas.length) clearOrcas(); return; }
+  if(!orcaTpl){ preloadOrca(); return; }
+  if(!orcas.length){ spawnOrcas(); return; }
+  const F = worldFocus();
+  for(const o of orcas){
+    if(!o.placed){ o.placed = placeOrca(o, F.x, F.z); if(o.placed) buildOrcaBody(o); continue; }
+    if(!o.group){ buildOrcaBody(o); if(!o.group) continue; }
+    if(o.mixer) o.mixer.update(dt);
+    o.t += dt;
+    // Weiterschwimmen. Ein leichter Bogen im Kurs, damit sie nicht schnurgerade ziehen — dieselbe
+    // Machart wie bei den Handelsschiffen (updateShipsSea).
+    o.heading += Math.sin(seaTime*0.11 + o.x*0.002) * 0.10 * dt;
+    // Nase auf -Z, also dieselbe Rechnung wie bei den Schiffen.
+    const fx = -Math.sin(o.heading), fz = -Math.cos(o.heading);
+    o.x += fx * ORCA_SPD * dt;
+    o.z += fz * ORCA_SPD * dt;
+    // Vor Land, Schiffen und dem Traeger abdrehen, statt hineinzuschwimmen. 30 m Vorausschau sind
+    // bei 3,2 m/s rund 9 s Reaktionsweg.
+    const ax = o.x + fx*30, az = o.z + fz*30;
+    if(isOnLand(ax, az) || isOnBeach(ax, az) || isOnCarrier(ax, az) || hitsSeaShip(ax, ISLAND_Y+2, az))
+      o.heading += 1.2 * dt * (1 + Math.random());
+    // Zu weit weg -> an neuer Stelle aussetzen (die Herde begleitet den Spieler wie die Flotte).
+    if(Math.hypot(o.x - F.x, o.z - F.z) > ORCA_DESPAWN) placeOrca(o, F.x, F.z);
+    const surf = seaYAt(o.x, o.z, dt);
+    // Wo der Ruecken knapp aus dem Wasser schaut: das Modell sitzt mit der Unterkante auf y = 0,
+    // der Ruecken liegt ORCA_BACK darueber. Soll er ORCA_SURF herausschauen, muss der Ursprung
+    // (ORCA_BACK - ORCA_SURF) unter die Oberflaeche.
+    const swimY = surf - (ORCA_BACK - ORCA_SURF);
+    if(o.jumper){
+      // ---- SPRINGER: Pause, dann ein Bogen.
+      if(o.t >= ORCA_JUMP_CYCLE) o.t -= ORCA_JUMP_CYCLE;
+      const tf = o.t - (ORCA_JUMP_CYCLE - ORCA_JUMP_T);   // Flugzeit; negativ = noch Pause
+      if(tf >= 0){
+        // Senkrecht eine reine Wurfparabel: vy0 = v0 sin a, y = vy0 t - g t^2 / 2. Bei tf = 0 und
+        // tf = ORCA_JUMP_T ist der Summand 0, er setzt also genau auf der Schwimmhoehe an und
+        // kommt dort wieder an — kein Sprung aus dem Nichts und kein Ruck beim Eintauchen.
+        const vy0 = ORCA_JUMP_V * Math.sin(ORCA_JUMP_A);
+        o.y = swimY + vy0*tf - 0.5*ORCA_G*tf*tf;
+        // Nase folgt der Bahn — dieselbe Rechnung wie beim Flieger: pitch = atan2(vy, vHoriz).
+        // Beim Absprung +45 Grad, am Scheitel waagerecht, beim Eintauchen -45 Grad. Genau das macht
+        // aus der Parabel einen sichtbaren Bogen "mit der Schnauze voran".
+        const vy = vy0 - ORCA_G*tf, vh = ORCA_JUMP_V * Math.cos(ORCA_JUMP_A);
+        o.pitch = Math.atan2(vy, vh);
+        // Im Flug zusaetzlich schneller vorwaerts: er springt aus der Fahrt heraus. vh statt ORCA_SPD
+        // ist der Waagerechtanteil der Absprunggeschwindigkeit — daraus ergibt sich die Weite von
+        // 40 m ganz von selbst, sie ist nirgends als Zahl hinterlegt.
+        o.x += fx * (vh - ORCA_SPD) * dt;
+        o.z += fz * (vh - ORCA_SPD) * dt;
+      } else {
+        // Pause: normal an der Oberflaeche schwimmen, Ruecken knapp heraus, Nase glatt ziehen.
+        o.y = swimY;
+        o.pitch += (0 - o.pitch) * Math.min(1, 3*dt);
+      }
+    } else {
+      // ---- SCHULE: ganz abtauchen und wieder hoch. Halber Kosinus wie beim U-Boot, mit dem eigenen
+      // x-Wert als Phase (sonst tauchen alle im Gleichschritt) und smoothstep, damit sie oben und
+      // unten verweilen statt gleichmaessig durchzufahren.
+      const ph = o.t*(2*Math.PI/ORCA_PERIOD) + o.x*0.01;
+      const p  = 0.5 - 0.5*Math.cos(ph);
+      const g  = p*p*(3 - 2*p);
+      o.y = swimY - ORCA_DIVE*g;
+      // Nase in die Bewegungsrichtung neigen — MIT DERSELBEN FORMEL WIE BEIM SPRUNG:
+      // pitch = atan2(vy, vHoriz). Nichts anderes ist richtig, und der Weg dorthin ist lehrreich:
+      // Mein erster Versuch war -dg/dt * ORCA_DIVE * 0,55, also "Ableitung mal Daumenfaktor". Das
+      // ergab 47 Grad Ausschlag statt der angestrebten 25 — der Term hat gar keine Winkeleinheit,
+      // der Faktor war reines Raten. Nachgerechnet: dg/dt = g'(p) p'(t) mit g'(p) = 6p(1-p) und
+      // p'(t) = sin(ph) pi/ORCA_PERIOD; maximal 0,2142 pro Sekunde, mal 7 m Tauchweg also 1,50 m/s
+      // Sinkgeschwindigkeit. Bei 3,2 m/s Fahrt ist der Bahnwinkel damit atan2(1,50; 3,2) = 25 Grad.
+      // Genau der Wert, den ich vorher geschaetzt hatte — nur diesmal hergeleitet statt getroffen.
+      const dgdt = 6*p*(1-p) * Math.sin(ph) * (Math.PI/ORCA_PERIOD);
+      o.pitch = Math.atan2(-dgdt * ORCA_DIVE, ORCA_SPD);
+    }
+    o.group.position.set(o.x, o.y, o.z);
+    // Reihenfolge YXZ wie ueberall im Spiel: erst Kurs (Y), dann Nickwinkel (X).
+    o.group.rotation.set(o.pitch, o.heading, 0, 'YXZ');
   }
 }
 // Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
@@ -6058,6 +6349,7 @@ function earthWorldVisible(on){
     fleet.length = 0; clearFlyby(); clearAiEffects();
     clearRescue();
     clearSeaShips();                     // Handelsschiffe gibt es nur auf der Erde
+    clearOrcas();                        // die Killerwale ebenso (updateOrcas raeumt sonst erst im naechsten Frame)
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -10156,6 +10448,7 @@ function loop(now){
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
   updateHarborBoats(dt);     // die Feuerwehrboote am Kai schwimmen mit der Duenung
+  updateOrcas(dt);           // Killerwale: Springer (45 Grad, 10 m hoch) und tauchende Schule
   updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
   // Die Wartezeit ist nötig, weil beim App-Start noch weitere Modelle nachladen (siehe oben).
@@ -10193,6 +10486,7 @@ preloadChute2();       // Fallschirm 2 (TopNotch Assets) — Kisten UND Pilot
 preloadAstronaut();    // Astronaut — am Fallschirm und zum Aussteigen
 preloadDinghy();       // Schlauchboot — Rettung fuer alles, was sonst im Wasser landet
 preloadSeaShips();     // Handelsschiffe: Kreuzfahrer, Liberty, Container, Grosssegler
+preloadOrca();         // Killerwale (animiert, eigener Mixer pro Tier)
 preloadFord();         // Flugzeugträger-GLB laden (schwimmende Landebahn)
 preloadHarbor();       // Hafen-GLB laden (an jeder Insel)
 preloadRocketPad();    // Ariane 6 und Startrampe (auf jeder zweiten Nicht-Stadt-Insel)

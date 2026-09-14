@@ -2030,3 +2030,112 @@ Beim Vermessen eines GLB **immer** die Node-Matrizen aufmultiplizieren. Der Fehl
 die Rohmaße plausibel aussehen und die Skalierung im Spiel sie ohnehin auf `len` normiert — nur alle
 *relativen* Höhen darin sind dann Unsinn. Das ist der zweite Fall dieser Art (siehe die Notiz zum
 Träger); ich habe es als Memory festgehalten.
+
+## Orcas: springende Wale und eine tauchende Schule
+
+Gewünscht: „ich würde ihn gerne aus dem wasser springen lassen... leicht gebogen. mit der schnauze voran,
+einen halbkreis fliegend wieder ins wasser. was wäre gut sichtbar? 15m radius oder 20? bei orca größe = 8m?"
+und „vielleicht noch hier und da eine kleine schule die im uboot modus auf und abtaucht".
+
+### Das Modell
+
+`killer_whale_by_Trouvaille.glb`, 460 KB — als base64-Wrapper nur 0,58 MB (das U-Boot war 7,1 MB).
+Diesmal von Anfang an **mit Node-Matrizen** vermessen (1.656 Punkte): roh 482,98 × 366,55 × 919,85,
+Längsachse Z. Auf 8 m normiert:
+
+```
+ 0,00 .. 0,20 m   Brustflossen, 4,20 m Spannweite
+ 0,20 .. 1,40 m   Körper, rund, bis 2,06 m breit
+ 1,60 .. 3,19 m   Rückenfinne, nur 0,12 bis 0,53 m breit
+```
+
+Die 4,20 m „Breite" sind also die Flossen, nicht der Körper. 8 m ist die Länge eines ausgewachsenen
+Bullen, das Modell passt unskaliert.
+
+**Es ist animiert** — das erste Modell im Spiel mit Skeleton: 12 Joints, eine 2,03-s-Schleife, die
+nahtlos läuft (2,2° Differenz zwischen erstem und letztem Frame). Die Schwanzjoints schlagen 24–32°, der
+Kopf 5–10°. three.js r128 kann das, das Spiel nutzte bisher nur nichts davon (`AnimationMixer` kam null
+mal vor).
+
+### Warum 45° und nicht der gewünschte Halbkreis
+
+Ein Halbkreis mit Radius R ist **2R weit und R hoch**. Eine Wurfparabel dieser Form braucht 63°
+Abwurfwinkel und startet damit fast senkrecht — das ist eine Delfin-Bahn, kein 5-t-Orca, und es
+widerspricht dem „leicht gebogen" aus derselben Frage. Bei 45° ist die Weite das **Vierfache** der Höhe.
+
+Die 10 m Scheitelhöhe sind gegen drei Grenzen gerechnet:
+
+| Grenze | Wert | Folge |
+|---|---|---|
+| Dünung (`AMP` 3,0) | 3,2 m Hub | ein realistischer Sprung (2–3 m) ginge darin unter |
+| Bildfeld (Bootskamera 32 m, FOV 60°) | 40 × 10 m passt ab 30 m | Spawn ab 60 m querab |
+| Form | H = W/4 bei 45° | 10 m Höhe ⇒ 40 m Weite, 2,86 s Flug |
+
+Nachgerechnet ergibt die Bahn exakt 10,00 m Scheitel, 40,0 m Weite und ±45° an den Enden. Der
+Nickwinkel folgt `atan2(vy, vHoriz)` — dieselbe Formel wie beim Flieger: beim Absprung +45°, am Scheitel
+waagerecht, beim Eintauchen −45°. Das ist der Bogen „mit der Schnauze voran".
+
+Zwischen zwei Sprüngen liegen 9 s normales Schwimmen (Zyklus 11,86 s), sonst hüpft er wie ein Flummi.
+
+### Die Schule konnte das U-Boot-Verfahren nicht übernehmen
+
+Beim U-Boot sind 5,8 m Tauchweg möglich, weil das Modell 30 m hoch ist. **Der Orca ist 3,19 m hoch —
+kleiner als der Wellenhub von 3,2 m.** Jeder Weg, der ins Tier passt, verschwindet in der Dünung; man
+sähe ein Auf und Ab, das die Welle sowieso macht. Genau der Fehler, der beim U-Boot zu „nicht abtauchen
+gesehen" geführt hatte, nur diesmal unlösbar per Parameter.
+
+Deshalb taucht die Schule **richtig**: 7 m unter die Oberfläche, Zyklus 22 s, halber Kosinus mit
+smoothstep und dem eigenen x-Wert als Phase (37 m Abstand = 1,3 s Versatz, sichtbar verschieden aber noch
+als Gruppe erkennbar). Der Wechsel ist damit „da / nicht da" und bei jeder Wellenhöhe sichtbar. Gemessen
+pro 22-s-Zyklus: 5,6 s Rücken sichtbar, 12,4 s tiefer als 2 m weg. Finnenspitze getaucht bei −4,76 m,
+also 3,16 m Reserve gegen das Wellental bei −1,6 m.
+
+### Der Nickwinkel war erst falsch — und der Weg dorthin ist der Lernpunkt
+
+Mein erster Ansatz war `-dg/dt * ORCA_DIVE * 0.55`, also „Ableitung mal Daumenfaktor", mit dem Kommentar
+„hält den Ausschlag unter 25 Grad". Nachgemessen: **47,3°**. Der Term hat gar keine Winkeleinheit, der
+Faktor war reines Raten — und die Begründung im Kommentar klang trotzdem plausibel.
+
+Richtig ist dieselbe Formel wie beim Sprung, `atan2(vy, vHoriz)`. Hergeleitet: max |dg/dt| = 0,2142 pro
+Sekunde, mal 7 m Tauchweg = 1,50 m/s Sinkgeschwindigkeit; bei 3,2 m/s Fahrt ist der Bahnwinkel
+`atan2(1,50; 3,2)` = **25,1°**. Genau der Wert, den ich vorher geschätzt hatte — nur diesmal abgeleitet
+statt getroffen. (Echte Orcas tauchen mit 1–2 m/s, passt also auch.)
+
+Das ist dasselbe Muster wie bei den Jetpack-Runden: eine selbst erfundene Abweichung mit plausibel
+klingender Kommentar-Begründung. Diesmal hat die eigene Prüfung es vor dem Commit gefunden.
+
+### Zwei technische Fallen
+
+**`.clone(true)` funktioniert bei Skeleton-Modellen nicht.** `SkinnedMesh.copy` in r128 übernimmt das
+Skeleton **per Referenz** (`this.skeleton = t.skeleton`, im Minifikat nachgelesen) — alle sechs Orcas
+hingen am selben Knochensatz und würden zwangsläufig dieselbe Pose einnehmen, egal wie die Mixer laufen.
+Gelöst mit einem eigenen `cloneSkinned()`: normal klonen, Knochen-Klone nach Namen einsammeln, jedem
+`SkinnedMesh` ein neues `Skeleton` daraus binden. Wichtig dabei: die `bindMatrix` des Originals
+**mitgeben** — `bind()` ohne zweites Argument rechnet aus der aktuellen `matrixWorld`, das Tier würde je
+nach Spawnstelle verzerrt.
+
+**`preloadOrca` wurde jeden Frame aufgerufen.** `gl.parse` ist asynchron und setzt `orcaTpl` erst im
+Callback; der Guard `if(orcaTpl) return` greift also nicht, und bei 60 fps starteten dutzende
+Parse-Vorgänge parallel auf demselben GLB. Behoben mit `orcaLoading`, das im Fehler-Callback
+zurückgesetzt wird (sonst lädt es nach einem Fehlschlag nie wieder).
+
+Dazu `frustumCulled = false`: die Bounding-Box eines `SkinnedMesh` gilt für die Bindepose, nicht für die
+verformte Haltung — three.js würde das Tier am Bildrand wegschneiden, während die Fluke noch sichtbar
+sein müsste.
+
+### Bewusst keine Hindernisse
+
+Orcas stehen in **keiner** Kollisionsliste. Ein 8-m-Tier, das dicht am Boot auftaucht, würde sonst zum
+Absturz führen, wo man nichts falsch gemacht hat — und ein Wal weicht aus, ein Frachter nicht. Umgekehrt
+weichen sie Land, Strand, Träger und Schiffen aus (30 m Vorausschau = 9 s Reaktionsweg bei 3,2 m/s).
+
+### Werte
+
+| | |
+|---|---|
+| Tiere | 6, davon ~1/3 Springer, in Gruppen bis 26 m Radius |
+| Spawn | 60–220 m (Schiffe: ab 1.200 m — ein 8-m-Tier wäre da zwei Pixel groß) |
+| Despawn | 420 m |
+| Tempo | 3,2 m/s = 11,5 km/h (echte Orcas: 8–12) |
+| Sprung | 45°, 10 m hoch, 40 m weit, 2,86 s, alle 11,86 s |
+| Tauchen | 7 m tief, Zyklus 22 s, max 25,1° Nickwinkel |
