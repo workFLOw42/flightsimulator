@@ -2239,3 +2239,48 @@ Zwei Dinge geprüft, bevor ich den Wert gesetzt habe:
   Vorausschau reichlich, egal wie schnell es fährt.
 - **Tauchen** wird sogar besser: ein 26-s-Zyklus deckt jetzt 104 m Strecke statt 47, das Boot taucht also
   über eine sichtbar längere Bahn ab und auf.
+
+---
+
+# OFFEN — Nächste Runde: Unterwasserwelt für ein fahrbares U-Boot
+
+Gewünscht: „ich brauche noch ein meer für das ubbot zum fahren."
+
+Bezug: Die Idee, das U-Boot selbst zu fahren, stand schon beim Einbau — damals zurückgestellt mit „die idee
+das schiff zu fahren zu können, hatte ich auch, aber gerne später, weil wir auch noch keine unterwasserwelt
+haben". Das ist jetzt der Auftrag: **erst das Meer, dann das Fahren.**
+
+## Was es dafür heute noch nicht gibt
+
+Nachgesehen, damit morgen niemand sucht:
+
+- **Keinen Meeresboden.** `seabed`, `seaFloor`, `underwater` — null Treffer in `Flugspiel.html`. Unter der
+  Wasserfläche ist nichts, man sieht ins Leere.
+- **Das Meer ist eine einseitige Fläche.** `seaGeo` ist eine `PlaneGeometry` (Zeile 213, 6000 m bei 96
+  Segmenten), das Material hat kein `side: THREE.DoubleSide` — von unten ist die Wasseroberfläche also
+  unsichtbar.
+- **Die Kamera darf nicht unter y = 2.** `if(locale === 'earth' && camera.position.y < 2) camera.position.y = 2;`
+  steht in `snapCamera` (Zeile 6537) und sinngemäß in `updateCamera`. Das ist genau die Sperre, die ein
+  Tauchboot aufheben müsste.
+- **Der Nebel ist Luftnebel.** `scene.fog = new THREE.Fog(0x87b8e8, 900, 3000)` (Zeile 177), tageszeitlich
+  nachgeführt in `updateSky` (ab 6899). Unterwasser braucht andere Farbe *und* viel kürzere Reichweite —
+  Sichtweite im Meer sind eher 20–40 m als 3000.
+
+## Wo das Fahren anknüpfen würde
+
+Das Muster steht schon dreimal im Code: `eva.boat` (Feuerwehrboot, ab 3861), `eva.rover` und `eva.jet`.
+Ein `eva.sub` wäre der vierte Sub-Modus — mit `stepBoat` (8503) als Vorbild für die Fahrphysik, aber um
+eine Tiefenachse erweitert.
+
+Beim U-Boot selbst sind die Maße jetzt belastbar (siehe „Das U-Boot lag zu hoch"): Deck bei 17,6 m
+Modellhöhe, `wl` 0,1537, Rumpfdurchmesser 13,0 m. Für ein fahrbares Boot müsste die Wasserlinie vom festen
+`wl` auf eine steuerbare Tiefe umgestellt werden.
+
+## Vorher zu klären
+
+- Wie tief soll es gehen, und was ist da unten zu sehen? Ein Boden mit Relief? Fische, Wracks, Pflanzen?
+- Sind die Orcas und die Handelsschiffe von unten sichtbar (die Rümpfe hängen ja bereits im Wasser)?
+- Bleibt das Tauchen wie beim KI-Boot (Automatik) oder wird es gesteuert — und mit welchen Tasten?
+
+Diese Fragen zuerst stellen, nicht raten: der Umfang hängt daran, und eine Unterwasserwelt ist deutlich
+mehr Arbeit als ein weiteres Modell.
