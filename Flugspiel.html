@@ -3392,24 +3392,28 @@ function updateJet(dt, inp){
   const accelJ = imAll ? SPACE_C : JET_ACCEL;
   // Schub = Zielgeschwindigkeit, angeregelt — dieselbe Formel wie beim Flieger und beim Boot.
   //
-  // An einem Ort MIT BODEN steuert der Schub unter 30 % ZUSAETZLICH das senkrechte Steigen und
-  // Sinken (siehe der VTOL-Block unten) — 20 % schweben, 10 % sinken, 0 % zuegig sinken, wie beim
-  // X-Wing. Die Vorwaertsfahrt bleibt dabei aber voll erhalten, anders als beim X-Wing: ein
-  // Astronaut mit Rueckenduesen soll sich auch im Schwebeflug bewegen koennen.
+  // An einem Ort MIT BODEN steuert der Schub unter 30 % das senkrechte Steigen und Sinken statt der
+  // Fahrt (siehe der VTOL-Block unten) — 20 % schweben, 10 % sinken, 0 % zuegig sinken. Und zwar
+  // GENAU wie beim X-Wing: bei 20 % steht er exakt still, kein Millimeter Vortrieb.
   //
-  // Zwei Anlaeufe brauchte das. Erst hatte ich die Fahrt unter VTOL_FWD ganz abgeschaltet, und damit
-  // kam man aus dem Hangar nicht mehr heraus: der Ausgang liegt seitlich bei 200 m, man schwebte aber
-  // auf der Stelle und sank bei jedem Zurueckdrehen des Schubs sofort wieder auf den Hallenboden
-  // (gemessen 0,4 s) — gemeldet als „im hangar resettet der jetpack immer wieder, kein uebergang ins
-  // weltall moeglich". Dann auf ein Drittel gedrosselt, was gemessene 66 s bis zum Ausgang ergab und
-  // damit auch nicht benutzbar war. Jetzt volle Fahrt: 9 m/s bei 20 % Schub, 22 s bis zum Ausgang.
-  // Das Landen stoert das nicht, weil der VTOL-Block die Sinkrate unabhaengig regelt — man setzt auf,
-  // waehrend man noch vorwaerts gleitet.
+  // Dahin hat es drei Anlaeufe gebraucht. Erst war die Fahrt unter VTOL_FWD ganz aus — richtig, aber
+  // damit kam man aus dem Hangar nicht heraus (der Ausgang liegt 200 m seitlich, man schwebte auf der
+  // Stelle und sank beim Zurueckdrehen sofort wieder auf den Boden). Dann habe ich sie erhalten, erst
+  // gedrittelt, dann voll — damit kam man heraus, aber 20 % war kein Schweben mehr, sondern ein
+  // Gleiten mit 9 m/s. Gemeldet als „der xwing bleibt bei 20% exakt stehen, er schwebt. der astronaut
+  // nicht".
+  //
+  // Aufgeloest wie beim Flieger: der Vortrieb wird mit (1 - jetMix) gewichtet, ist bei 20 % also
+  // null und blendet zwischen 20 und 30 % ein. Aus dem Hangar kommt man damit mit 30 % Schub — genau
+  // so, wie es der X-Wing auch tut. jetMix wird weiter unten gebraucht, deshalb steht es hier schon.
   const want = Math.max(0, state.throttle);
+  const jetMix = (!imAll && want < VTOL_FWD)
+    ? Math.min(1, (VTOL_FWD - want) / (VTOL_FWD - VTOL_HOVER)) : 0;
+  const vtolRestJ = 1 - jetMix;                    // 0 beim Schweben, 1 im normalen Flug
   const targetV = vMaxJ * want;
   const fwdSpeed = v.dot(dir);
   const dv = targetV - fwdSpeed;
-  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), accelJ);
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), accelJ) * vtolRestJ;
   v.addScaledVector(dir, push * dt);
   // Gas aus: die Bremsduesen holen ihn zum Stehen. Im Vakuum gibt es keinen Luftwiderstand, aber
   // ein Jetpack, das man nicht anhalten kann, ist fuer ein Kind unbrauchbar — und der Astronaut
@@ -3448,7 +3452,10 @@ function updateJet(dt, inp){
   // 20 % schweben, 10 % ruhig sinken, 0 % zuegig sinken, ab 30 % vorwaerts fliegen. Ohne das kam man
   // gar nicht mehr herunter: das Jetpack war ueberall schwerelos, also blieb er einfach stehen, wo er
   // war. Im Weltall gilt es nicht — dort gibt es keinen Boden, und 0/10/20 % sind Fahrstufen.
-  if(!imAll && want < VTOL_FWD){
+  // jetMix ist oben bei der Schubregelung deklariert (es gewichtet dort den Vortrieb) — dieselbe
+  // Groesse, die der Flieger als vtolMix benutzt: unter 20 % voll, zwischen 20 und 30 % ausblendend,
+  // ab 30 % null.
+  if(jetMix > 0){
     const fyJ = (locale === 'death') ? hangarFloorY : evaFootY(g.position.x, g.position.z);
     const aglJ = g.position.y - fyJ;                       // Hoehe ueber Grund
     let tvJ;
@@ -3463,25 +3470,36 @@ function updateJet(dt, inp){
       const kH  = Math.min(1, (want - VTOL_LAND) / (VTOL_HOVER - VTOL_LAND));
       tvJ = VTOL_SINK + (hov - VTOL_SINK) * kH;
     }
-    // Senkrechtrate anregeln: sie ersetzt hier die Fahrt nach oben und unten ganz.
-    v.y += (tvJ - v.y) * Math.min(1, 4*dt);
-    // Horizontalfahrt austrudeln lassen — aber NUR, wenn kein Schub gegeben wird. Der X-Wing daempft
-    // hier immer, weil er senkrecht landen soll; das Jetpack behaelt im Schwebeflug seine gedrosselte
-    // Vorwaertsfahrt (siehe `want` oben), sonst haette die Daempfung sie im selben Frame wieder
-    // weggebremst und man kaeme aus dem Hangar nicht heraus.
-    if(want < 0.01){
-      const dampJ = Math.max(0, 1 - 1.2*dt);
-      v.x *= dampJ; v.z *= dampJ;
+    // Senkrechtrate anregeln, mit jetMix gewichtet — genau wie beim Flieger.
+    v.y += (tvJ - v.y) * Math.min(1, 4*dt) * jetMix;
+    // Horizontalfahrt austrudeln lassen, mit jetMix gewichtet — die exakt gleiche Zeile, die der
+    // Flieger in seinem VTOL-Block hat (vDamp). Damit steht er bei 20 % wirklich STILL: der Vortrieb
+    // ist dort schon null (vtolRestJ oben), und was noch an Fahrt uebrig ist, bremst diese Daempfung
+    // weg. Vorher lief sie nur bei Schub null, damit die Fahrt im Schwebeflug erhalten blieb — genau
+    // das machte aus dem Schweben ein Gleiten.
+    const dampJ = 1 - (1 - Math.exp(-1.2*dt)) * jetMix;
+    v.x *= dampJ; v.z *= dampJ;
+    // Landeanflug (0 bis 10 %): Nase und Querlage sanft waagerecht ziehen, damit er immer gerade
+    // aufsetzt — dasselbe tut der Flieger in seinem VTOL-Block. Ohne das setzt man mit 20 Grad
+    // gesenkter Nase auf, weil man ja gerade noch im Sinkflug war.
+    if(want <= VTOL_LAND){
+      const kV = Math.min(1, 2.5*dt);
+      eva.jetPitch += (0 - eva.jetPitch) * kV;
+      eva.jetRoll  += (0 - eva.jetRoll)  * kV;
     }
-  } else if(!imAll){
-    // AB 30 % Schub (also ausserhalb der Landestufen) muss eine noch laufende SINKFAHRT weggehen.
-    // Die Schubregelung oben wirkt nur LAENGS der Blickrichtung; quer dazu bleibt alte Fahrt stehen.
-    // Wer also mit 0 % sank (-20 m/s) und dann waagerecht Vollgas gibt, sank nachgerechnet weiter mit
-    // -20 m/s und setzte im Vorwaertsflug auf dem Boden auf, statt abzuheben. Vor den Landestufen gab
-    // es am Boden gar kein Sinken, deshalb ist das neu. Bei gedrueckter Nase (jetPitch < 0) soll er
-    // natuerlich weiter sinken duerfen — deshalb nur der Anteil, den die Blickrichtung NICHT vorgibt.
+  }
+  // Ausserhalb der Landestufen muss eine noch laufende SINKFAHRT weggehen: die Schubregelung wirkt
+  // nur LAENGS der Blickrichtung, quer dazu bleibt alte Fahrt stehen. Wer mit 0 % sank (-20 m/s) und
+  // dann waagerecht Vollgas gibt, sank sonst weiter mit -20 m/s und setzte im Vorwaertsflug auf dem
+  // Boden auf, statt abzuheben. Bei gedrueckter Nase soll er natuerlich weiter sinken duerfen —
+  // deshalb wird auf den Anteil geregelt, den die Blickrichtung vorgibt.
+  //
+  // Mit (1 - jetMix) gewichtet, damit es sich in der Uebergangszone (20 bis 30 %) mit der
+  // Schweberegelung oben ergaenzt statt gegen sie zu arbeiten: bei 25 % greifen beide zur Haelfte,
+  // genau wie beim Flieger, dessen VTOL-Block und normale Physik sich dort ebenfalls mischen.
+  if(!imAll && jetMix < 1){
     const sollVy = v.length() * Math.sin(eva.jetPitch);
-    v.y += (sollVy - v.y) * Math.min(1, 4*dt);
+    v.y += (sollVy - v.y) * Math.min(1, 4*dt) * (1 - jetMix);
   }
   g.position.addScaledVector(v, dt);
   // Er liegt in Flugrichtung, wie ein Astronaut am Manoevriergeraet.
@@ -8415,7 +8433,15 @@ function updateHUD(){
     // Zeile darüber („km/h") es schon zeigt — gemeldet als doppelte Geschwindigkeitsanzeige. Die
     // Symbolreihe sagt, WAS man gerade ist; die Zahlen stehen im HUD.
     // Zu Fuß bleibt der Hinweis dahinter: ✈️ heißt „hier kannst du mit Y einsteigen", ⤒ heißt hüpfen.
-    s = eva.jet ? '\u{1F680}'
+    // AM JETPACK die Schub-Phase, mit genau denselben Zeichen wie beim X-Wing (siehe dort):
+    // ⏬ schnell sinken (0 %) · ⬇️ ruhig sinken (10 %) · ⬆️ steigen und schweben (20 %) · 🚀 vorwaerts.
+    // Vorher stand dort nur 🚀, also sah man den Schubstufen nicht an, was sie tun — und genau die
+    // Steig- und Sink-Symbole wurden vermisst. Im Weltall gibt es kein Sinken, dort zaehlt nur die
+    // Fahrt, also immer 🚀.
+    const jq = state.throttle;
+    s = eva.jet ? (locale === 'space' ? '\u{1F680}'
+                  : (jq <= 0.001 ? '⏬'
+                  : (jq <= VTOL_LAND ? '⬇️' : (jq < VTOL_FWD ? '⬆️' : '\u{1F680}'))))
       : eva.boat ? '🛟'
       : eva.rover ? '🚙'
       : ('🧑‍🚀 ' + ((evaCanBoard() || roverNear() || xwingParkNear() || parkPlaneNear()) ? '✈️' : '⤒'));

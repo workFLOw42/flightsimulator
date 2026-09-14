@@ -1295,3 +1295,55 @@ Zwei Dinge, auf die ich beim Bauen geachtet habe:
   gegen 180 m Anflughöhe).
 - Das **Höhenraster von Mond und Mars** wird über Frames aufgebaut, `groundHeightAt` liefert am Anfang
   also 0. Unkritisch: 180 m darüber ist genug Luft, und bis er unten ist, steht das Raster längst.
+
+## Jetpack: bei 20 % steht es jetzt exakt still — und zeigt die Schubphase
+
+Gemeldet: „der jetpack hat noch nicht die selben eigenschaften bei 0, 10 & 20% und auch noch nicht die
+steig und sink symbole." Auf meinen Rückfrage-Vorschlag hin präzisiert: „nein, nicht exakt die selbe
+steuerung. der xwing bleibt bei 20% exakt stehen. er schwebt. der astronaut nicht."
+
+### Zwei Anforderungen, die sich widersprachen
+
+Die Sinkraten waren längst identisch (0 % = −20, 10 % = −10, 20 % senkrecht 0 m/s). Der Unterschied lag
+**waagerecht**: bei 20 % gab der Schub weiter 9 m/s Vortrieb, der Astronaut glitt also, statt zu stehen.
+Der X-Wing multipliziert seinen Vortrieb mit `vtolRest` — bei 20 % ist das null.
+
+Das war kein Versehen, sondern eine bewusste Abweichung von mir aus einer früheren Runde: ohne
+Vorwärtsfahrt im Schwebeflug kam man **nicht aus dem Hangar** (der Ausgang liegt 200 m seitlich, und bei
+20 % schwebte man auf der Stelle — genau das war „im hangar resettet der jetpack immer wieder").
+
+Nachgefragt und entschieden: exakt wie der X-Wing. Damit verlässt man den Hangar mit 30 % Schub, so wie
+der Flieger auch — in 15 s, mit Vollgas in 4 s.
+
+Aufgelöst mit denselben Bausteinen wie beim Flieger:
+
+| | Flieger | Jetpack jetzt |
+|---|---|---|
+| Mischfaktor | `vtolMix` | `jetMix`, identische Formel |
+| Vortrieb | `* vtolRest` | `* vtolRestJ` = `1 - jetMix` |
+| Horizontal-Dämpfung | `1 - (1-e^(-1,2·dt)) · vtolMix` | dieselbe Zeile |
+| Senkrechtrate | `* vtolMix` | `* jetMix` |
+| Nase waagerecht beim Landen | ja | neu, ebenso |
+
+Nachgerechnet, aus 20 m/s Fahrt heraus, nach 5 s:
+
+| Schub | waagerecht | senkrecht |
+|---|---|---|
+| 0 % | 0,05 m/s | −20,00 |
+| 10 % | 0,05 m/s | −10,00 |
+| **20 %** | **0,05 m/s** | **0,00** |
+| 25 % | 11,03 m/s | 0,00 |
+| 30 % | 13,50 m/s | 0,00 |
+
+Bei 20 % bleibt also nichts übrig — er steht. Und die Übergangszone zwischen 20 und 30 % blendet jetzt
+ein, statt hart zu schalten: vorher schwebte das Jetpack bei 25 % noch voll, während der Flieger dort
+schon halb vorwärts zieht.
+
+Dazu neu, weil der Flieger es auch hat: beim Landen (0 bis 10 %) werden Nase und Querlage sanft
+waagerecht gezogen. Ohne das setzt man mit 20° gesenkter Nase auf, weil man ja gerade im Sinkflug war.
+
+### Die Symbole
+
+Die Schubphasen-Zeichen standen nur im X-Wing-Zweig des HUD; am Jetpack stand pauschal 🚀. Jetzt
+dieselben: ⏬ schnell sinken (0 %) · ⬇️ ruhig sinken (10 %) · ⬆️ steigen und schweben (20 %) · 🚀 vorwärts
+(ab 30 %). Im Weltall immer 🚀 — dort gibt es kein Sinken.
