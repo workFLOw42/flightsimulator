@@ -990,3 +990,76 @@ Doppelte des Sollwerts.
   ein Vielfaches. Wer lange Flüge messen will, taktet die Physik direkt (`updateJet(1/60, inp)`).
 - **Python schreibt im Google-Drive-Ordner nicht** (`OSError: Bad file descriptor`), auch nicht für
   kleine Kommentar-Korrekturen. Lesen geht, schreiben nur über PowerShell `WriteAllText`.
+
+## Jetpack: Reset am Weltall-Übergang, und die Kamera wird ein Fluggerät
+
+Gemeldet: „der jetpack resettet am übergang zum weltall und die kamera fährt immer noch um den jetpack
+herum, anstatt die optik eines fluggerätes (xwing) zu haben." Danach, nachdem der Übergang lief:
+„a kamera bei warp viel zu nah, b geschwindigkeit in weltall wird in kmh angezeigt und nicht in warp,
+c auch da lässt sich der jetpack nicht steuern wegen der kamera, d gibt es beim übergang nicht eine
+bremse auf 50%."
+
+### Der Reset: die Flieger-Logik lief am Jetpack mit
+
+Sobald `evaJetToSpace` auf `locale = 'space'` schaltet, läuft ab dem nächsten Frame
+`updateSpaceBodies` — und das ist die **Flieger**-Weltall-Logik. Sie kennt das Jetpack nicht: ihre
+Erd-Prüfung fragt `dockLock` **gar nicht** ab und ruft `enterEarth(true)` direkt.
+
+Nachgerechnet: beim Austritt von der Erde steht man 24.000 m vom Erdmittelpunkt entfernt (4000 m
+Austrittshöhe plus `EARTH_R` darunter), die Rückkehrschale beginnt bei `EARTH_R + EARTH_Y` = 22.200 m.
+**1800 m Luft** — der Flieger kommt mit über 100 m/s heraus und ist sofort weg, ein Astronaut nicht.
+
+Zwei Änderungen:
+
+- `updateSpaceBodies` läuft am Jetpack nicht mehr. `updateJet` macht dieselbe Arbeit selbst, mit den
+  Astronauten-Wegen und **mit** `dockLock`-Sperre — geprüft, dass es alles abdeckt: Erd-Rückkehr,
+  Todesstern → Hangar, Mond/Mars → Boden, Orbit-Grenzen. Nicht abgedeckt ist nur die Hyperraum-Bremse,
+  und die ist am Jetpack ausdrücklich gesperrt (sie war der 90-%-Rücksprung).
+- Der Austritt hebt jetzt auf `r * 1,4` über das Zentrum des Körpers, von dem man kommt — genau das tut
+  `leaveGround` für den Flieger. Von der Erde sind das 28.000 m statt 24.000, also **5800 m Luft**.
+
+### Punkt d: die Bremse auf 50 %
+
+`enterSpace` und `leaveGround` deckeln den Schub beim Übergang auf 50 %, damit man sich erst umsieht
+statt sofort in den Hyperraum zu rutschen. Am Jetpack fehlte das — und dort fällt es besonders auf,
+weil man zum Austritt ohnehin Vollgas gegeben hat, um hochzukommen. Jetzt gleich.
+
+### Punkt b: Warp statt km/h
+
+Der EVA-Zweig im HUD schrieb immer km/h; die Warp-Anzeige stand nur im Flieger-Zweig. Im Weltall
+fliegt das Jetpack mit `SPACE_C * warpFactor()`, also bis 30.000 m/s — das sind 108 Millionen km/h,
+eine Zahl, die niemandem etwas sagt. Am Jetpack im Weltall steht jetzt Warp.
+
+### Punkte a und c: die Kamera war am falschen Ort gebaut
+
+Hier lag mein eigentlicher Fehler. Ich hatte die Jetpack-Kamera in den **EVA-Zweig** geflickt, zu „zu
+Fuß", Boot und Rover. Dort wird auf einen Punkt **vor** dem Astronauten geschaut (`EVA_LOOK_AHEAD`),
+damit man beim Umsehen an ihm vorbei in den Himmel blicken kann. Beim Fliegen dreht sich das Bild dann
+um einen Punkt vor ihm statt um ihn selbst — das ist das gemeldete Herumfahren, zweimal. Der X-Wing
+schaut auf **sich selbst**.
+
+Das Jetpack hat jetzt seinen **eigenen Kamerablock**, gebaut wie die Verfolgerkamera des Fliegers:
+
+1. `camera.lookAt(g)` — direkt auf den Astronauten. Er sitzt in der Bildmitte, das Bild dreht sich um
+   ihn. Das ist der Kern.
+2. Der Abstand wächst mit dem Tempo (`camBackExtra`, auf ein Drittel geskaliert). Vorher waren es
+   feste 13,3 m, auch bei 30.000 m/s — daher „bei warp viel zu nah".
+3. `back` und `up` aus demselben Quaternion wie die Fluglage, Nickwinkel auf ±51° geklemmt (wie beim
+   Flieger). Der Astronaut selbst darf steiler stehen (`JET_PMAX` = 72°).
+
+Der Zuschlag ist gedrittelt, weil der X-Wing bei 125 m Zuschlag mit 11 m Spannweite noch gut zu sehen
+ist — ein 1,9 m großer Astronaut wäre auf 138 m ein Punkt. Durchgerechnet (60° FOV, 800 px Bildhöhe):
+
+| Tempo | Abstand | Astronaut im Bild |
+|---|---|---|
+| 9 m/s (Schweben) | 14,0 m | 94 px |
+| 45 m/s (Erde) | 15,6 m | 84 px |
+| Warp 1 | 42,2 m | 31 px |
+| Warp 10 | 59,0 m | 23 px |
+
+Zum Vergleich: der X-Wing steht bei Warp 10 auf 149 m, ist aber sechsmal größer.
+
+Der EVA-Zweig ist dabei von allen Jetpack-Sonderfällen befreit worden — er ist wieder nur für Fuß,
+Boot und Rover zuständig. Das war auch nötig: `upV` wurde dort noch benutzt, war nach dem Umbau aber
+nicht mehr deklariert. Ein `ReferenceError` im ersten Jetpack-Frame, den der Syntax-Check nicht findet
+(er ist erst zur Laufzeit sichtbar) — gefunden, weil ich die Deklarationen einzeln durchgezählt habe.

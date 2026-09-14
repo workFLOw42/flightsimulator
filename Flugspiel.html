@@ -3273,6 +3273,7 @@ function evaStartJet(x, z, y){
 function evaJetToSpace(){
   if(!eva || !eva.jet) return;
   const vonErde = (locale === 'earth');
+  const vonWo = locale;          // MUSS hier gemerkt werden: unten steht locale schon auf 'space'
   // Die Koerper um die AKTUELLE Stelle herum legen. Von der Erde aus mit fromEarth: dann liegt der
   // Erdmittelpunkt genau EARTH_R unter dem Austrittspunkt, ihre Oberflaeche also dort, wo eben noch
   // die Insel war — genau wie beim Flieger in enterSpace.
@@ -3291,6 +3292,23 @@ function evaJetToSpace(){
   for(const bb of bodies) if(bb.obj) bb.obj.visible = true;
   if(earthBall){ earthBall.position.copy(earthHome); earthBall.visible = true; }
   clearGroundTiles();
+  // Freien Abstand zum Koerper schaffen, von dem man kommt — genau das macht leaveGround fuer den
+  // Flieger (es setzt ihn auf r*1,4 ueber das Zentrum). Von der ERDE aus reichten die 4000 m des
+  // Austritts nicht: der Erdmittelpunkt liegt dann 20.000 m tiefer, man steht also 24.000 m von ihm
+  // entfernt, und die Rueckkehrschale beginnt schon bei 22.200 m — nur 1800 m Luft. Der Flieger kommt
+  // mit 100 m/s heraus und ist sofort weg; ein Astronaut braucht dafuer viel laenger und faellt
+  // vorher zurueck. Auf 1,4 mal EARTH_R gehoben sind es 28.000 m, also 5800 m Luft.
+  //
+  // `vonWo` ist der Ort VOR dem Umschalten (siehe oben) — hier ist locale schon 'space'.
+  const abKoerper = vonErde ? null : bodyOf(vonWo);
+  const zentrum = vonErde ? earthHome : (abKoerper ? abKoerper.center : null);
+  const radius  = vonErde ? EARTH_R   : (abKoerper ? abKoerper.def.r : 0);
+  if(zentrum && radius > 0){
+    const nrm = eva.group.position.clone().sub(zentrum);
+    if(nrm.lengthSq() < 1e-6) nrm.set(0, 1, 0);
+    nrm.normalize();
+    eva.group.position.copy(zentrum).addScaledVector(nrm, radius * 1.4);
+  }
   eva.planeAt.copy(eva.group.position);   // sonst zieht die EVA-Leine sofort zurueck
   // state.pos traegt die gesamte Weltall-Logik (Anflug, Andocken, Asteroiden, Radar, Nebel).
   // _segFrom mit zuruecksetzen, sonst zieht pathDist eine Verbindungslinie vom alten Ort quer durch
@@ -3299,6 +3317,11 @@ function evaJetToSpace(){
   _segFrom.copy(state.pos); _segOk = false;
   // Kurz nicht andocken und nicht bremsen: man taucht dicht an dem Koerper auf, von dem man kommt.
   dockLock = 6; warpBrakeLock = 6; warpDrive = 0; warpVis = 0;
+  // Erst umschauen, nicht gleich in den Hyperraum — genau wie enterSpace und leaveGround es fuer den
+  // Flieger tun. Ohne das steht man mit Vollgas im All: der Hyperraum baut sofort auf, und ein Kind
+  // ist weg, bevor es Erde, ISS und Mond gesehen hat. Am Jetpack faellt das noch mehr auf, weil man
+  // zum Austritt ohnehin Vollgas gegeben hat, um hochzukommen.
+  if(state.throttle > 0.5) state.throttle = 0.5;
   jetSnapCam();
   showSpaceHint('\u{1F680}');
   flashFade();
@@ -5691,8 +5714,17 @@ function updateLocale(){
   if(locale === 'earth'){
     if(state.pos.y >= SPACE_Y) enterSpace();
   } else if(locale === 'space'){
-    // erledigt Anflug, Hyperraum-Bremse, Orbit-Grenze UND den Wiedereintritt an der Erdkugel
-    updateSpaceBodies();
+    // erledigt Anflug, Hyperraum-Bremse, Orbit-Grenze UND den Wiedereintritt an der Erdkugel —
+    // aber NUR fuer den FLIEGER. Am Jetpack macht updateJet dieselbe Arbeit selbst, mit den
+    // Astronauten-Wegen (evaEndJetToEarth, evaEndJetToGround, evaEndJetToHangar) und mit der
+    // dockLock-Sperre.
+    //
+    // Liefe updateSpaceBodies am Jetpack mit, waere das ein sofortiger Rueckwurf: die Erd-Pruefung
+    // dort fragt dockLock GAR NICHT ab und ruft enterEarth(true) direkt. Beim Austritt von der Erde
+    // steht man 24.000 m vom Erdmittelpunkt entfernt, die Rueckkehrschale liegt bei 22.200 m — knapp
+    // darueber, und im naechsten Frame zieht die Bremse einen wieder hinein oder man sinkt ein
+    // Stueck und ist drin. Genau das war der gemeldete Reset „am uebergang zum weltall".
+    if(!(eva && eva.jet)) updateSpaceBodies();
   } else if(locale === 'death'){
     // Die Decke ist fest — wer hochzieht, stößt an und bleibt drin. Vorher zählte "85 m über dem
     // Boden" als hinausgestiegen, also flog man einfach durch das Dach, während der Boden einen
@@ -7903,6 +7935,58 @@ const _camOff = new THREE.Vector3(), _camDes = new THREE.Vector3();
 // Hilfsvektoren fuer die Kamera-Kollision (wiederverwendet, damit pro Frame kein Muell entsteht)
 const _camFix = new THREE.Vector3(), _camTry = new THREE.Vector3();
 function updateCamera(){
+  // ---- JETPACK: eine echte FLUGGERAET-Kamera, gebaut wie die Verfolgerkamera des X-Wing.
+  //
+  // Sie stand vorher im EVA-Zweig weiter unten, zusammen mit „zu Fuss", Boot und Rover. Das war der
+  // Fehler: dort wird auf einen Punkt VOR dem Astronauten geschaut (EVA_LOOK_AHEAD), damit man beim
+  // Umsehen an ihm vorbei in den Himmel blicken kann. Beim Fliegen dreht sich das Bild dann um einen
+  // Punkt vor ihm, statt um ihn selbst — gemeldet als „die kamera faehrt um den jetpack herum,
+  // anstatt die optik eines fluggeraetes (xwing) zu haben". Der X-Wing schaut auf SICH SELBST.
+  //
+  // Drei Dinge macht sie deshalb genau wie der Flieger:
+  //   1. lookAt direkt auf den Astronauten — er sitzt in der Bildmitte, das Bild dreht sich um ihn.
+  //   2. Abstand waechst mit dem Tempo (camBackExtra): bei Warp reichten die festen 13,3 m nicht,
+  //      man klebte am Ruecken („kamera bei warp viel zu nah"). Der Flieger nimmt bis 125 m dazu.
+  //   3. back und up aus DEMSELBEN Quaternion wie die Fluglage, Nickwinkel geklemmt — dann kippt das
+  //      Bild bei steilem Steigflug nicht um.
+  if(eva && eva.jet){
+    const g = eva.group.position;
+    // Nickwinkel wie beim Flieger auf ±0,9 rad (51°) geklemmt: der Astronaut selbst darf steiler
+    // stehen (JET_PMAX = 72°), man sieht ihn dann noch steiler nicken als die Kamera.
+    const jp = Math.max(-0.9, Math.min(0.9, eva.jetPitch));
+    // Der rechte Stick lenkt am Jetpack (Schub), umsehen gibt es nicht — evaOrbit bleibt 0 und wird
+    // hier deshalb gar nicht gebraucht. Bei LB/RB (sideView) schaut man wie im Flieger von der Seite.
+    const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(jp, eva.yaw, 0, 'YXZ'));
+    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camQ);
+    const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);
+    // Grundabstand 13,3 m (7 m mal Abstandsfaktor 1,9) plus ein Tempo-Zuschlag wie beim Flieger, aber
+    // auf ein Drittel geskaliert: der X-Wing nimmt bis 125 m dazu und ist mit 11 m Spannweite dabei
+    // noch gut zu sehen — ein 1,9 m grosser Astronaut waere auf 138 m ein Punkt. Ein Drittel gibt bei
+    // Warp bis 55 m, und damit steht er im Bild wie der X-Wing auf seinen 149 m.
+    // Ohne jeden Zuschlag klebte die Kamera bei Warp auf 13,3 m am Ruecken („kamera bei warp viel zu
+    // nah") — dort legt man 3000 bis 30.000 m pro Sekunde zurueck, da braucht der Blick Vorlauf.
+    const dist = 7*1.9 + camBackExtra()/3;
+    const hoch = 3.4*1.9;
+    const desired = g.clone().addScaledVector(back, dist).addScaledVector(upV, hoch);
+    // Von der Seite schauen (LB/RB), wie im Flieger — auch hier auf ihn gerichtet.
+    if(sideView !== 0){
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camQ);
+      desired.copy(g).addScaledVector(right, dist*sideView*0.7).addScaledVector(upV, hoch*0.5);
+    }
+    // Den ABSTAND nachziehen, nicht die Position: sonst waechst der Rueckstand mit der Fahrt (bei
+    // 45 m/s gemessene 20,8 m statt 13,3 m). Die Rate waechst mit dem Tempo, genau wie beim Flieger
+    // (dort cfg.lerp * (1 + v/120)) — ohne das bliebe bei Warp ein Rueckstand von Hunderten Metern.
+    const vJ = eva.jetVel ? eva.jetVel.length() : 0;
+    const kJ = Math.min(1, (12 + vJ*0.25) * dtCam);
+    _camOff.copy(camera.position).sub(g);
+    _camDes.copy(desired).sub(g);
+    _camOff.lerp(_camDes, kJ);
+    camera.position.copy(g).add(_camOff);
+    camera.up.copy(upV);
+    // Auf IHN schauen — das ist der Kern des Ganzen (siehe oben, Punkt 1).
+    camera.lookAt(g);
+    return;
+  }
   // Draußen unterwegs: Kamera hinter dem Astronauten, leicht von oben — und mit dem rechten Stick
   // frei um ihn herum schwenkbar (siehe evaOrbit/evaPitch). Losgelassen gleitet sie von allein
   // zurück, damit man die Orientierung nicht verliert.
@@ -7954,34 +8038,17 @@ function updateCamera(){
     // „die Kamera bleibt starr, der Astronaut dreht sich" — er kippte im Bild, der Rahmen nicht,
     // und damit sah man seine Flugrichtung nicht mehr.
     //
-    // Richtig ist, was der Flieger tut (siehe die Verfolgerkamera weiter unten): den Nickwinkel
-    // KLEMMEN und camera.up MITKIPPEN lassen. Dann sitzt sie immer hinter ihm auf der Flugachse,
-    // und weil „oben" mitgeht, kippt das Bild nicht um. Geklemmt wird auf ±0,9 rad (51 Grad) —
-    // dieselbe Grenze wie beim Flieger; der Astronaut selbst darf steiler stehen (JET_PMAX, 72
-    // Grad), man sieht ihn dann noch steiler nicken als die Kamera.
-    //
-    // Zu Fuß, im Boot und im Rover bleibt die Kamera waagerecht: dort gibt es kein Nicken, und der
-    // rechte Stick dient dem freien Umsehen (evaPitch).
-    const jetPitchCam = eva.jet ? Math.max(-0.9, Math.min(0.9, eva.jetPitch)) : 0;
-    const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(jetPitchCam, yaw, 0, 'YXZ'));
-    const back = new THREE.Vector3(0, 0, 1).applyQuaternion(camQ);   // hinter ihm, MIT Nicken
-    const upV  = new THREE.Vector3(0, 1, 0).applyQuaternion(camQ);   // Kamera-Oben kippt mit
-    const fwd  = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);  // Blickrichtung
+    // Das JETPACK hat seine eigene Kamera bekommen (ganz oben in updateCamera, nach dem Muster der
+    // Verfolgerkamera des Fliegers). Hier geht es nur noch um „zu Fuss", Boot und Rover: dort bleibt
+    // die Kamera waagerecht, es gibt kein Nicken, und der rechte Stick dient dem freien Umsehen.
+    const back = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));   // waagerecht hinter ihm
+    const fwd  = new THREE.Vector3(-back.x, 0, -back.z);               // waagerechte Blickrichtung
     // Blickziel: vor dem Astronauten, um evaPitch gehoben bzw. gesenkt. Positiv = in den Himmel,
-    // negativ = auf den Boden vor ihm. In jedem FAHRZEUG ist evaPitch 0 (der rechte Stick gibt dort
-    // Schub statt umzusehen), die Rechnung fällt also von allein auf „geradeaus" zurück.
-    //
-    // AM JETPACK schlicht auf IHN: fwd trägt den Nickwinkel schon, und die Kamera sitzt dank back/upV
-    // hinter ihm auf derselben Achse — sie sieht ihn also mittig, mit der Flugrichtung nach vorn aus
-    // dem Bild heraus. Ein zusätzlich vorausversetztes Ziel schöbe ihn wieder aus der Mitte, und
-    // genau daran war der erste Versuch gescheitert (13,3 m über ihm, er hing am Bildrand).
-    if(eva.jet){
-      look.copy(g.position).addScaledVector(fwd, EVA_LOOK_AHEAD * 0.35);
-    } else {
-      look.copy(g.position)
-          .addScaledVector(fwd, EVA_LOOK_AHEAD * Math.cos(evaPitch))
-          .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
-    }
+    // negativ = auf den Boden vor ihm. Im Boot und im Rover ist evaPitch 0 (der rechte Stick gibt
+    // dort Schub statt umzusehen), die Rechnung fällt also von allein auf „geradeaus" zurück.
+    look.copy(g.position)
+        .addScaledVector(fwd, EVA_LOOK_AHEAD * Math.cos(evaPitch))
+        .setY(g.position.y + ASTRONAUT_H*0.6 + EVA_LOOK_AHEAD * Math.sin(evaPitch));
     // Kamera: hinter ihm, gegenläufig zum Schwenk — schaut er hinauf, sinkt sie etwas, damit der
     // Blick über ihn hinweg in den Himmel geht statt auf seinen Helm.
     // Im Schlauchboot weiter weg und hoeher: bei 40 km/h ueber die Duenung braucht man Vorausblick
@@ -7996,68 +8063,23 @@ function updateCamera(){
     // der Mars-Rover das Bild — er ist gut dreimal so lang wie der Mondrover. Auf dem Mars also
     // 2,3: das ergibt 16,1 m Abstand statt 10,5 m, und damit steht er so im Bild wie der Mondrover.
     const roverBt = (locale === 'mars') ? 2.3 : 1.5;
-    const bt = eva.jet ? 1.9 : (eva.boat ? 1.7 : (eva.rover ? roverBt : 1));
+    const bt = eva.boat ? 1.7 : (eva.rover ? roverBt : 1);
     const dist = 7*bt - 1.5 * Math.max(0, Math.sin(evaPitch));
     const desired = g.position.clone().addScaledVector(back, dist);
-    // Höhe für ALLE gleich gerechnet: 3,4 m mal Abstandsfaktor über dem Astronauten. Am Jetpack
-    // ergibt das mit bt = 1,9 gut 6,5 m auf 13,3 m Abstand — dieselben 26 Grad schräg von hinten,
-    // die man im Rover hat.
-    // Der evaPitch-Anteil (freies Umsehen mit dem rechten Stick) gilt nur, wo man sich umsieht — am
-    // Jetpack lenkt derselbe Stick, dort ist evaPitch immer 0.
-    //
-    // AM JETPACK entlang der MITGEKIPPTEN Hochachse (upV), nicht senkrecht: sonst hätte ein absolutes
-    // desired.y das Nicken wieder herausgerechnet, das back gerade eingebaut hat — die Kamera wäre
-    // bei steilem Steigflug erneut unter dem Astronauten gelandet. Genau so macht es die
-    // Verfolgerkamera des Fliegers (addScaledVector(upV, ...)).
-    const hoch = 3.4*bt - 2.2 * Math.sin(evaPitch);
-    if(eva.jet) desired.addScaledVector(upV, hoch);
-    else        desired.y = g.position.y + hoch;
+    // Höhe für alle gleich gerechnet: 3,4 m mal Abstandsfaktor über dem Astronauten.
+    // Der evaPitch-Anteil (freies Umsehen mit dem rechten Stick) gilt nur, wo man sich umsieht — im
+    // Boot und im Rover lenkt derselbe Stick, dort ist evaPitch immer 0.
+    desired.y = g.position.y + 3.4*bt - 2.2 * Math.sin(evaPitch);
     // Nicht unter den Boden: sonst schaut man durch das Gelände. Beim Blick nach oben darf sie
     // deshalb auch nicht beliebig tief — der Boden gewinnt.
     // Ueber Wasser zaehlt die WELLENhoehe: surfaceY gibt dort 0 zurueck, die Duenung reicht aber bis
     // 1,6 m — ohne das taucht die Kamera in einen Wellenberg und man sieht kurz nur Blau.
-    // Am Jetpack gibt es keinen Boden, an dem die Kamera anstossen koennte — die Klemme wuerde sie
-    // im freien Raum auf Hangarhoehe festnageln, obwohl er 200 m darueber fliegt.
-    if(!eva.jet){
-      const floor = (eva.boat ? seaYAt(desired.x, desired.z) : evaFootY(desired.x, desired.z)) + 1.2;
-      if(desired.y < floor) desired.y = floor;
-    }
+    const floor = (eva.boat ? seaYAt(desired.x, desired.z) : evaFootY(desired.x, desired.z)) + 1.2;
+    if(desired.y < floor) desired.y = floor;
     // Beim Schwenken schneller folgen als beim Zurückgleiten — sonst fühlt sich der Stick zäh an.
-    //
-    // AM JETPACK wird der ABSTAND zum Astronauten nachgezogen, nicht die absolute Position — wie bei
-    // der Verfolgerkamera des Fliegers (siehe _camOff/_camDes weiter unten). Zieht man die Position
-    // nach, waechst der Rueckstand mit der Fahrt: bei einem Lerp von 6 pro Sekunde und 45 m/s sind
-    // das 7,5 m, die Kamera haengt also 20,8 m statt der vorgesehenen 13,3 m zurueck (+56 %) und
-    // schwimmt hinter ihm her, statt hinter ihm zu STEHEN. Gemeldet als „die kamera bleibt nicht
-    // hinter dem jetpack, sauberes fliegen nicht moeglich".
-    //
-    // Ein Rest-Rueckstand bleibt auch beim Abstands-Lerp (Gleichgewicht v/k) — und im Weltall waeren
-    // das bei Warp 1 rund 150 m, bei Warp 10 gut 1500 m. Der Flieger lebt damit, weil ein X-Wing
-    // gross ist und camBackExtra ihm ohnehin bis 125 m Abstand gibt; ein 1,9 m grosser Astronaut waere
-    // dabei unsichtbar. Deshalb wird der Abstand hier HART GEKLEMMT: mehr als das Doppelte des
-    // Sollwerts gibt es nicht, dann sitzt die Kamera auf dem Sollabstand in ihrer aktuellen Richtung.
-    // Bei Landetempo greift das nie (2,3 m Rueckstand auf 13,3 m Soll), bei Warp jeden Frame.
-    if(eva.jet){
-      _camOff.copy(camera.position).sub(g.position);
-      _camDes.copy(desired).sub(g.position);
-      // Straff nachziehen (20 pro Sekunde): mit 8 waren es bei 45 m/s gemessene 17,8 m statt 13,3 m.
-      // Mit 20 sind es 2,3 m — nah genug, dass die Kamera hinter ihm steht, und weich genug, dass
-      // Kurven nicht hart wirken. Beim Schwenken mit dem Stick noch etwas straffer.
-      const sollAbst = _camDes.length();
-      _camOff.lerp(_camDes, Math.min(1, (active ? 24 : 20) * dtCam));
-      // _camOff ist jetzt der neue Abstandsvektor — die Klemme wirkt darauf, VOR dem Setzen der
-      // Kamera. So bleibt die Richtung erhalten und nur die Laenge wird begrenzt.
-      const istAbst = _camOff.length();
-      if(sollAbst > 0.001 && istAbst > sollAbst * 2) _camOff.multiplyScalar(sollAbst / istAbst);
-      camera.position.copy(g.position).add(_camOff);
-    } else {
-      camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
-    }
-    // Kamera-Oben: am Jetpack die mitgekippte Hochachse. Weiter oben steht camera.up fest auf
-    // (0,1,0) — mit der bliebe der Horizont waagerecht, während die Kamera auf der Flugachse sitzt,
-    // und ab etwa 60 Grad Nicken stünde das Bild auf dem Kopf. Genau das war der Grund, warum ich
-    // das Nicken erst ganz herausgenommen hatte; mit mitkippendem up braucht es das nicht.
-    if(eva.jet) camera.up.copy(upV);
+    camera.position.lerp(desired, Math.min(1, (active ? 14 : 6) * dtCam));
+    // camera.up bleibt hier (0,1,0), oben im Zweig gesetzt: zu Fuss, im Boot und im Rover soll der
+    // Horizont waagerecht stehen. Nur die Jetpack-Kamera kippt mit (eigener Block ganz oben).
     camera.lookAt(look);
     return;
   }
@@ -8199,8 +8221,18 @@ function updateHUD(){
     // Zu Fuß: das eigene Lauftempo. Statt des Schubs (der Motor ist draußen aus) steht dort die
     // senkrechte Sprunggeschwindigkeit — beim Hüpfen sieht man sie hochzählen und wieder fallen.
     // Die Beschriftung wechselt mit, „Schub: 12 %" wäre hier irreführend.
-    elSpd.textContent = Math.round(evaSpeedKmh());
-    if(elSpdU) elSpdU.textContent = ' km/h';
+    //
+    // AM JETPACK IM WELTALL zählt Warp, nicht km/h — genau wie beim Flieger. Dort fliegt man mit
+    // SPACE_C * warpFactor(), also bis 30.000 m/s: das sind 108 Millionen km/h, eine Zahl, die
+    // niemandem etwas sagt. Der EVA-Zweig schrieb bisher immer km/h, weil die Warp-Anzeige nur im
+    // Flieger-Zweig stand.
+    if(eva.jet && locale === 'space'){
+      elSpd.textContent = 'Warp ' + (eva.jetVel ? (eva.jetVel.length()/SPACE_C).toFixed(1) : '0.0');
+      if(elSpdU) elSpdU.textContent = '';
+    } else {
+      elSpd.textContent = Math.round(evaSpeedKmh());
+      if(elSpdU) elSpdU.textContent = ' km/h';
+    }
     // Statt des Schubs (der Motor ist draußen aus) die SPRUNGWEITE: während des Sprungs wächst sie
     // mit, nach der Landung bleibt der erreichte Wert stehen. Vom Dach der Mondbasis wird das
     // richtig weit, weil dort nur ein Sechstel der Erdanziehung bremst.
