@@ -623,20 +623,82 @@ wieder durchgehend CRLF (geprüft: 9132 CRLF, 0 nur-LF).
 Zeile **einzeln** zählen. Sind alle einzeln da, aber zusammen nicht, liegt es zwischen den Zeilen —
 also an den Zeilenenden.
 
-## Offen: neue Schub-Steuerung für X-Wing und Jetpack
+## Neue Schub-Steuerung für den X-Wing (erledigt)
 
-Wörtlich: „x wing/jetpack. neue steuerung 20% = schweben. 10% langsam landen 0% gleich schneller aber
-immer noch sicher landen. Im weltall sind 0%, 10 und 20% normale geschwindigkeiten weil ja landen
-nicht möglich"
+Wörtlich gewünscht: „x wing/jetpack. neue steuerung 20% = schweben. 10% langsam landen 0% gleich
+schneller aber immer noch sicher landen. Im weltall sind 0%, 10 und 20% normale geschwindigkeiten weil
+ja landen nicht möglich"
 
-Also am Boden (Mond, Mars, Hangar, Erde) drei Stufen unter 30 %:
+Rückgefragt und entschieden: 0 % sinkt **kontrolliert** und setzt immer sicher auf (nicht: erst kurz
+über dem Boden abgefangen), und 10 % bleibt bei den bisherigen −10 m/s.
 
-| Schub | Verhalten |
-|---|---|
-| 20 % | schweben, Höhe halten |
-| 10 % | langsam sinken → sanft landen |
-| 0 % | schneller sinken, aber immer noch **sicher** landen (kein Crash) |
+### Was wirklich fehlte
 
-Im Weltall gibt es keinen Boden, dort sind 0/10/20 % ganz normale Fahrstufen. `APPROACH_THR` ist
-heute 0,3 und der Kommentar dort beschreibt die Schwelle schon so („20 % schweben, 10 % sinken") —
-das ist beim Umsetzen der Bezugspunkt.
+20 % Schweben und 10 % Sinken gab es schon. Der Bruch lag bei **0 %**: dort war der Repulsor **aus**.
+Drei Bedingungen verlangten ausdrücklich Schub größer null — `vtolMix`, `repulsor` und `vtolLand` —,
+also fiel der X-Wing bei 0 % frei, geriet in den Strömungsabriss und schlug auf. Nachgerechnet: aus
+100 m erreicht er im freien Fall 44 m/s, die Crash-Schwelle liegt bei 16 m/s. Wer nur den Schub
+loslässt, um herunterzukommen, hatte sein Schiff verloren.
+
+Jetzt trägt der Repulsor bis 0 % herunter, es sinkt nur schneller:
+
+| Schub | Sinkrate | Landung aus 300 m |
+|---|---|---|
+| 20 % | 0 (schwebt auf 20 m) | — |
+| 10 % | −10 m/s (`VTOL_SINK`) | 30,22 s |
+| 0 % | −20 m/s (`VTOL_DROP`, neu) | 15,23 s |
+
+Zwischen 0 und 10 % wird **durchgeblendet**, nicht gestuft: ein Analogstick geht durch alle Werte,
+und bei 5 % wäre die Rate sonst sprunghaft um die Hälfte gefallen.
+
+Damit gibt es unter 30 % Schub keinen freien Fall und keinen Strömungsabriss mehr. Abstürzen kann man
+weiterhin — durch eine Kollision oder auf der falschen Oberfläche (Wasser).
+
+### Zwei Dinge, die daran hingen
+
+- **Der Absturz gegen ein Gebäude muss ein Absturz bleiben.** `hitsBuilding` setzt den Schub auf 0,
+  und da der Repulsor dort jetzt trägt, hätte die VTOL-Regelung den Sturz auf −20 m/s eingebremst,
+  während der `falling`-Block ihn beschleunigen will. Deshalb ist `state.falling` ausgeschlossen.
+- **Das HUD zeigte bei 0 % ⚠️** („Antrieb aus"). Das war richtig, solange man dort wirklich fiel —
+  jetzt ist 0 % die schnelle Landung, also **⏬**. Der Umkehrschub (negativer Schub, die Bremse im
+  Vorwärtsflug) behält das ⚠️ und bleibt von allen Änderungen unberührt.
+
+### Jetpack und Weltall
+
+Am Jetpack war **nichts** zu tun: es fliegt ausschließlich im Weltall und regelt den Schub schon
+linear über `JET_VMAX`. Und im Weltall gibt es keinen Boden, dort sind 0/10/20 % ganz normale
+Fahrstufen — auch das rechnete bereits so (`vtolMix` ist bei `locale === 'space'` immer 0).
+
+### Verifiziert im Browser, 0 Konsolenfehler
+
+Physik direkt mit festem `dt` getaktet (`stepPhysics(1/60, inp)`), nicht über `loop(now)` — das
+rechnet `dt` selbst aus der übergebenen Zeit und liefert mit vorgespulter Uhr Unsinn.
+
+| Schub | Soll | gemessen | Abweichung |
+|---|---|---|---|
+| 0 % | −20 m/s | −19,96 | 0,04 |
+| 2,5 % | −17,5 | −17,46 | 0,04 |
+| 5 % | −15 | −14,97 | 0,03 |
+| 10 % | −10 | −9,98 | 0,02 |
+| 20 % | 0 | 0,00 | 0,00 |
+
+- Landung aus **1000 m** bei 0 %: **50,23 s** (gerechnet 1000/20 = 50,0 s), **kein Crash**, sitzt auf
+  0,30 m = Inseloberfläche. Vorher war das ein garantierter Absturz.
+- Landung aus 300 m: 0 % = 15,23 s, 10 % = 30,22 s — genau doppelt, beide crashfrei.
+- **Schief** aufgesetzt (0,7 und 0,6 rad Neigung) bei 0 %: crashfrei, die Nase wird waagerecht
+  gezogen.
+- Schweben bei 20 %: 20,24 m über Grund (Soll 20), Rate 0,04 m/s — es steht.
+- Kollisionssturz: beschleunigt weiter (−11 m/s nach 0,5 s) und **crasht** — bleibt ein Absturz.
+- Weltall: 20 % = Warp 0,2, 10 % = Warp 0,1, 0 % = Warp 0, **0 m gesunken**.
+
+### Zwei Testfehler, die nach Spielfehlern aussahen
+
+- **„Landung aus 1000 m nach 7,73 s"** — unmöglich, das wären 129 m/s. Meine Messschleife hatte ein
+  `break` nach 14 Protokolleinträgen, und die Auswertung nahm den Abbruch für eine Landung. Er war
+  in Wahrheit noch bei 725 m und sank völlig korrekt mit −20,00 m/s.
+- **„Im Weltall sinkt er mit −20 m/s"** — gemessen wurde die Erde. Mein `frisch()`-Helfer ruft
+  ausdrücklich `enterEarth()`, der Weltall-Teil benutzte ihn ebenfalls. `space_loc` gab das preis
+  („earth"), sonst hätte ich einen schweren Fehler geglaubt, den es nicht gab.
+- Nachtrag zum ersten Anlauf: nach einem Crash läuft `resetPlane()` und stellt den X-Wing über
+  `placeAtStart` in den **Hangar**. Wer danach ohne Aufräumen die nächste Landung messen will, misst
+  auf Hangarhöhe. Reihenfolge im Testhelfer: erst Zustände löschen, dann Ort wechseln, dann Position.

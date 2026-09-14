@@ -6463,17 +6463,33 @@ const PLANE_SPECS = {
 };
 
 // ---------- X-Wing: Senkrechtstart und -landung (VTOL) ----------
-// Der Schub steuert unter 30 % nicht die Fahrt, sondern das SENKRECHTE Steigen/Sinken:
-//   0 %  Antrieb aus -> freier Fall (Absturz möglich, wie ein Strömungsabriss)
-//  10 %  saubere Senkrechtlandung (sinkt langsam, Nase wird waagerecht gezogen)
+// Der Schub steuert unter 30 % nicht die Fahrt, sondern das SENKRECHTE Steigen/Sinken. Drei Stufen,
+// und ALLE DREI setzen sicher auf — der Repulsor bleibt bis 0 % an:
+//   0 %  zügig sinken (VTOL_DROP) und trotzdem sanft aufsetzen — die schnelle Landung
+//  10 %  ruhig sinken (VTOL_SINK), Nase wird waagerecht gezogen — die gemütliche Landung
 //  20 %  abheben und SCHWEBEN: steigt auf 20 m über Grund und bleibt dort stehen; ist er schon
 //        höher, hält er einfach seine Höhe (Start von Landebahn, Wiese, Trägerdeck oder Wasser)
 //  25 %  Übergangszone (Schweben klingt aus, Vorwärtsschub setzt ein)
 //  30 %+ normaler Vorwärtsflug — ab hier greift die unveränderte Flugphysik
+//
+// Bei 0 % war früher der Antrieb AUS: freier Fall, Strömungsabriss, und aus 100 m Höhe ein Absturz
+// (die Crash-Schwelle liegt bei 16 m/s, im freien Fall erreicht man aus 100 m schon 44 m/s). Wer nur
+// den Schub loslässt, um herunterzukommen, hat sein Schiff verloren — für ein Kind ist das keine
+// Landung, sondern eine Falle. Jetzt trägt der Repulsor auch bei 0 %, es sinkt nur schneller.
+// Damit gibt es unter 30 % Schub keinen freien Fall und keinen Strömungsabriss mehr: abstürzen kann
+// man weiterhin, aber nur durch eine Kollision oder auf der falschen Oberfläche (Wasser).
+//
+// Im WELTALL gilt das alles nicht — dort ist kein Boden, auf dem man landen könnte, und 0/10/20 %
+// sind ganz normale Fahrstufen (0,1 · Warp usw., siehe vtolMix). Das gilt genauso für das Jetpack:
+// es fliegt ausschließlich im Weltall und regelt den Schub linear über JET_VMAX.
 const VTOL_LAND  = 0.10;   // bis hier: sinken
 const VTOL_HOVER = 0.20;   // hier: senkrecht steigen
 const VTOL_FWD   = 0.30;   // ab hier: kein VTOL mehr
 const VTOL_SINK  = -10;    // m/s Sinkrate bei VTOL_LAND (zügig, damit man nicht wartet)
+// Sinkrate bei 0 % Schub: doppelt so schnell wie bei 10 %, damit der Unterschied deutlich zu spüren
+// ist (aus 20 m Schwebehöhe 1,0 s gegen 2,0 s). Sicher ist beides — das Aufsetzen selbst wird
+// unabhängig von der Rate immer als saubere Landung gewertet (siehe vtolLand in stepPhysics).
+const VTOL_DROP  = -20;
 const VTOL_CLIMB = 10;     // m/s Steigrate bei VTOL_HOVER
 const VTOL_HOVER_ALT = 20; // m über Grund: Schwebehöhe bei VTOL_HOVER (Boden, Deck oder Mondkrater)
 // ---------- Selbst-Aufrichten der Querlage (Rollen loslassen) ----------
@@ -7388,10 +7404,16 @@ function stepPhysics(dt, inp){
   // X-Wing (VTOL): unter 30 % Schub übernehmen die Repulsoren. vtolMix blendet Vortrieb,
   // Schwerkraft und Auftrieb aus (1 = ganz aus bei <= 20 %, 0 = normaler Flug ab 30 %), damit
   // „senkrecht" wirklich senkrecht ist und die Steig-/Sinkrate exakt am Schub hängt.
-  // Bei 0 % Schub bewusst 0 -> Antrieb aus, normale Physik/Stall -> er fällt.
+  //
+  // Bei 0 % Schub gilt das JETZT AUCH. Vorher stand hier `state.throttle > 0.001`, der Repulsor war
+  // damit aus, und wer nur den Schub loslässt, fiel wie ein Stein (aus 100 m mit 44 m/s auf eine
+  // Crash-Schwelle von 16 m/s). Gewollt ist das Gegenteil: 0 % ist die SCHNELLE Landung, nicht der
+  // Absturz. Der Umkehrschub (throttle bis -0,2, A/C halten) bleibt außen vor — das ist die Bremse
+  // im Vorwärtsflug und soll die Flugphysik nicht abschalten.
+  //
   // Im Weltall gibt es keinen Boden und nichts zu schweben: dort ist der Schub linear, damit
   // 10 % = Warp 0,1 ... 100 % = Warp 1 gilt. Schweben/Landen nur über Erde und Mond.
-  const vtolMix = (spec.vtol && locale !== 'space' && state.throttle > 0.001 && state.throttle < VTOL_FWD)
+  const vtolMix = (spec.vtol && locale !== 'space' && state.throttle >= 0 && state.throttle < VTOL_FWD)
     ? Math.min(1, (VTOL_FWD - state.throttle) / (VTOL_FWD - VTOL_HOVER)) : 0;
   const vtolRest = 1 - vtolMix;
   const targetV = vMax * Math.max(0, state.throttle);          // Wunschgeschwindigkeit aus Schub
@@ -7420,11 +7442,13 @@ function stepPhysics(dt, inp){
   accel.y -= GRAV * vtolRest;                                  // Schwerkraft (immer -Y)
   // Auftrieb ⟂ Flügel, GEDECKELT auf 1 g: ab vTO hält er das Gewicht (waagerecht = Höhe halten),
   // darunter reicht er nicht -> Flieger sinkt (Gleitflug/Stall). Nie mehr als 1 g -> kein Hochschießen.
-  // Der X-Wing hat Repulsorlift: solange der Antrieb läuft (> 0 %), trägt er sich unabhängig von der
-  // Fahrt. Deshalb sackt er beim Wechsel vom Schweben in den Vorwärtsflug nicht durch, sondern
-  // beschleunigt waagerecht. Bei 0 % Schub ist der Repulsor aus -> er fällt wie jeder andere auch.
+  // Der X-Wing hat Repulsorlift: er trägt sich unabhängig von der Fahrt. Deshalb sackt er beim
+  // Wechsel vom Schweben in den Vorwärtsflug nicht durch, sondern beschleunigt waagerecht.
+  // Auch bei 0 % Schub — vorher war er dort aus und der Flieger fiel wie jeder andere. Das ist der
+  // Kern der neuen Steuerung: 0 % sinkt schnell, aber getragen und mit sicherem Aufsetzen. Nur der
+  // Umkehrschub (negativer throttle) schaltet ihn ab, das ist die Bremse im Vorwärtsflug.
   // Flügel-Flieger brauchen Fahrt; im Strömungsabriss gibt es gar keinen Auftrieb.
-  const repulsor = !!spec.vtol && state.throttle > 0.001;
+  const repulsor = !!spec.vtol && state.throttle >= 0;
   const liftF = repulsor ? 1 : Math.min(1, (speed*speed)/(spec.vTO*spec.vTO)) * (state.stalling ? 0 : 1);
   accel.addScaledVector(upV, GRAV * liftF * vtolRest);
   state.vel.addScaledVector(accel, dt);
@@ -7465,13 +7489,23 @@ function stepPhysics(dt, inp){
 
   // --- X-Wing (VTOL): Steig-/Sinkrate aus dem Schub anregeln. Läuft NACH der Ruderwirksamkeit,
   // damit das senkrechte Steigen nicht Richtung Nase weggedreht wird (vtolMix siehe oben).
-  if(vtolMix > 0){
-    // Zielrate aus dem Schub: 10 % sinken (Landung), 20 % schweben. Beim Schweben wird nicht endlos
-    // gestiegen, sondern die Schwebehöhe angeregelt: unter 20 m über Grund steigt er, darüber bleibt
-    // er stehen (nie von selbst sinken — sonst könnte man nicht in der Luft warten).
+  //
+  // NICHT im Sturz nach einer Kollision (state.falling): dort setzt hitsBuilding den Schub auf 0,
+  // und seit der Repulsor auch bei 0 % trägt, würde diese Regelung den Sturz auf -20 m/s einbremsen,
+  // während der falling-Block ihn beschleunigen will. Ein Aufprall gegen ein Haus soll ein Absturz
+  // bleiben — die neue Landestufe gilt fürs LANDEN, nicht fürs Verunglücken.
+  if(vtolMix > 0 && !state.falling){
+    // Zielrate aus dem Schub: 0 % zügig sinken, 10 % ruhig sinken, 20 % schweben. Beim Schweben wird
+    // nicht endlos gestiegen, sondern die Schwebehöhe angeregelt: unter 20 m über Grund steigt er,
+    // darüber bleibt er stehen (nie von selbst sinken — sonst könnte man nicht in der Luft warten).
     let tv;
     if(state.throttle <= VTOL_LAND){
-      tv = VTOL_SINK;
+      // Zwischen 0 % und 10 % wird die Sinkrate durchgeblendet: bei 0 % zügig (VTOL_DROP, -20 m/s),
+      // bei 10 % ruhig (VTOL_SINK, -10 m/s). Nicht zwei harte Stufen, sondern ein Übergang — sonst
+      // fällt die Sinkrate bei 5 % Schub sprunghaft um die Hälfte, und ein Analogstick geht nun mal
+      // durch alle Werte. Sicher aufsetzen tut er in diesem ganzen Bereich (siehe vtolLand).
+      const kL = Math.min(1, Math.max(0, state.throttle / VTOL_LAND));
+      tv = VTOL_DROP + (VTOL_SINK - VTOL_DROP) * kL;
     } else {
       const agl = state.pos.y - surfaceY(state.pos.x, state.pos.z);          // Höhe über Grund
       const hov = Math.max(0, Math.min(VTOL_CLIMB, (VTOL_HOVER_ALT - agl) * 0.5));
@@ -7487,7 +7521,9 @@ function stepPhysics(dt, inp){
     state.vel.y += (tv - state.vel.y) * Math.min(1, 4*dt) * vtolMix;
     const vDamp = 1 - (1 - Math.exp(-1.2*dt)) * vtolMix;
     state.vel.x *= vDamp; state.vel.z *= vDamp;
-    // Landeanflug (10 %): Nase und Querlage sanft waagerecht ziehen -> setzt immer gerade auf
+    // Landeanflug (0 bis 10 %): Nase und Querlage sanft waagerecht ziehen -> setzt immer gerade auf.
+    // Gilt für beide Sinkraten, auch die schnelle bei 0 % — schief aufsetzen wäre sonst der einzige
+    // Weg, sich bei 0 % doch noch das Schiff zu zerlegen (tilt > 0,9 zählt als harte Landung).
     if(state.throttle <= VTOL_LAND && !state.onGround){
       const eV = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
       const kV = Math.min(1, 2.5*dt);
@@ -7588,8 +7624,11 @@ function stepPhysics(dt, inp){
       // Crash, wenn: hier nicht landbar (falsche Oberfläche fürs Modell) ODER
       // zu schnell / zu steil gesunken / zu schräg aufgesetzt.
       const badSpot   = !canLandHere(state.pos.x, state.pos.z);
-      // X-Wing im Senkrecht-Sinkflug (10 % Schub) setzt IMMER sauber auf — nie „hart gelandet".
-      const vtolLand  = spec.vtol && state.throttle > 0 && state.throttle <= VTOL_LAND;
+      // X-Wing im Senkrecht-Sinkflug setzt IMMER sauber auf — nie „hart gelandet". Das gilt jetzt
+      // im GANZEN Landebereich bis 0 %: vorher stand hier `state.throttle > 0`, also war die
+      // schnelle Landung bei 0 % ausgerechnet die einzige, die als Absturz zählte (VTOL_DROP ist
+      // -20 m/s, die Schwelle liegt bei 16). Der Umkehrschub bleibt außen vor, der ist negativ.
+      const vtolLand  = spec.vtol && state.throttle >= 0 && state.throttle <= VTOL_LAND;
       const hardLand  = !vtolLand && (vspeed > 55 || sinkRate > 16 || tilt > 0.9 || state.stalling);  // Stall = kein sanftes Landen
       if(badSpot || hardLand){
         state.crashed = true;
@@ -8006,10 +8045,15 @@ function updateHUD(){
     // Der Verkehr laeuft immer und die Aufgaben-Umschaltung ist ausgebaut -> keine Schalter-Symbole
     // mehr, nur noch der Zustand des Fahrzeugs selbst.
     if(isXWing()){
-      // Schub-Phase: 🛬 am Boden · ⚠️ Antrieb aus · ⬇️ Senkrecht-Landung · ⬆️ steigen · 🚀 vorwärts
+      // Schub-Phase: 🛬 am Boden · ⏬ schnell sinken · ⬇️ ruhig sinken · ⬆️ steigen · 🚀 vorwärts
+      // Bei 0 % stand hier ⚠️ („Antrieb aus"): das stimmte, solange der Repulsor dort aus war und
+      // man wirklich fiel. Jetzt ist 0 % die schnelle LANDUNG, also der doppelte Pfeil — eine
+      // Warnung wäre irreführend. Im Weltall gibt es kein Sinken, dort zählt nur die Fahrt.
       const tq = state.throttle;
-      s = (state.onGround ? '🛬' : (tq <= 0 ? '⚠️'
-        : (tq <= VTOL_LAND ? '⬇️' : (tq < VTOL_FWD ? '⬆️' : '🚀'))));
+      s = (state.onGround ? '🛬' : (tq < 0 ? '⚠️'
+        : (locale === 'space' ? '🚀'
+        : (tq <= 0.001 ? '⏬'
+        : (tq <= VTOL_LAND ? '⬇️' : (tq < VTOL_FWD ? '⬆️' : '🚀'))))));
     } else if(isBoat()){
       // Das Boot schöpft aus dem Meer, unter dem es fährt -> kein Tank, keine Tropfen-Anzeige.
       s = (boatSpray_ ? '💦' : '🚤');
