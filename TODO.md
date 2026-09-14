@@ -1534,3 +1534,70 @@ samt exaktem Raycast, und die Fläche der Mondbasis.
 Jetzt ist nur noch das **Weltall** ausgenommen (dort gibt es keinen Boden). An allen anderen Orten
 nutzen beide Schatten `surfaceY`, und die Wellen- und Träger-Sonderfälle gelten nur noch in der
 Erdwelt. Damit hat auch der Astronaut zu Fuß auf dem Mond und im Hangar einen Schatten.
+
+## Der Canadair-Schatten blinkte im Wellenrhythmus
+
+Gemeldet: „wenn die canadair auf dem wasser schwimmt oder fährt verschwindet der schatten ab und zu und
+kommt dann wieder. warum? ggf wellen bewegung? oder was anderes?"
+
+Die Vermutung war richtig — es ist die Wellenbewegung, aber nicht direkt, sondern über eine Eigenheit des
+schwimmenden Canadair: **`state.pos.y` bleibt auf der Nulllinie**, während `planeGroup.position.y` mit der
+Welle wandert (`floatCanadair`). Der Schatten rechnete mit `state.pos.y`:
+
+| Wellenhöhe an der Stelle | alt (alt) | | alt (neu) | |
+|---|---|---|---|---|
+| −1,6 m (Tal) | +1,60 | an | −0,55 | an |
+| 0 m | 0,00 | an | −0,55 | an |
+| +0,8 m | −0,80 | **aus** | −0,55 | an |
+| +1,6 m (Berg) | −1,60 | **aus** | −0,55 | an |
+
+Auf jedem Wellenberg wurde `alt` negativ, und `alt < 0` schaltet den Schatten ab — bei `AMP` = 3,0 also
+etwa die Hälfte der Zeit, im Rhythmus der Dünung.
+
+Behoben mit `planeCamRef()`, das genau dieses Auseinanderfallen schon kennt: die Kamera nutzt es seit
+längerem, weil das Flugzeug sonst in ihrem Bild bis 2,94 m auf und ab hüpfte. Damit ist `alt` über den
+ganzen Wellenzyklus konstant −0,55 m — der Tiefgang, mit dem der Rumpf im Wasser liegt.
+
+Zwei Kleinigkeiten kamen dazu:
+
+- Die untere Grenze ist jetzt `alt < -2` statt `alt < 0`. Schwimmend liegt der Rumpf unter der
+  Wasserlinie, `alt` ist dort also zu Recht leicht negativ; mit der harten Null blinkte es weiter, nur
+  seltener.
+- Der Skalierungsfaktor `f` ist auf 0..1 geklemmt. Bei negativem `alt` wäre der Schatten geschrumpft und
+  dunkler geworden als vorgesehen — die Deckkraft `0,18 + 0,22·(1−f)` liefe über ihren Sollwert hinaus.
+
+Der ovale Schatten (Feuerwehrboot, Schlauchboot, Astronaut) hat das Problem nicht: er setzt bei Booten
+`alt = 0` fest und prüft nur die obere Grenze.
+
+## X am Boden: der X-Wing steigt erst auf Schwebehöhe, dann Vollgas
+
+Gemeldet: „wenn man beim x-wing mit x beschleunigt, steigt der flieger nicht auf die minimale
+schwebehöhe."
+
+X (und Shift) setzten `state.throttle = 1`. Damit ist der VTOL-Bereich verlassen (`vtolMix` gilt nur
+unter `VTOL_FWD` = 30 %), es greift die normale Flugphysik — und dort auch die Abhebe-Sperre:
+
+```
+if(state.onGround && speed < spec.vTO && state.vel.y > 0 && vtolMix <= 0) state.vel.y = 0;
+```
+
+Der X-Wing rollte also mit Vollgas los wie ein Verkehrsflugzeug und hob erst bei `vTO` = 55 m/s ab. Auf
+einer Wiese, auf Wasser oder auf dem Trägerdeck kommt er so gar nicht in die Luft.
+
+Nachgefragt und entschieden: **erst senkrecht auf Schwebehöhe, dann Vollgas.** Ein Druck, und er ist
+oben.
+
+Umgesetzt als eigener Zustand `xwingLaunch` mit der Hilfsfunktion `boostDruck()`, die beide
+Eingabewege nutzen (Tastatur und Gamepad — vorher stand die Rechnung zweimal da):
+
+- Am Boden oder in laufender Sequenz: Schub auf `VTOL_HOVER`. Das Steigen regelt der vorhandene
+  VTOL-Block mit `VTOL_CLIMB` und riegelt bei `VTOL_HOVER_ALT` ab — dieselbe Regelung wie beim
+  Verlassen des Hangars.
+- Bei 80 % der Schwebehöhe schaltet es auf Vollgas. Nachgerechnet dauert das **3,1 s**. Die 80 % sind
+  nötig, weil die Steigrate angeregelt wird und die letzten Meter langsam auslaufen.
+- Die Grundhöhe kommt je Ort aus `fordDeckY`, `ISLAND_Y`, Wasser (0) oder `surfaceY` — so funktioniert
+  der Start auch auf dem Träger, auf dem Mond und im Hangar.
+- Ein eigener Zustand, weil der Eingabe-Zweig jeden Frame läuft: ohne Merker begänne die Sequenz bei
+  jedem Bild neu. Sie endet beim Loslassen und beim Reset.
+
+Jedes andere Modell und der schon fliegende X-Wing bekommen wie bisher direkt 100 %.

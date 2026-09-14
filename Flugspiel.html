@@ -2965,8 +2965,19 @@ function updateShadow(){
   const seaHere = (!erde || onCar || overLand) ? 0 : seaYAt(state.pos.x, state.pos.z);
   const surfY = !erde ? surfaceY(state.pos.x, state.pos.z)
               : (onCar ? fordDeckY : (overLand ? ISLAND_Y : seaHere));
-  const alt = state.pos.y - surfY;            // echte Höhe über der jeweiligen Oberfläche
-  if(alt > SHADOW_MAXALT || alt < 0){ planeShadow.visible = false; return; }
+  // Gerechnet wird mit der ANGEZEIGTEN Hoehe (planeCamRef), nicht mit state.pos.y. Beim schwimmenden
+  // Canadair fallen die beiden auseinander: dessen state.pos.y bleibt auf der Nulllinie, waehrend
+  // planeGroup.position.y mit der Welle wandert (siehe floatCanadair). Der Schatten rechnete damit
+  // alt = 0 - Wellenhoehe, wurde auf jedem Wellenberg negativ und schaltete sich ab — bei AMP = 3,0
+  // also etwa die Haelfte der Zeit. Genau das war „wenn die canadair auf dem wasser schwimmt oder
+  // faehrt verschwindet der schatten ab und zu und kommt dann wieder". Die Kamera loest dasselbe
+  // Problem seit laengerem ueber planeCamRef.
+  const refY = planeCamRef().y;
+  const alt = refY - surfY;                   // echte Höhe über der jeweiligen Oberfläche
+  // Die untere Grenze mit Toleranz: schwimmend liegt der Rumpf um CANADAIR_DRAFT unter der
+  // Wasserlinie, alt ist dort also leicht negativ, ohne dass etwas falsch waere. Ohne die Toleranz
+  // blinkte der Schatten weiter, nur seltener.
+  if(alt > SHADOW_MAXALT || alt < -2){ planeShadow.visible = false; return; }
   planeShadow.visible = true;
   // Der Schatten ist eine waagerechte Flaeche, die Wasseroberflaeche darunter ist geneigt: auf den
   // Mittelwert gelegt taucht der Rand ein. Deshalb der HOECHSTE Wellenpunkt unter seiner Flaeche —
@@ -2986,7 +2997,10 @@ function updateShadow(){
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
   planeShadow.rotation.y = Math.atan2(fwd.x, fwd.z) + Math.PI;
   // je höher, desto größer & blasser (Schatten "wächst" beim Steigen)
-  const f = alt / SHADOW_MAXALT;                 // 0 (am Boden) .. 1 (20 m)
+  // Auf 0..1 geklemmt: schwimmend darf alt leicht negativ sein (der Rumpf liegt um CANADAIR_DRAFT
+  // unter der Wasserlinie), und ohne Klemme wuerde der Schatten dort schrumpfen und dunkler werden
+  // als vorgesehen — die Deckkraft ginge ueber ihren Sollwert hinaus.
+  const f = Math.max(0, Math.min(1, alt / SHADOW_MAXALT));   // 0 (am Boden) .. 1 (20 m)
   const scale = 1 + f * 0.8;
   planeShadow.scale.set(scale, 1, scale);
   // nah = dunkel, hoch = blasser, aber Mindest-Deckkraft, damit er auf Wasser sichtbar bleibt
@@ -7089,6 +7103,7 @@ function placeAtStart(name){
   }
   state.vel.set(0,0,0); state.throttle=0; state.onGround=true;
   state.crashed=false; state.crashTimer=0; state.ejected=false; state.falling=false; state.stalling=false; boosting=false;
+  xwingLaunch=false;   // eine laufende Startsequenz endet mit dem Reset (siehe boostDruck)
   wasSupersonic=false; if(vaporCone) vaporCone.visible=false; vaporT=0;
   clearRescue(); clearParachute(); clearBoatSpray(); clearEva();
   planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
@@ -7426,6 +7441,38 @@ let aPrev = false;   // A-Taste-Halten fuer Umkehrschub (-20 %)
 let cPrev = false;   // C-Taste-Halten (Tastatur-Bremse)
 let xPrev = false, kbBoostPrev = false;   // X/Shift-Halten fuer Boost
 let boosting = false;   // Boost aktiv -> extra Beschleunigung (Physik liest das)
+// Startsequenz des X-Wing: X (bzw. Shift) am BODEN gedrueckt heisst „hoch und los" — erst senkrecht
+// auf die Schwebehoehe, dann Vollgas vorwaerts. Ohne das setzte X sofort 100 % Schub, damit war der
+// VTOL-Bereich (unter VTOL_FWD) verlassen, und der X-Wing rollte wie ein normales Flugzeug los und
+// hob erst bei vTO = 55 m/s ab. Gemeldet als „wenn man beim x-wing mit x beschleunigt, steigt der
+// flieger nicht auf die minimale schwebehoehe".
+//
+// Ein eigener Zustand, kein Rechnen im Eingabe-Zweig: der laeuft jeden Frame, und ohne Merker
+// begaenne die Sequenz bei jedem Bild neu.
+let xwingLaunch = false;
+// X bzw. Shift gedrueckt. Beim X-WING am Boden beginnt damit die Startsequenz: erst senkrecht auf die
+// Schwebehoehe (Schub auf VTOL_HOVER, der VTOL-Block regelt das Steigen), und sobald die erreicht ist,
+// Vollgas vorwaerts. Jedes andere Modell und der fliegende X-Wing bekommen wie bisher direkt 100 %.
+function boostDruck(){
+  boosting = true;
+  const xw = isXWing() && !state.crashed && !state.ejected && !state.falling;
+  if(xw && (state.onGround || xwingLaunch)){
+    // In der Sequenz: solange er noch unter der Schwebehoehe ist, Schwebestufe halten. VTOL_HOVER
+    // laesst ihn mit VTOL_CLIMB steigen und riegelt bei VTOL_HOVER_ALT ab — dieselbe Regelung, die
+    // auch beim Aussteigen aus dem Hangar greift.
+    xwingLaunch = true;
+    const grund = (locale === 'earth')
+      ? (isOnCarrier(state.pos.x, state.pos.z) ? fordDeckY
+        : (isOnLand(state.pos.x, state.pos.z) ? ISLAND_Y : 0))
+      : surfaceY(state.pos.x, state.pos.z);
+    // Etwas unter der Sollhoehe umschalten (80 %): die Steigrate wird angeregelt und laeuft die
+    // letzten Meter langsam aus — wer auf die volle Hoehe wartet, wartet lange.
+    if(state.pos.y - grund >= VTOL_HOVER_ALT*0.8){ xwingLaunch = false; state.throttle = 1; }
+    else state.throttle = VTOL_HOVER;
+    return;
+  }
+  state.throttle = 1;
+}
 function edge(gp, i){ const now = gp.buttons[i] && gp.buttons[i].pressed;
   const was = btnPrev[i]; btnPrev[i]=now; return now && !was; }
 
@@ -7467,8 +7514,8 @@ function readInput() {
   cPrev = !!keys['KeyC'];
   // SHIFT HALTEN = BOOST (Tastatur-Pendant zu X): sofort 100 %, losgelassen -> 50 %.
   const kbBoost = !!(keys['ShiftLeft'] || keys['ShiftRight']);
-  if(kbBoost){ state.throttle = 1; boosting = true; }
-  else { if(!(gamepadIndex!==null)) boosting = false; if(kbBoostPrev) state.throttle = 0.5; }
+  if(kbBoost){ boostDruck(); }
+  else { if(!(gamepadIndex!==null)) boosting = false; if(kbBoostPrev){ state.throttle = 0.5; xwingLaunch = false; } }
   kbBoostPrev = kbBoost;
 
   // ---- Gamepad ----
@@ -7508,8 +7555,8 @@ function readInput() {
 
       // X HALTEN = BOOST: sofort 100 % Schub + extra Beschleunigung; beim LOSLASSEN -> 50 % Schub.
       const xDown = gp.buttons[2] && gp.buttons[2].pressed;
-      if(xDown){ state.throttle = 1; boosting = true; }
-      else { boosting = false; if(xPrev) state.throttle = 0.5; }
+      if(xDown){ boostDruck(); }
+      else { boosting = false; if(xPrev){ state.throttle = 0.5; xwingLaunch = false; } }
       xPrev = xDown;
 
       // Y = EIN- UND AUSSTEIGEN, B = nur noch Aktionen, Modellwechsel auf D-Pad rechts.
