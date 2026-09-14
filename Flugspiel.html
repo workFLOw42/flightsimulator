@@ -1401,10 +1401,16 @@ const SHIP_TYPES = [
   // ist der obere Druckkoerper direkt unter dem Deck, also der richtige Umriss fuer ein Boot, das
   // daneben faehrt. Vorher traf das Band die Ruder unter dem Rumpf.
   //
-  // Tempo 1,8 m/s = 6,5 km/h, das langsamste Schiff auf dem Meer (die Frachter fahren 16-20 km/h).
-  // Es FAEHRT also, nur eben Schrittgeschwindigkeit: auf 95 m Laenge braucht es 53 s fuer eine
-  // eigene Schiffslaenge. Ohne Bugwelle als Bezug sieht das aus wie Stillstand.
-  { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.1537, spd:1.8, sym:'🛥️',
+  // Tempo 4,0 m/s = 14,4 km/h. Vorher 1,8 (6,5 km/h) — das war zwar Fahrt, sah aber wie Stillstand
+  // aus: bei 95 m Laenge brauchte es 53 s fuer eine eigene Schiffslaenge, und ohne Bugwelle als
+  // Bezug fehlt jeder Anhaltspunkt. Jetzt sind es 24 s, also 2,5 Laengen pro Minute — sichtbar
+  // unterwegs, ohne zu huschen. Damit liegt es zwischen Grosssegler (10,8 km/h) und Liberty-Frachter
+  // (16,2), und das ist immer noch untertrieben: ein echtes U-Boot faehrt aufgetaucht 12-20 kn,
+  // also 22-37 km/h. spawnSeaShips streut jeden Wert um +/-20 %, hier also 11,5 bis 17,3 km/h.
+  // Fuer die Ausweichlogik ist das Tempo gleichgueltig: bei Land voraus (47,5 m = halbe Rumpflaenge)
+  // haelt das Schiff an und dreht nur, statt weiterzufahren — bei 0,08 m Weg pro Frame ist die
+  // Vorausschau unabhaengig von der Geschwindigkeit reichlich.
+  { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.1537, spd:4.0, sym:'🛥️',
     subDive:5.8, subPeriod:26 },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll

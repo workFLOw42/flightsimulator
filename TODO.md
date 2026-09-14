@@ -2211,3 +2211,31 @@ den 7 s Schwimmen bei 0,004° — worauf der Anlauf mit `f'(0) = 0` wieder aufse
 `ORCA_DIVE_J` es in seiner eigenen Deklaration liest. `const` wird nicht gehoisted — in der ersten Fassung
 stand die Nutzung 23 Zeilen vor der Deklaration, was beim Laden einen `ReferenceError` geworfen und das
 Spiel schwarz gelassen hätte.
+
+## U-Boot: mehr Fahrt
+
+Gewünscht: „gib dem uboot etwas mehr vorwärts geschwindigkeit."
+
+`spd` von 1,8 auf **4,0 m/s** (6,5 → 14,4 km/h).
+
+| Typ | km/h | Länge | Längen/min |
+|---|---|---|---|
+| Kreuzfahrtschiff | 19,8 | 250 m | 1,32 |
+| Container | 18,0 | 300 m | 1,00 |
+| Liberty | 16,2 | 135 m | 2,00 |
+| **U-Boot neu** | **14,4** | 95 m | **2,53** |
+| Großsegler | 10,8 | 90 m | 2,00 |
+| ~~U-Boot alt~~ | ~~6,5~~ | 95 m | ~~1,14~~ |
+
+Vorher brauchte es 53 s für eine eigene Schiffslänge — das war Fahrt, sah aber ohne Bugwelle als Bezug wie
+Stillstand aus (genau die frühere Frage „außerdem fährt das boot?"). Jetzt 24 s. Untertrieben ist es
+weiterhin: ein echtes U-Boot fährt aufgetaucht 12–20 kn, also 22–37 km/h. `spawnSeaShips` streut jeden Wert
+um ±20 %, hier also 11,5–17,3 km/h.
+
+Zwei Dinge geprüft, bevor ich den Wert gesetzt habe:
+
+- **Ausweichen** bleibt heil, weil es tempo-unabhängig gebaut ist: bei Land voraus (geprüft in halber
+  Rumpflänge, 47,5 m) hält das Schiff an und dreht nur den Kurs. Bei 0,08 m Weg pro Frame ist die
+  Vorausschau reichlich, egal wie schnell es fährt.
+- **Tauchen** wird sogar besser: ein 26-s-Zyklus deckt jetzt 104 m Strecke statt 47, das Boot taucht also
+  über eine sichtbar längere Bahn ab und auf.
