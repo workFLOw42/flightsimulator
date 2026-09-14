@@ -1666,3 +1666,42 @@ Dabei entstand ein Folgeproblem, das ich gleich mitbehoben habe: mit gesperrtem 
 Astronaut dort endlos gefallen. In der Zone steht er jetzt auf der Wasserlinie und watet — die Zone ist
 nur die Bootslänge breit, also flaches Hafenwasser direkt am Kai. So kann man ums Boot herumlaufen und
 einsteigen.
+
+## Das Kai-Boot lag in der Canadair und unter Wasser
+
+Gemeldet mit Screenshot: „boot und canadair liegen übereinander und das geparkte boot liegt unter der
+wasser linie". Auf dem Bild steckt das weiße Boot direkt unter der Canadair, und nur der Aufbau ragt
+heraus.
+
+### Fehler 1: dieselbe Stelle wie der Canadair-Startplatz
+
+Nachgerechnet, und es war knapp: `findStart` setzt die Canadair auf `radius*1,14`, mein Kai-Boot lag bei
+`radius*1,02 + 34`. Auf der Startinsel (radius 260) sind das 296 gegen 299 m — **3 m auseinander**.
+
+Behoben, indem das Boot **seitlich** am Kai liegt statt davor: radial 1,16 mal Radius, dazu 40 m
+tangential versetzt. Die Canadair steht radial, das Boot tangential — sie können sich nicht mehr
+begegnen.
+
+Der radiale Abstand ist ein **Vielfaches des Radius**, wie beim Hafen (1,02) und beim Canadair-Platz
+(1,14). Mit einer festen Meterzahl ging es nicht: 12 m legten das Boot auf großen Inseln in den
+Sandrand (der bis `radius*1,12` reicht), auf der Startinsel bei 280 m, wo der Sand bis 291 m geht. Ein
+Boot im Sand ist falsch, und ein fester Wert kann es nicht für alle Größen richtig machen.
+
+| Inselradius | Boot von der Mitte | Sandrand | Abstand Canadair | Abstand Hafenmitte |
+|---|---|---|---|---|
+| 170 | 201 m | 190 | 40 m | 47 m |
+| 260 | 304 m | 291 | 40 m | 54 m |
+| 330 | 385 m | 370 | 41 m | 61 m |
+
+Überall im Wasser, überall 40 m von der Canadair, überall außerhalb der Hafenhülle (27 m).
+
+### Fehler 2: feste Höhe, während die Dünung schwankt
+
+Das Boot steckt in der Inselzelle und wurde beim Bauen **einmal** auf `-BOAT_DRAFT` gesetzt. Die
+Wasseroberfläche schwankt aber um bis zu ±1,6 m (`AMP` 3,0): bei einem Wellenberg von 1,0 m lag sie
+2,1 m über dem Kiel, und nur der Aufbau schaute heraus. Im Wellental hätte es umgekehrt geschwebt.
+
+Neu ist `updateHarborBoats(dt)`, das die Kai-Boote pro Frame auf `seaYAt − BOAT_DRAFT` setzt — genau die
+Rechnung, die das fahrende Boot in `stepBoat` benutzt. Dazu ein leichtes Nicken aus der Welle am Bug
+gegen die am Heck, mit derselben Konvention wie die Handelsschiffe (Bug bei −Z, also `-sin`/`-cos`; mit
+`+sin`/`+cos` wäre das Nicken spiegelverkehrt gewesen).

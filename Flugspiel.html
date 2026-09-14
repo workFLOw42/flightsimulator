@@ -946,7 +946,18 @@ function harborLocal(cx, cz){
 // Gerechnet in derselben lokalen Inselkoordinate wie harborLocal: dieselbe Richtung, nur weiter
 // hinaus. Der Hafen ist HARBOR_SIZE = 60 m gross (Halbmass 30), das Boot 16 m lang — 34 m nach
 // aussen setzt es frei vor die Kaikante, laengs zum Ufer gedreht.
-const HARBOR_BOAT_OUT = 34;
+// Das Kai-Boot liegt SEITLICH am Hafen, nicht davor — wie ein Boot, das laengs am Kai festgemacht
+// ist. Der erste Versuch (34 m radial nach aussen) legte es genau dorthin, wo die CANADAIR startet:
+// die steht bei radius*1,14, das Boot lag bei radius*1,02 + 34, auf der Startinsel also 3 m daneben.
+// Beide standen ineinander (im Screenshot deutlich zu sehen). Seitlich versetzt sind es auf jeder
+// Inselgroesse 41 bis 49 m Abstand.
+// Radial als VIELFACHES des Inselradius, wie der Hafen (1,02) und der Canadair-Startplatz (1,14) —
+// nicht als feste Meterzahl. Mit festen 12 m lag das Boot auf grossen Inseln im SANDRAND (der reicht
+// bis radius*1,12): auf der Startinsel bei 280 m, wo der Sand bis 291 m geht. Ein Boot im Sand ist
+// falsch, und ein fester Wert kann es nicht fuer alle Groessen richtig machen.
+// 1,16 liegt auf jeder Inselgroesse im Wasser und haelt 40 m Abstand zur Canadair.
+const HARBOR_BOAT_FAC  = 1.16;  // radial, als Anteil des Inselradius
+const HARBOR_BOAT_SIDE = 40;    // m seitlich daneben (tangential)
 // So weit um das Kai-Boot herum darf das SCHLAUCHBOOT nicht anspringen. Ohne diese Zone gab es einen
 // echten Konflikt: das Boot liegt 34 m von der Hafenmitte, die Hafen-Kollisionshuelle reicht nur
 // 27 m (HARBOR_SIZE*0.45) — die letzten 7 m zum Boot sind also offenes Wasser. Wer zum Feuerwehrboot
@@ -957,9 +968,15 @@ function harborBoatLocal(cx, cz){
   const info = islandInfo(cx, cz);
   if(!info) return null;
   const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // GLEICHER Winkel wie der Hafen
-  const rr = info.radius * 1.02 + HARBOR_BOAT_OUT;
-  // Laengs zum Ufer: der Bug zeigt quer zur Radialrichtung, wie ein Boot, das am Kai festgemacht ist.
-  return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang };
+  const rr = info.radius * HARBOR_BOAT_FAC;
+  // Radial vor dem Kai, dann SEITLICH versetzt (quer zur Radialrichtung) — so liegt es neben dem
+  // Hafen statt davor, und die Canadair hat ihren Startplatz frei (siehe HARBOR_BOAT_SIDE).
+  const rx = Math.cos(ang), rz = Math.sin(ang);            // radial nach aussen
+  const tx = -rz,           tz = rx;                       // tangential (90 Grad dazu)
+  return { x: rx*rr + tx*HARBOR_BOAT_SIDE,
+           z: rz*rr + tz*HARBOR_BOAT_SIDE,
+           // Laengs zum Ufer: der Bug zeigt tangential, wie ein festgemachtes Boot.
+           rot: ang };
 }
 // Steht (x,z) so dicht an einem Kai-Feuerwehrboot, dass das Schlauchboot NICHT anspringen darf?
 // Wird von evaEnterDinghy gefragt (beide Ausloeser: hineinlaufen und hineinfallen).
@@ -1708,6 +1725,31 @@ function updateShipsSea(dt){
       // aktuellen Wert. sh.top0 ist der vermessene Wert bei aufgetauchtem Boot.
       sh.top = sh.top0 - sh.dive * g;
     }
+  }
+}
+// Die Feuerwehrboote am Kai auf der Wasserlinie halten. Sie stecken in der Inselzelle und wurden beim
+// Bauen einmal auf -BOAT_DRAFT gesetzt — also FEST, waehrend die Duenung um bis zu 1,6 m schwankt
+// (AMP 3,0). Bei einem Wellenberg lag die Wasseroberflaeche damit 2 m ueber dem Kiel und nur der
+// Aufbau schaute heraus: „das geparkte boot liegt unter der wasser linie".
+//
+// Gerechnet wie beim fahrenden Boot (stepBoat: seaSurfaceY - BOAT_DRAFT), nur mit seaYAt, weil das
+// Boot nicht in der Gittermitte liegt. Die Inselgruppe steht auf y = 0, der Wert gilt also direkt.
+// Dazu ein leichtes Nicken mit der Welle, damit es lebt statt bretteben zu liegen.
+function updateHarborBoats(dt){
+  if(locale !== 'earth') return;
+  for(const [, isl] of islandCells){
+    if(!isl) continue;
+    const fb = isl.userData.harborBoat;
+    if(!fb) continue;
+    const wx = isl.position.x + fb.position.x, wz = isl.position.z + fb.position.z;
+    fb.position.y = seaYAt(wx, wz, dt) - BOAT_DRAFT;
+    // Nicken aus der Duenung: die Welle am Bug gegen die am Heck, wie bei den Handelsschiffen. Der
+    // Bug liegt bei -Z im gedrehten System, deshalb dieselbe Konvention wie dort (-sin/-cos) — mit
+    // +sin/+cos waere das Nicken spiegelverkehrt. Halbe Bootslaenge sind 7 m (16 m langes Boot).
+    const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
+    const bow   = seaYAt(wx + fbx*7, wz + fbz*7, dt);
+    const stern = seaYAt(wx - fbx*7, wz - fbz*7, dt);
+    fb.rotation.x = Math.atan2(bow - stern, 14) * 0.6;
   }
 }
 // Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
@@ -9956,6 +9998,7 @@ function loop(now){
   for(const p of propMeshes) p.rotation.z += (10 + state.throttle*40) * dt;  // Propeller drehen
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
+  updateHarborBoats(dt);     // die Feuerwehrboote am Kai schwimmen mit der Duenung
   updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
   // Die Wartezeit ist nötig, weil beim App-Start noch weitere Modelle nachladen (siehe oben).
