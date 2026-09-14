@@ -3395,6 +3395,23 @@ function updateJet(dt, inp){
   // sich geometrisch. Ein Kind kurvt viel, also passiert das dauernd.
   const vl = v.length();
   if(vl > vMaxJ) v.multiplyScalar(vMaxJ / vl);
+  // ---- Die FAHRT der Blickrichtung nachfuehren. Genau das tut der Flieger mit seiner
+  // Ruderwirksamkeit (siehe stepPhysics: dir.lerp(forward, base*authority)), und dem Jetpack fehlte
+  // es: der Schub wirkt nur LAENGS dir, die alte Querfahrt blieb einfach stehen.
+  //
+  // Nachgerechnet: 3 s gerade Vollgas, dann 1 s drehen — der Astronaut zeigt dann 74,5 Grad zur
+  // Seite, fliegt aber nur 12 Grad daneben, also 62,5 Grad SEITWAERTS. Gemeldet als „der astronaut
+  // fliegt leicht seitwaerts" und „ueberhaupt scheint alles leicht verdreht". Und weil die Kamera
+  // korrekt hinter seiner NASE sitzt, sah es zusaetzlich aus, als fahre sie um ihn herum — das war
+  // der Rest des Kamera-Fehlers beim Steigen und Sinken.
+  //
+  // Ein Jetpack koppelt straffer als ein Flugzeug: es hat keine Flaeche, die traegt, sondern Duesen
+  // ringsum, mit denen ein Astronaut die Fahrtrichtung direkt aendert. 5,5 pro Sekunde heisst, dass
+  // nach gut einer halben Sekunde 95 % der Richtung stimmen — schnell genug, dass es sich gelenkt
+  // anfuehlt, und weich genug, dass es kein Umschnappen ist.
+  if(vl > 0.001){
+    v.normalize().lerp(dir, Math.min(1, 5.5 * dt)).multiplyScalar(vl);
+  }
   // ---- Schubstufen an einem Ort MIT BODEN: genau wie beim X-Wing (VTOL_HOVER/LAND/DROP).
   // 20 % schweben, 10 % ruhig sinken, 0 % zuegig sinken, ab 30 % vorwaerts fliegen. Ohne das kam man
   // gar nicht mehr herunter: das Jetpack war ueberall schwerelos, also blieb er einfach stehen, wo er
@@ -5887,10 +5904,23 @@ function updateWarp(dt){
   if(warpRing){
     warpRing.visible = warpVis > 0.01;
     if(warpRing.visible){
-      warpRing.position.copy(state.pos);
-      warpRing.quaternion.copy(state.quat);
+      const jetAn = !!(eva && eva.jet);
+      warpRing.position.copy(jetAn ? eva.group.position : state.pos);
+      // Ausrichtung: am JETPACK aus yaw und Nickwinkel des Astronauten, sonst aus der Fliegerlage.
+      // updateJet setzt state.quat nie — der Ring behielt also die Lage, die der Flieger beim
+      // Aussteigen hatte, und stand schief zur Flugrichtung. Genau das war das gemeldete
+      // „sieht aus als waere er nach rechts verdreht": man steigt im Hangar mit yaw -1,57 aus
+      // (Nase zum Ausgang), fliegt dann in eine andere Richtung, und der Ring blieb quer stehen.
+      if(jetAn){
+        warpRing.quaternion.setFromEuler(new THREE.Euler(-eva.jetPitch, eva.yaw, 0, 'YXZ'));
+      } else {
+        warpRing.quaternion.copy(state.quat);
+      }
       warpRing.rotateZ(warpSpin);
-      const s = 1 + warpVis*0.4;
+      // Groesse: der Ring ist auf 44 m Aussendurchmesser gebaut — passend um einen 11 m breiten
+      // X-Wing. Um einen 1,9 m grossen Astronauten ist das ein Reifen, in dem er verloren wirkt,
+      // und die Kamera sitzt naeher dran als beim Flieger. Am Jetpack deshalb auf 40 %.
+      const s = (1 + warpVis*0.4) * (jetAn ? 0.4 : 1);
       warpRing.scale.set(s, s, s);
       if(warpMat) warpMat.opacity = 0.15 + 0.6*warpVis;
     }

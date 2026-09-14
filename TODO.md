@@ -1063,3 +1063,65 @@ Der EVA-Zweig ist dabei von allen Jetpack-Sonderfällen befreit worden — er is
 Boot und Rover zuständig. Das war auch nötig: `upV` wurde dort noch benutzt, war nach dem Umbau aber
 nicht mehr deklariert. Ein `ReferenceError` im ersten Jetpack-Frame, den der Syntax-Check nicht findet
 (er ist erst zur Laufzeit sichtbar) — gefunden, weil ich die Deklarationen einzeln durchgezählt habe.
+
+## Jetpack: der Astronaut flog seitwärts — und der Warp-Ring stand schief
+
+Gemeldet: „die kamera funzt wenn links und rechts, aber nicht wenn steigen oder sinken, dann fährt sie
+immer noch um den astronauten herum. außerdem muss der warp kreis auch etwas kleiner werden und er
+sieht aus als wäre er nach rechts verdreht." Und kurz danach: „überhaupt scheint alles leicht verdreht.
+der astronaut fliegt leicht seitwärts."
+
+Der Nachsatz war der Schlüssel. Es war **kein** Kamerafehler mehr — die Kamera saß korrekt hinter der
+Nase des Astronauten. Nur flog er nicht dorthin, wohin er schaute.
+
+### Die Ursache: dem Jetpack fehlte die Ruderwirksamkeit
+
+Der Schub wirkt nur **längs** der Blickrichtung (`v.dot(dir)`); die alte Querfahrt blieb einfach
+stehen. Der Flieger hat dafür eine Ruderwirksamkeit, die die Fahrt zur Nase dreht
+(`dir.lerp(forward, base*authority)` in `stepPhysics`) — dem Jetpack fehlte sie ganz.
+
+Nachgerechnet: 3 s gerade Vollgas, dann 1 s drehen. Der Astronaut zeigt danach 74,5° zur Seite, fliegt
+aber nur 12° daneben — **62,5° seitwärts**. Und weil die Kamera hinter seiner Nase sitzt, sah es aus,
+als drehe sie um ihn herum. Beim Drehen fiel es weniger auf als beim Nicken, weil man dort ohnehin eine
+Kurve erwartet; beim Steigen erwartet man geradeaus.
+
+Ein Jetpack koppelt straffer als ein Flugzeug — es hat keine tragende Fläche, sondern Düsen ringsum,
+mit denen ein Astronaut die Fahrtrichtung direkt ändert. Deshalb 5,5 pro Sekunde:
+
+| Eingabe | Abweichung Nase zu Fahrt |
+|---|---|
+| 1 s drehen | 10,1° (vorher 62,5°) |
+| 3 s drehen | 11,5° |
+| 1 s steigen | 7,8° |
+| 3 s steigen | **0,0°** |
+| drehen + steigen, 2 s | 3,5° |
+| 1 s sinken | 7,8° |
+
+Das sind die Werte **während** der Eingabe. Steht der Stick still, geht die Abweichung auf null.
+
+Die Ruderwirksamkeit läuft **vor** den VTOL-Landestufen (Zeile 76 gegen 82 in `updateJet`): die
+überschreiben `v.y` danach, das Schweben und Sinken bleibt also exakt wie es war.
+
+### Der Warp-Ring hing an der Fliegerlage
+
+`updateWarp` richtete den Ring nach `state.quat` aus — und `updateJet` setzt `state.quat` **nie**. Der
+Ring behielt also die Lage, die der Flieger beim Aussteigen hatte: im Hangar steigt man mit yaw −1,57
+aus (Nase zum Ausgang), fliegt dann in eine andere Richtung, und der Ring stand quer. Genau das war
+„sieht aus als wäre er nach rechts verdreht" — es waren rund 90°.
+
+Am Jetpack wird er jetzt aus `eva.yaw` und `eva.jetPitch` ausgerichtet und sitzt an der Position des
+Astronauten. Dazu auf **40 %** verkleinert: der Ring ist auf 44 m Außendurchmesser gebaut, passend um
+einen 11 m breiten X-Wing — um einen 1,9 m großen Astronauten ist das ein Reifen, in dem er verloren
+wirkt, zumal die Kamera näher dransitzt als beim Flieger.
+
+### Was ich NICHT angefasst habe
+
+Beim Suchen fiel mir `a.rotation.y = Math.PI` in `makeAstronaut` auf — die Drehung, die das Modell auf
+−Z bringen soll. Ausgemessen liegt der Schwerpunkt der oberen 18 % des Rohmodells bei z = −0,038 von
+0,571 Tiefe, was für ein *bereits* nach −Z schauendes Modell sprechen würde.
+
+Das habe ich bewusst gelassen: 6,7 % der Tiefe sind zu schwach für eine 180°-Aussage (ein Helm ist
+rundlich, der Schwerpunkt sagt kaum, wo das Visier ist), und wäre die Drehung falsch, flöge er
+**rückwärts** statt „leicht seitwärts". Außerdem nutzen der Astronaut zu Fuß, im Rover und am
+Fallschirm dieselbe Funktion. Falls im Spiel doch etwas rückwärts aussieht: dort liegt es, und dann
+gehört die Zeile geprüft — mit einem Blick aufs Bild, nicht mit einer Schwerpunktrechnung.
