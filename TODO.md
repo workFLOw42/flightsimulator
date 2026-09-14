@@ -1705,3 +1705,61 @@ Neu ist `updateHarborBoats(dt)`, das die Kai-Boote pro Frame auf `seaYAt − BOA
 Rechnung, die das fahrende Boot in `stepBoat` benutzt. Dazu ein leichtes Nicken aus der Welle am Bug
 gegen die am Heck, mit derselben Konvention wie die Handelsschiffe (Bug bei −Z, also `-sin`/`-cos`; mit
 `+sin`/`+cos` wäre das Nicken spiegelverkehrt gewesen).
+
+## Boot und Canadair parken rückwärts am Strand
+
+Gemeldet: „einsteigen ins boot fast nicht möglich. vielleicht ists besser den steg abzubauen und
+stattdessen die canadair und das feuerwehrboot rückwärts am strand zu parken, so dass man einfach von
+hinten aus einsteigen kann und wenn man an den strand gefahren ist, dann kann man wieder aussteigen."
+
+Der Vorschlag trifft den Kern: am Kai ist rundherum Wasser, und dort fängt das Schlauchboot an. Zwei
+Versuche waren daran gescheitert — erst lag das Boot auf dem Canadair-Startplatz, dann richtig im
+Wasser, aber der Weg dorthin führte durch die Brandung. Am Strand ist der Grund **fest** (`evaSolid`
+kennt den Sandrand), also fällt der ganze Konflikt weg.
+
+Der Hafen bleibt als Kulisse stehen — er hängt an 8 Stellen im Code (Kollision, Freihaltung für
+Raketenrampe und Flugzeug-Parkplatz, Sperrzone für Rettungsfahrzeuge) und ist die Orientierung am
+Inselrand.
+
+### Wo sie jetzt liegen
+
+Beide auf derselben Radialstelle, aber auf **verschiedenen Seiten** des Hafens: das Feuerwehrboot
++55 m tangential, die Canadair −55 m. Damit sind sie 110 m auseinander und können sich nicht mehr
+begegnen (das war der Fehler aus dem Screenshot).
+
+Der radiale Wert ist `radius * 1,12`, also **genau die Sandkante**. Das 16 m lange Boot steht damit mit
+dem Heck im Sand und dem Bug im Wasser:
+
+| Inselradius | Bootsmitte | Heck | Sandrand | Bug-Prüfpunkt |
+|---|---|---|---|---|
+| 170 | 190 | 182 | 170–190 | 198 ✓ Wasser |
+| 260 | 291 | 283 | 260–291 | 299 ✓ Wasser |
+| 330 | 370 | 362 | 330–370 | 378 ✓ Wasser |
+
+**1,12 und nicht 1,10** — das war der entscheidende Wert: `stepBoat` prüft die Weiterfahrt mit
+`BOAT_LOOK` = 8 m vor dem Bug, und dieser Punkt **muss im Wasser liegen**, sonst sitzt das Boot beim
+Losfahren fest (`boatWaterFree` schließt den Strand ausdrücklich aus). Mit 1,10 waren es bei r=330 nur
+noch 1 m Luft, und bei größeren Inseln wäre der Punkt im Sand gelandet: der Sandrand wächst mit dem
+Radius, der Vorausblick bleibt bei 8 m.
+
+Die Ausrichtung ist gerechnet, nicht geraten: der Bug liegt bei −Z (wie bei allen Fahrzeugen), die
+Bugrichtung ist also `(-sin(rot), -cos(rot))`. Gleichgesetzt mit der Radialrichtung ergibt das
+`atan2(-cos(ang), -sin(ang))` — nachgerechnet für alle vier Himmelsrichtungen, Skalarprodukt jeweils
+1,000.
+
+### Aussteigen am Ufer
+
+Y im Boot bringt jetzt nur **am Ufer** zurück zum Flieger, nicht mitten auf dem Meer. Geprüft wird ein
+Punkt vor dem Bug (das Boot liegt selbst nie auf dem Sand, es hält davor an). Sonst kommt ein
+Strand-Symbol als Hinweis, dass man erst hinfahren muss.
+
+### Höhen am Strand
+
+Das Kulissen-Boot liegt auf `max(ISLAND_Y − 0,66, seaYAt − BOAT_DRAFT)`: das Heck sinkt nicht in den
+Sand, wenn die Welle tief steht, und schwimmt mit, wenn sie steigt. Dazu eine leichte Neigung nach
+vorn, weil das Heck aufliegt und der Bug schwimmt.
+
+Geprüft, dass die Höhen der anderen dort stimmen: `canLandHere` erlaubt Canadair und Boot den Strand
+(`isOnLand` fragt nur die Grasfläche), `evaFootY` gibt dem Astronauten dort ausdrücklich `ISLAND_Y`, und
+die Canadair schwimmt über `floatCanadair` auf der Wasserlinie — für ein Flugboot am Strand genau
+richtig.

@@ -875,7 +875,9 @@ function buildIsland(cx, cz) {
   const hbl = isBoat() ? null : harborBoatLocal(cx, cz);
   if(hbl){
     const fb = makeFireBoat();
-    fb.position.set(hbl.x, -BOAT_DRAFT, hbl.z);
+    // Starthoehe wie am Strand (siehe updateHarborBoats, das sie jeden Frame nachfuehrt) — so sitzt
+    // es schon im ersten Bild richtig und rutscht nicht sichtbar an seinen Platz.
+    fb.position.set(hbl.x, ISLAND_Y - BOAT_DRAFT*0.6, hbl.z);
     fb.rotation.y = hbl.rot;
     g.add(fb);
     g.userData.harborBoat = fb;   // fuers spaetere Ersetzen, falls das GLB spaeter fertig laedt
@@ -940,43 +942,49 @@ function harborLocal(cx, cz){
   const rr = r * 1.02;                                    // knapp an der Sandkante
   return { x: Math.cos(ang)*rr, z: Math.sin(ang)*rr, rot: ang + Math.PI/2 };
 }
-// Das FEUERWEHRBOOT am Kai: an jedem Hafen liegt eines, zu dem man hinlaufen und mit Y einsteigen
-// kann (so gewuenscht). Es liegt WASSERSEITIG vom Hafen, sonst steckte es im Kai oder im Sand.
+// Das FEUERWEHRBOOT liegt AM STRAND, nicht am Kai: mit dem Heck im Sand und dem Bug im Wasser, wie
+// ein Boot, das man an den Strand gezogen hat. Von hinten steigt man ein, dann faehrt man vorwaerts
+// ins Wasser los; zum Aussteigen faehrt man wieder an den Strand.
 //
-// Gerechnet in derselben lokalen Inselkoordinate wie harborLocal: dieselbe Richtung, nur weiter
-// hinaus. Der Hafen ist HARBOR_SIZE = 60 m gross (Halbmass 30), das Boot 16 m lang — 34 m nach
-// aussen setzt es frei vor die Kaikante, laengs zum Ufer gedreht.
-// Das Kai-Boot liegt SEITLICH am Hafen, nicht davor — wie ein Boot, das laengs am Kai festgemacht
-// ist. Der erste Versuch (34 m radial nach aussen) legte es genau dorthin, wo die CANADAIR startet:
-// die steht bei radius*1,14, das Boot lag bei radius*1,02 + 34, auf der Startinsel also 3 m daneben.
-// Beide standen ineinander (im Screenshot deutlich zu sehen). Seitlich versetzt sind es auf jeder
-// Inselgroesse 41 bis 49 m Abstand.
-// Radial als VIELFACHES des Inselradius, wie der Hafen (1,02) und der Canadair-Startplatz (1,14) —
-// nicht als feste Meterzahl. Mit festen 12 m lag das Boot auf grossen Inseln im SANDRAND (der reicht
-// bis radius*1,12): auf der Startinsel bei 280 m, wo der Sand bis 291 m geht. Ein Boot im Sand ist
-// falsch, und ein fester Wert kann es nicht fuer alle Groessen richtig machen.
-// 1,16 liegt auf jeder Inselgroesse im Wasser und haelt 40 m Abstand zur Canadair.
-const HARBOR_BOAT_FAC  = 1.16;  // radial, als Anteil des Inselradius
-const HARBOR_BOAT_SIDE = 40;    // m seitlich daneben (tangential)
-// So weit um das Kai-Boot herum darf das SCHLAUCHBOOT nicht anspringen. Ohne diese Zone gab es einen
-// echten Konflikt: das Boot liegt 34 m von der Hafenmitte, die Hafen-Kollisionshuelle reicht nur
-// 27 m (HARBOR_SIZE*0.45) — die letzten 7 m zum Boot sind also offenes Wasser. Wer zum Feuerwehrboot
-// laufen will, traete dort ins Wasser, und genau dann setzt evaEnterDinghy ein: man saesse im
-// Schlauchboot, statt einzusteigen. 26 m deckt das Boot (16 m lang) samt Einstiegsreichweite ab.
+// Zwei Versuche am Kai sind daran gescheitert, dass dort ueberall Wasser ist:
+//  1. 34 m radial vor dem Hafen — lag genau auf dem Canadair-Startplatz (radius*1,14), auf der
+//     Startinsel 3 m daneben. Beide standen ineinander.
+//  2. Seitlich versetzt und im Wasser — richtig platziert, aber man musste durch Wasser hinlaufen,
+//     und dort faengt das Schlauchboot an. Gemeldet: „einsteigen ins boot fast nicht moeglich".
+// Am Strand ist der Grund FEST (evaSolid kennt den Sandrand), also faellt der ganze Konflikt weg.
+//
+// Der Sandrand reicht von radius bis radius*1,12 (BEACH_FACTOR). Die Bootsmitte liegt GENAU auf
+// dieser Kante: das Heck (8 m dahinter) steht damit im Sand, der Bug (8 m davor) im Wasser — auf
+// jeder Inselgroesse, weil der Wert relativ ist.
+//
+// 1,12 und nicht 1,10: stepBoat prueft die Weiterfahrt mit BOAT_LOOK = 8 m vor dem Bug, und dieser
+// Punkt MUSS im Wasser liegen, sonst sitzt das Boot beim Losfahren fest (boatWaterFree schliesst den
+// Strand ausdruecklich aus). Mit 1,10 waren es bei r=330 nur noch 1 m Luft, und bei groesseren Inseln
+// waere der Punkt im Sand gelandet: der Sandrand waechst mit dem Radius, der Vorausblick bleibt 8 m.
+// Seitlich vom Hafen weg, damit man nicht ueber den Kai klettern muss.
+const HARBOR_BOAT_FAC  = 1.12;  // radial, als Anteil des Inselradius (Bootsmitte = Sandkante)
+const HARBOR_BOAT_SIDE = 55;    // m seitlich neben dem Hafen (tangential)
+// So weit um das Boot herum darf das SCHLAUCHBOOT nicht anspringen. Am Strand steht man auf festem
+// Grund, aber der Bug ragt ins Wasser: wer vorne herumlaeuft, traete hinein, und dann setzt
+// evaEnterDinghy ein — man saesse im Schlauchboot, statt einzusteigen. 26 m deckt das Boot (16 m
+// lang) samt Einstiegsreichweite ab.
 const HARBOR_BOAT_NODINGHY = 26;
 function harborBoatLocal(cx, cz){
   const info = islandInfo(cx, cz);
   if(!info) return null;
   const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // GLEICHER Winkel wie der Hafen
   const rr = info.radius * HARBOR_BOAT_FAC;
-  // Radial vor dem Kai, dann SEITLICH versetzt (quer zur Radialrichtung) — so liegt es neben dem
-  // Hafen statt davor, und die Canadair hat ihren Startplatz frei (siehe HARBOR_BOAT_SIDE).
+  // Auf dem Sandrand, seitlich neben dem Hafen (siehe HARBOR_BOAT_SIDE).
   const rx = Math.cos(ang), rz = Math.sin(ang);            // radial nach aussen
   const tx = -rz,           tz = rx;                       // tangential (90 Grad dazu)
   return { x: rx*rr + tx*HARBOR_BOAT_SIDE,
            z: rz*rr + tz*HARBOR_BOAT_SIDE,
-           // Laengs zum Ufer: der Bug zeigt tangential, wie ein festgemachtes Boot.
-           rot: ang };
+           // Der BUG zeigt radial nach AUSSEN, also aufs Wasser: so steht das Heck im Sand, man
+           // steigt von hinten ein und faehrt vorwaerts los. Der Bug des Modells liegt bei -Z (wie
+           // bei allen Fahrzeugen), die Bugrichtung ist also (-sin(rot), -cos(rot)) — gleichgesetzt
+           // mit der Radialrichtung (cos(ang), sin(ang)) ergibt das atan2(-cos, -sin).
+           // Nachgerechnet fuer 0, 90, 180 und -90 Grad: Skalarprodukt jeweils 1,000.
+           rot: Math.atan2(-rx, -rz) };
 }
 // Steht (x,z) so dicht an einem Kai-Feuerwehrboot, dass das Schlauchboot NICHT anspringen darf?
 // Wird von evaEnterDinghy gefragt (beide Ausloeser: hineinlaufen und hineinfallen).
@@ -1742,14 +1750,16 @@ function updateHarborBoats(dt){
     const fb = isl.userData.harborBoat;
     if(!fb) continue;
     const wx = isl.position.x + fb.position.x, wz = isl.position.z + fb.position.z;
-    fb.position.y = seaYAt(wx, wz, dt) - BOAT_DRAFT;
-    // Nicken aus der Duenung: die Welle am Bug gegen die am Heck, wie bei den Handelsschiffen. Der
-    // Bug liegt bei -Z im gedrehten System, deshalb dieselbe Konvention wie dort (-sin/-cos) — mit
-    // +sin/+cos waere das Nicken spiegelverkehrt. Halbe Bootslaenge sind 7 m (16 m langes Boot).
+    // Es liegt AM STRAND: das Heck im Sand, der Bug im Wasser. Deshalb die Inselhoehe als Untergrenze
+    // und die Wasserlinie darueber — sonst versaenke das Heck im Sand, wenn die Welle tief steht.
+    // Mit reinem seaYAt lag es bei Ebbe unter dem Strand und bei Flut darueber.
+    fb.position.y = Math.max(ISLAND_Y - BOAT_DRAFT*0.6, seaYAt(wx, wz, dt) - BOAT_DRAFT);
+    // Leicht nach vorn geneigt, weil das Heck auf dem Sand aufliegt und der Bug im Wasser schwimmt —
+    // so sieht man, dass es an den Strand gezogen wurde. Der Bug liegt bei -Z im gedrehten System.
+    // Dazu die Duenung am Bug, damit es lebt: sie hebt die Nase, das Heck bleibt liegen.
     const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
-    const bow   = seaYAt(wx + fbx*7, wz + fbz*7, dt);
-    const stern = seaYAt(wx - fbx*7, wz - fbz*7, dt);
-    fb.rotation.x = Math.atan2(bow - stern, 14) * 0.6;
+    const bow = seaYAt(wx + fbx*7, wz + fbz*7, dt);
+    fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 0.35;
   }
 }
 // Trifft (x,y,z) ein Handelsschiff? Wie hitsBuilding, aber für die fahrende Flotte. Gerechnet wird im
@@ -2092,10 +2102,18 @@ function buttonB(){
 // Die Reihenfolge zaehlt: wer in einem Fahrzeug sitzt, will heraus; wer daneben steht, hinein.
 function buttonY(){
   if(eva){ evaBoardY(); return; }
-  // Im FEUERWEHRBOOT am Kai eingestiegen? Dann fuehrt Y zurueck zum eigenen Flieger (siehe
-  // harborBoatFrom). Das muss VOR evaAllowed stehen: das Boot schwimmt, und dort ist Aussteigen
-  // grundsaetzlich verboten — sonst kaeme man nie zurueck.
-  if(isBoat() && harborBoatFrom){ leaveHarborBoat(); return; }
+  // Im FEUERWEHRBOOT, das man am Strand bestiegen hat: Y bringt einen zurueck zum eigenen Flieger,
+  // aber nur AM UFER — man soll ans Land fahren und dort aussteigen, nicht mitten auf dem Meer
+  // verschwinden (so gewuenscht). Das muss VOR evaAllowed stehen: das Boot schwimmt, und dort ist
+  // Aussteigen grundsaetzlich verboten. Fuer die Pruefung zaehlt ein Punkt vor dem Bug, denn das Boot
+  // liegt selbst nie auf dem Sand — es haelt davor an (siehe boatWaterFree).
+  if(isBoat() && harborBoatFrom){
+    const bf = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    const px = state.pos.x + bf.x*BOAT_LOOK*1.6, pz = state.pos.z + bf.z*BOAT_LOOK*1.6;
+    if(isOnLand(px, pz) || isOnBeach(px, pz)) leaveHarborBoat();
+    else showBig('\u{1F3D6}\u{FE0F}'), bigTimer = 1.2;   // Hinweis: erst an den Strand fahren
+    return;
+  }
   // Im Flieger: aussteigen, wo es erlaubt ist (am Boden, auf festem Grund - siehe evaAllowed).
   if(evaAllowed()){ evaExit(); return; }
 }
@@ -7280,16 +7298,26 @@ function findStart(name){
       return { y:fordDeckY, yaw:info.rot, _deck:{info,dz} }; };
   } else if(name==='Canadair' || name==='Boat'){
     probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
-      // im Wasser knapp AUSSERHALB des Hafens (Richtung offenes Meer), Nase vom Land weg
-      const hb=harborLocal(cx,cz);
-      const dir=Math.atan2(hb.x, hb.z);              // Richtung Inselmitte->Hafen (nach außen)
-      // Das Boot deutlich weiter hinaus: die Hafenmole reicht bis etwa radius*1.02 + 27 m und ist
-      // für das Boot eine Wand (für die Canadair nicht, die hebt ab). Bei radius*1.14 stünde es
-      // an kleinen Inseln mitten in dieser Zone und käme nicht vom Steg weg. Der Sandrand
-      // (radius*1.12) muss ebenfalls außen bleiben — 1,35 liegt sicher dahinter.
-      const rr=info.radius*(name==='Boat' ? 1.35 : 1.14);
-      // Nase (-Z bei yaw) zeigt aufs offene Meer (vom Land weg): yaw = dir + PI
-      return { x:info.wx+Math.sin(dir)*rr, y:0, z:info.wz+Math.cos(dir)*rr, yaw:dir+Math.PI }; };
+      // AM STRAND, ruecklings: die Nase zeigt aufs Wasser, das Heck steht im Sand. So laeuft man von
+      // hinten heran und steigt ein, ohne durch Wasser zu muessen (dort faengt das Schlauchboot an).
+      //
+      // Vorher standen beide IM Wasser (radius*1,14 bzw. 1,35) neben dem Hafen. Fuer die Canadair war
+      // das in Ordnung — sie ist ein Flugboot —, aber das Einsteigen war „fast nicht moeglich", weil
+      // der Weg dorthin durchs Wasser fuehrte. Am Strand ist der Grund fest (evaSolid kennt den
+      // Sandrand), also faellt der Konflikt weg.
+      //
+      // Dieselbe Radialstelle wie das Kai-Boot (HARBOR_BOAT_FAC = Sandkante), aber auf der ANDEREN
+      // Seite des Hafens: das Feuerwehrboot liegt +HARBOR_BOAT_SIDE tangential, die Canadair -SIDE.
+      // So stehen sie nie ineinander, und beide sind vom Hafen aus zu Fuss erreichbar.
+      const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;    // Hafenwinkel (wie harborLocal)
+      const rx = Math.cos(ang), rz = Math.sin(ang);            // radial nach aussen
+      const tx = -rz,           tz = rx;                       // tangential
+      const rr = info.radius * HARBOR_BOAT_FAC;
+      const side = (name === 'Boat') ? HARBOR_BOAT_SIDE : -HARBOR_BOAT_SIDE;
+      const px = info.wx + rx*rr + tx*side, pz = info.wz + rz*rr + tz*side;
+      // Nase (-Z bei yaw) radial nach aussen, also aufs Wasser — dieselbe Rechnung wie in
+      // harborBoatLocal (dort nachgerechnet: Skalarprodukt 1,000 fuer alle vier Himmelsrichtungen).
+      return { x:px, y:0, z:pz, yaw:Math.atan2(-rx, -rz) }; };
   } else {  // Transall, Mustang und Default -> Landebahn einer NICHT-Stadt-Insel
     // Nicht-Stadt ausdruecklich: vorher zaehlte jede Insel, also auch eine Wolkenkratzer-Stadt.
     // Dort steht die Bahn in einer Schneise zwischen Tuermen, und mit der traegen Transall (0,85
