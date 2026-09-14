@@ -1,6 +1,6 @@
 /* Flugspiel Service Worker – Offline-Cache
    Version bei jedem Inhalts-Update hochzaehlen, damit alte Caches ersetzt werden. */
-const CACHE = 'flugspiel-v107';
+const CACHE = 'flugspiel-v108';
 
 /* Kern-Dateien: klein genug, um sie sofort bei der Installation zu cachen. */
 const CORE = [

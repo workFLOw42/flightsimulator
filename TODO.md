@@ -1875,3 +1875,39 @@ Was ausdrücklich **nicht** mitgeht:
 
 Hilfetext und der Übersichtskommentar über `canLandHere` sind mitgezogen — beide nannten noch „Wasser
 ODER Landebahn".
+
+## Warum kein U-Boot zu finden war: zwei Ursachen
+
+Gefragt: „wie viele uboote gibt es? ich habe noch keines gesehen. es braucht mindestens so viele wie die
+anderen boote, damit man sie auch sieht."
+
+### Es gab genau eines
+
+`spawnSeaShips` verteilt die Typen per Modulo (`SHIP_TYPES[i % 5]`), und `SHIP_COUNT` war 7. Damit:
+
+| | cruise | liberty | container | sail | sub |
+|---|---|---|---|---|---|
+| bei 7 | 2 | 2 | 1 | 1 | **1** |
+| bei 10 | 2 | 2 | 2 | 2 | **2** |
+
+Jetzt 10 — dann hat jeder der fünf Typen genau zwei. Der Platz reicht: der Spawn-Ring (1.200 bis
+2.400 m) hat 13,6 km², die zehn Schiffe belegen mit ihren `SHIP_CLEAR`-Abstandsringen zusammen 1,5 km²,
+also 11 % Auslastung.
+
+### Und es war fast unsichtbar — mein Rechenfehler
+
+`subDive` stand auf **8,1**, der ganzen Rumpfhöhe. Gedacht war: Rumpfdeck auf die Wasserlinie, Turm
+komplett heraus. Nachgerechnet stimmt das nicht, denn aufgetaucht ragt der Rumpf nur 2,4 m heraus
+(`wl` 0,060 senkt ihn um 5,7 m der 8,1 m):
+
+| | Deck | sichtbar |
+|---|---|---|
+| aufgetaucht | +2,4 m | 10,3 m (Rumpf + Turm) |
+| getaucht, `subDive` 8,1 | **−5,7 m** | **2,2 m** |
+| getaucht, `subDive` 2,4 | 0,0 m | 7,9 m (ganzer Turm) |
+
+Mit 8,1 m drückte es das Deck also 5,7 m unter Wasser, und vom 7,9 m hohen Turm blieben 2,2 m — aus der
+Luft ein grauer Strich auf blauem Wasser. Richtig sind die **2,4 m**, die der Rumpf aufgetaucht
+heraussteht: dann liegt das Deck auf der Linie und der Turm steht voll heraus, wie beschrieben.
+
+Getaucht ist es damit mehr als dreimal so hoch sichtbar wie vorher.

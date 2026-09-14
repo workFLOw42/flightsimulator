@@ -1366,16 +1366,27 @@ const SHIP_TYPES = [
   //
   // wl 0.060 senkt es um 5,7 m, also 70 % der Rumpfhoehe: aufgetaucht schauen 2,4 m Rumpf und der
   // ganze Turm heraus — ein U-Boot liegt tief im Wasser, anders als ein Frachter.
-  // subDive ist der zusaetzliche Tauchweg bis zum Turm (siehe updateShipsSea): 8,1 m mehr, dann liegt
-  // das Rumpfdeck genau auf der Wasserlinie.
+  // subDive ist der zusaetzliche Tauchweg, bis das Rumpfdeck auf der Wasserlinie liegt und nur noch
+  // der Turm herausragt. Das sind genau die 2,4 m, die der Rumpf aufgetaucht heraussteht — NICHT die
+  // ganze Rumpfhoehe von 8,1 m, wie hier erst stand. Nachgerechnet drueckte der falsche Wert das Deck
+  // 5,7 m unter Wasser, und vom 7,9 m hohen Turm blieben nur 2,2 m stehen: aus der Luft ein grauer
+  // Strich auf blauem Wasser. Genau deshalb war das Boot nicht zu finden.
   // Tempo 1,8 m/s = 6,5 km/h, das langsamste Schiff auf dem Meer (die Frachter fahren 16-20 km/h).
   { key:'sub',       glb:()=>window.SUBMARINE_GLB, len:95,  wl:0.0600, spd:1.8, sym:'🛥️',
-    subDive:8.1, subPeriod:34 },
+    subDive:2.4, subPeriod:34 },
 ];
 // Wie viele Schiffe gleichzeitig um den Spieler herum fahren, und in welchem Ring. Das Meer soll
-// belebt wirken, ohne dass man ständig ausweichen muss: bei 3.500 m Radius liegt selten mehr als
-// eines im Blickfeld.
-const SHIP_COUNT     = 7;
+// belebt wirken, ohne dass man ständig ausweichen muss.
+//
+// 10 und nicht 7, weil spawnSeaShips die Typen per Modulo verteilt (SHIP_TYPES[i % 5]): mit 7 bekamen
+// cruise und liberty je zwei, container, sail und das U-BOOT aber nur eines. Ein einzelnes U-Boot, das
+// langsam faehrt und die halbe Zeit getaucht ist, findet man kaum — gemeldet als „ich habe noch keines
+// gesehen". Mit 10 hat jeder der fuenf Typen genau zwei.
+//
+// Der Platz reicht: der Spawn-Ring (1.200 bis 2.400 m) hat 13,6 km², die zehn Schiffe belegen mit
+// ihren SHIP_CLEAR-Abstandsringen zusammen 1,5 km² — also 11 % Auslastung. placeSeaShip probiert
+// 24 Stellen und verschiebt den Versuch sonst auf spaeter, findet also zuverlaessig Platz.
+const SHIP_COUNT     = 10;
 const SHIP_SPAWN_MIN = 1200;    // näher als das taucht keines neu auf (kein Erscheinen vor der Nase)
 // Beide Werte waren GROESSER als das Meeresgitter reicht (SEA_SIZE/2 = 3.000 m), und das Gitter ist
 // quadratisch: quer zur Kante endet das Wasser schon bei 3.000 m. Gemessen (C:/tmp/edge.js) lagen
