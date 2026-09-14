@@ -1347,3 +1347,65 @@ waagerecht gezogen. Ohne das setzt man mit 20° gesenkter Nase auf, weil man ja 
 Die Schubphasen-Zeichen standen nur im X-Wing-Zweig des HUD; am Jetpack stand pauschal 🚀. Jetzt
 dieselben: ⏬ schnell sinken (0 %) · ⬇️ ruhig sinken (10 %) · ⬆️ steigen und schweben (20 %) · 🚀 vorwärts
 (ab 30 %). Im Weltall immer 🚀 — dort gibt es kein Sinken.
+
+## Fünf Kleinigkeiten: Ring, Schatten, Strand und die Landeplätze
+
+Gemeldet: „der astronaut ist noch nicht exakt in der mitte des warp rings. der astronaut hat keinen
+schatten auf dem strand, immer wasser (kurz vor dem schlauchboot) aber schon. wenn eine welle kommt geht
+der astronaut unter. der schatten der canadair bewegt sich im wasser alleine (wie zu beginn beim
+feuerwehboot) die raumschiffe auf dem mond landen nicht exakt auf der oberfläche sondern in der luft."
+
+### 1. Der Ring saß um die Füße
+
+`eva.group.position` ist die **Fußhöhe** — der Astronaut wird mit den Füßen auf y = 0 gesetzt
+(`preloadAstronaut`). Der Ring zentrierte also darauf, und der Astronaut stand 0,95 m zu hoch darin.
+Jetzt auf `ASTRONAUT_H*0.5` über den Füßen, und zwar entlang seiner **mitgekippten** Hochachse — sonst
+wandert die Mitte beim Nicken wieder heraus.
+
+### 2. und 3. Der Strand war weder Land noch Wasser
+
+Beides hing am **Sandrand**, der bis `radius*1.12` gezeichnet wird (`isOnBeach`), von einigen Prüfungen
+aber nicht erfasst war:
+
+- **Der Schatten** fragte nur `isOnLand`, fiel am Strand also in den Wasser-Zweig und lag auf
+  Wellenhöhe statt auf dem Sand. Er war nicht weg, er lag *über* dem Astronauten.
+- **Der Astronaut ging unter**, weil `evaFootY` am Strand die feste `ISLAND_Y` = 0,30 m zurückgab. Die
+  Dünung reicht aber bis rund 1,6 m (`AMP` 3,0) — bei jeder größeren Welle stand er unter Wasser.
+
+Beides nutzt jetzt `Math.max(ISLAND_Y, seaYAt(x, z))`: bei ruhigem Wasser die Inselhöhe, bei Welle
+steigt er mit. Physikalisch geht man im Flachwasser tatsächlich unter, aber sichtbar verschwinden soll
+er nicht — er steht jetzt darin wie ein Kind in der Brandung.
+
+### 4. Der Canadair-Schatten: derselbe Fehler wie beim Feuerwehrboot
+
+Der Flieger-Schatten lag über Wasser auf **fest 1,4 m** statt auf der Wellenhöhe an dieser Stelle. Und
+weil er mit `depthTest:false` immer davor gezeichnet wird, erscheint die Höhendifferenz zur echten
+Wasseroberfläche als **Versatz, der sich mit dem Kamerawinkel ändert** — genau das war beim ovalen
+Schatten schon einmal behoben worden, im Flieger-Zweig aber nicht.
+
+Jetzt `seaYAt` an der Stelle, und wie beim ovalen Schatten der **höchste** Wellenpunkt unter seiner
+Fläche (acht Randpunkte auf 5,5 m, der halben Spannweite des Umrisses): eine waagerechte Scheibe über
+geneigtem Wasser taucht am Rand sonst ein. Der Sandrand zählt dabei als Land, sonst springt der Schatten
+am Ufer.
+
+### 5. Die Raumschiffe standen absichtlich in der Luft
+
+`padSurfaceY` addierte einen Aufschlag von 3 m plus 45 % der Schiffshöhe:
+
+| Schiff | Aufschlag vorher | jetzt |
+|---|---|---|
+| Shuttle | +8,4 m | 0,0 m |
+| Enterprise | +6,3 m | 0,0 m |
+| Rakete | +4,5 m | 0,0 m |
+
+Im Kommentar stand ausdrücklich „bewusst OHNE Raycast": three.js aktualisiert `obj.matrixWorld` erst
+beim Rendern, und `placeGroundBase()` setzt die Basis **nach** `updatePads()` — Landeplätze fielen in so
+einem Frame auf den Kraterboden und verschwanden unter der Fläche. Der Aufschlag war die Notlösung
+dagegen, und sie war sichtbar.
+
+Die Matrix lässt sich aber erzwingen: `updateMatrixWorld(true)` auf der Kachel und auf der Mondbasis,
+dann trifft der Strahl auch in dem Frame, in dem die Basis gerade gesetzt wurde. Genau so macht es
+`stepGroundExact` für den Flieger. Der Aufschlag bleibt als Rückfall, wenn kein Strahl trifft.
+
+Dass die Modelle dabei richtig sitzen, ist gesichert: `ensurePads` setzt `inner.position.y -= box.min.y`,
+die Unterseite liegt also auf y = 0 des Halters — der Raycast-Wert ist direkt die Aufsetzhöhe.

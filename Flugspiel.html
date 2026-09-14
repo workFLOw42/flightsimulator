@@ -2888,7 +2888,13 @@ function updateOvalShadow(){
   // es aussieht. Der Umweg ueber das Maximum kostet nur die paar Zentimeter Anstieg und ist sicher.
   let surf;
   if(onCar) surf = fordDeckY;
+  // Der SANDRAND zaehlt als Land: er ist gezeichnet (buildIsland bis radius*1.12) und traegt den
+  // Astronauten (siehe evaFootY). Vorher fragte hier nur isOnLand, also fiel der Schatten am Strand
+  // in den Wasser-Zweig und lag auf Wellenhoehe statt auf dem Sand — gemeldet als „der astronaut hat
+  // keinen schatten auf dem strand, im wasser aber schon". Er war nicht weg, er lag ueber ihm.
+  // Nie unter der Wasserlinie, wie beim Astronauten selbst: am nassen Saum steigt die Duenung.
   else if(onLand) surf = ISLAND_Y;
+  else if(isOnBeach(px, pz)) surf = Math.max(ISLAND_Y, seaYAt(px, pz));
   else {
     // Acht Punkte auf dem Rand plus die Mitte — mehr braucht es nicht, die Welle ist ueber wenige
     // Meter praktisch linear (Wellenlaenge ab 250 m, siehe AMP).
@@ -2926,14 +2932,29 @@ function updateShadow(){
     return;
   }
   ovalShadow.visible = false;
-  // Oberfläche: über Land = Inselhöhe, über Wasser = Meer (y=0)
-  const overLand = isOnLand(state.pos.x, state.pos.z);
-  const surfY = overLand ? ISLAND_Y : 0;
+  // Oberflaeche: ueber Land (samt Sandrand) die Inselhoehe, ueber Wasser die WELLENHOEHE AN DIESER
+  // STELLE — nicht der feste Wert 1,4 m, der hier stand. Genau derselbe Fehler, der beim Feuerwehrboot
+  // schon behoben wurde (siehe updateOvalShadow): weil der Schatten mit depthTest:false immer davor
+  // gezeichnet wird, erscheint die Hoehendifferenz zur echten Wasserflaeche als VERSATZ, der sich mit
+  // dem Kamerawinkel aendert — „der schatten der canadair bewegt sich im wasser alleine".
+  // Der Sandrand zaehlt als Land, sonst springt der Schatten am Ufer (dort ist der Boden bei 0,30 m).
+  const overLand = isOnLand(state.pos.x, state.pos.z) || isOnBeach(state.pos.x, state.pos.z);
+  const seaHere = overLand ? 0 : seaYAt(state.pos.x, state.pos.z);
+  const surfY = overLand ? ISLAND_Y : seaHere;
   const alt = state.pos.y - surfY;            // echte Höhe über der jeweiligen Oberfläche
   if(alt > SHADOW_MAXALT || alt < 0){ planeShadow.visible = false; return; }
   planeShadow.visible = true;
-  // über Wasser den Schatten über die Wellenberge (~1,3 m) legen, damit er nicht verdeckt wird
-  const shadowY = (overLand ? ISLAND_Y : 1.4) + 0.15;
+  // Der Schatten ist eine waagerechte Flaeche, die Wasseroberflaeche darunter ist geneigt: auf den
+  // Mittelwert gelegt taucht der Rand ein. Deshalb der HOECHSTE Wellenpunkt unter seiner Flaeche —
+  // dieselbe Ueberlegung wie beim ovalen Schatten, dort mit acht Randpunkten nachgemessen.
+  // 5,5 m ist die halbe Spannweite des Umrisses (shWing.scale.x), das groesste Mass des Schattens.
+  let shadowY = surfY + 0.15;
+  if(!overLand){
+    for(let a = 0; a < 6.283; a += Math.PI/4){
+      const s2 = seaYAt(state.pos.x + Math.sin(a)*5.5, state.pos.z + Math.cos(a)*5.5);
+      if(s2 + 0.15 > shadowY) shadowY = s2 + 0.15;
+    }
+  }
   planeShadow.position.set(state.pos.x, shadowY, state.pos.z);
   // Kurs (Gierwinkel) übernehmen, damit der Umriss in Flugrichtung zeigt
   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
@@ -3174,7 +3195,15 @@ function evaSolid(x, z){
 // surfaceY kennt nur die Grasflaeche, und auf dem Sand waere der Astronaut sonst 30 cm eingesunken.
 // surfaceY selbst bleibt unveraendert — daran haengt die Landelogik der Flugzeuge.
 function evaFootY(x, z){
-  if(locale === 'earth' && !isOnLand(x, z) && !isOnCarrier(x, z) && isOnBeach(x, z)) return ISLAND_Y;
+  if(locale === 'earth' && !isOnLand(x, z) && !isOnCarrier(x, z) && isOnBeach(x, z)){
+    // Auf dem SANDRAND: Inselhoehe, aber nie unter der Wasseroberflaeche an dieser Stelle. ISLAND_Y
+    // sind nur 0,30 m, die Duenung reicht aber bis rund 1,6 m (AMP 3,0) — bei jeder groesseren Welle
+    // stand der Astronaut also UNTER Wasser und war weg. Gemeldet als „wenn eine welle kommt geht der
+    // astronaut unter". Der Strand laeuft flach ins Meer, physikalisch ist das Untergehen dort
+    // richtig; sichtbar verschwinden soll er aber nicht — also hebt ihn die Welle mit an, wie ein
+    // Kind, das im Flachwasser steht.
+    return Math.max(ISLAND_Y, seaYAt(x, z));
+  }
   return surfaceY(x, z);
 }
 // Steht der Astronaut gerade im Schlauchboot?
@@ -6008,7 +6037,18 @@ function updateWarp(dt){
     warpRing.visible = warpVis > 0.01;
     if(warpRing.visible){
       const jetAn = !!(eva && eva.jet);
-      warpRing.position.copy(jetAn ? eva.group.position : state.pos);
+      // Am Jetpack auf die KOERPERMITTE, nicht auf eva.group.position: das ist die Fusshoehe (der
+      // Astronaut wird mit den Fuessen auf y = 0 gesetzt, siehe preloadAstronaut). Der Ring sass also
+      // um seine Fuesse, und er stand um eine halbe Koerperlaenge zu hoch darin.
+      // ASTRONAUT_H*0.5 ist die Mitte — und zwar entlang seiner MITGEKIPPTEN Hochachse, sonst wandert
+      // die Mitte beim Nicken aus dem Ring heraus.
+      if(jetAn){
+        const mitte = new THREE.Vector3(0, ASTRONAUT_H*0.5, 0)
+          .applyEuler(new THREE.Euler(eva.jetPitch, eva.yaw, eva.jetRoll || 0, 'YXZ'));
+        warpRing.position.copy(eva.group.position).add(mitte);
+      } else {
+        warpRing.position.copy(state.pos);
+      }
       // Ausrichtung: am JETPACK aus yaw und Nickwinkel des Astronauten, sonst aus der Fliegerlage.
       // updateJet setzt state.quat nie — der Ring behielt also die Lage, die der Flieger beim
       // Aussteigen hatte, und stand schief zur Flugrichtung. Genau das war das gemeldete
@@ -6223,8 +6263,49 @@ const PAD_LIFT_FRAC = 0.45;        // zusätzlich dieser Anteil der eigenen Schi
 // lift = zusätzlicher Aufschlag für DIESES Schiff (siehe PAD_LIFT_FRAC). Auch auf der Mondbasis
 // nötig: ihr Höhenprofil ist eine Interpolation und liegt um Meter daneben — genau daran ist die
 // flache Enterprise im Boden verschwunden.
+// Hilfsvektoren fuer den Landeplatz-Raycast (wiederverwendet, damit pro Frame kein Muell entsteht)
+const _padFrom = new THREE.Vector3(), _padDown = new THREE.Vector3(0,-1,0);
+const _padRay = new THREE.Raycaster();
 function padSurfaceY(x, z, lift){
   const up = (lift === undefined) ? PAD_LIFT : lift;
+  // EXAKTE Bodenhoehe per Raycast, so wie stepGroundExact es fuer den Flieger tut. Damit landen die
+  // Schiffe wirklich auf der Oberflaeche statt darueber: der Aufschlag `up` ist dann nur noch ein
+  // Rueckfall, wenn kein Strahl trifft.
+  //
+  // Frueher stand hier ausdruecklich „bewusst OHNE Raycast", weil three.js obj.matrixWorld erst beim
+  // Rendern aktualisiert und placeGroundBase() die Basis nach updatePads() setzt — Landeplaetze fielen
+  // dann auf den Kraterboden. Der Ausweg war ein Aufschlag von 3 m plus 45 % der Schiffshoehe, und
+  // genau der war sichtbar: das Shuttle stand 8,4 m ueber dem Boden, die Enterprise 6,3 m, die Rakete
+  // 4,5 m. Gemeldet als „die raumschiffe auf dem mond landen nicht exakt auf der oberflaeche sondern
+  // in der luft".
+  //
+  // Die Matrix laesst sich aber erzwingen: updateMatrixWorld(true) auf dem Ziel, dann trifft der
+  // Strahl auch in dem Frame, in dem die Basis gerade gesetzt wurde.
+  const G = GROUNDS[locale];
+  if(G && G.tiles){
+    const approx = groundHeightAt(locale, x, z);
+    _padFrom.set(x, approx + 400, z);
+    let best = null;
+    const T = G.tile;
+    const tile = G.tiles.get(Math.round(x/T) + ',' + Math.round(z/T));
+    if(tile){
+      tile.updateMatrixWorld(true);
+      _padRay.set(_padFrom, _padDown);
+      const hit = _padRay.intersectObject(tile, true);
+      if(hit.length) best = hit[0].point.y;
+    }
+    // Die Mondbasis mitpruefen: die Schiffe landen auf ihrer Flaeche, nicht auf dem Kraterboden.
+    if(locale === 'moon' && moonBaseObj && moonBaseObj.visible){
+      moonBaseObj.updateMatrixWorld(true);
+      _padRay.set(_padFrom, _padDown);
+      for(const h of _padRay.intersectObject(moonBaseObj, true)){
+        if(best === null || h.point.y > best) best = h.point.y;
+      }
+    }
+    if(best !== null) return best;
+  }
+  // Rueckfall wie bisher: Hoehenprofil der Basis bzw. das Raster, mit Aufschlag gegen die
+  // Ungenauigkeit der Interpolation.
   const bp = basePlatformNear(x, z);          // Fläche der Mondbasis (siehe dort)
   if(bp !== null) return bp + up;
   return groundHeightAt(locale, x, z) + up;
