@@ -506,3 +506,137 @@ Beide notiert, weil sie beim nächsten Mal wieder drohen:
 - **Der Rover schien mit −2307 km/h zu fahren.** `loop(now)` rechnet `dt` selbst aus der übergebenen
   Zeit; mein Testtakt spulte die Uhr vor und erzeugte absurde Zeitschritte. Wer die Physik messen
   will, ruft `updateRover(dt, inp)` direkt mit festem `dt` — dann stimmen die Zahlen.
+
+❯ zwei fixes nacheinander c&p: die kamera beim mars rover könnte etwas weiter nach hinten, weil rover deutlich größer als mondrover. die kamera beim jetpack passt immer noch nicht. kamera jetpack sollte immer wie jedes andere fzg sein. gleich dazu neues feature. wenn astronaut zu fuss unterwegs und nicht in der nähe von anderem fzg, y= aktiviere jetpack. jetpack  = wie fzg = steuerung wie x wing.
+
+Drei Fixes und ein Feature. Der Wunsch kam in mehreren Teilen dazu: das Jetpack soll **überall**
+gehen — „wenn bei astronaut gleich frei laufend, y = jetpack.. geht das natürlich auch auf der erde",
+„oder im hangar selber" — und die Rover-Tempoanzeige stand doppelt („die normale im HUD reicht").
+
+### Fix 1: Die Mars-Rover-Kamera stand zu dicht
+
+Der Abstandsfaktor hing nicht am Modell: beide Rover benutzten 1,5, obwohl der Perseverance
+ausgemessen **10,0 m** lang ist und der Apollo Lunar Rover **3,09 m** — gut dreimal so lang. Der
+Mars-Rover füllte damit das Bild. Auf dem Mars gilt jetzt 2,3.
+
+Gemessen im Browser, eingeschwungen (die Kamera lerpt, nach 6 Frames ist sie noch unterwegs):
+
+| | waagerecht | Höhe über dem Astronauten |
+|---|---|---|
+| Mond (1,5) | 10,50 m | 5,10 m |
+| Mars (2,3) | 16,10 m | 7,82 m |
+
+Beides trifft die Formel `7·bt` bzw. `3,4·bt` auf den Zentimeter. Der Mars-Rover steht **5,60 m
+weiter** zurück als vorher.
+
+### Fix 2: Die Jetpack-Kamera schaute am Astronauten vorbei
+
+Der Kameraplatz war schon waagerecht gestellt, **das Blickziel aber nicht** — es trug den Nickwinkel
+weiter. Bei 72 Grad (`JET_PMAX`) liegt es damit 13,3 m **über** dem Astronauten: die Kamera schaut an
+ihm vorbei in den leeren Raum, und er hängt unten am Bildrand. Das war der Rest des gemeldeten
+Fehlers. Dieselbe Rechnung stand ein zweites Mal in `jetSnapCam` — sonst wäre die Kamera bei jedem
+Ortswechsel umgesprungen.
+
+Jetzt gilt für Jetpack, Rover und Boot **dieselbe** Regel: waagerecht schräg hinten, Blick auf den
+Astronauten. Wohin er fliegt, zeigt seine eigene Haltung — `updateJet` legt ihn in Flugrichtung.
+
+Gemessen bei vollem Nicken, und zwar in **beide** Richtungen:
+
+| Nickwinkel | waagerecht | Höhe | Winkel zum Astronauten |
+|---|---|---|---|
+| +71,6° (steigen) | 13,30 m | +6,46 m | 14,88° |
+| −71,6° (sinken) | 13,30 m | +6,46 m | 14,88° |
+
+Identisch — die Kamera hängt nicht mehr am Nickwinkel und steht immer **über** ihm. Die 14,88° sind
+kein Restfehler, sondern der `EVA_LOOK_AHEAD`-Vorausblick (14 m), den der Rover genauso hat.
+
+### Fix 3: Das Tempo stand zweimal da
+
+Die Symbolzeile schrieb `🚙 34 km/h`, die HUD-Zeile darüber dasselbe. Die Symbolreihe sagt jetzt nur
+noch, **was** man ist; die Zahlen stehen im HUD. `elSpd` liest `evaSpeedKmh()` — dieselbe Größe, die
+`updateRover` füllt, die Zahl bleibt also erhalten.
+
+### Feature: Y zündet das Jetpack überall
+
+`evaBoardY` fällt am Ende durch, wenn kein Fahrzeug in Reichweite ist — dort hängt es jetzt. Die
+Reihenfolge zählt: erst die echten Fahrzeuge, das Jetpack **ganz zuletzt**, sonst startete es einem
+vor der Nase, wo man einsteigen wollte.
+
+Dabei kamen **zwei echte Fehler** heraus, die vom abgebrochenen Versuch übrig waren:
+
+- **`jetFrom` war nirgends deklariert.** Es wurde geschrieben und war damit ein stillschweigendes
+  implizites Global (die Datei hat kein `use strict`). Steht jetzt neben `jetHost`.
+- **Der Rückweg zur Erde fehlte ganz.** Der Jetpack-Flug prüfte nur `bodies` — und die Erde steht
+  dort **nicht** drin, sie ist eine eigene Kugel (`earthHome`). Von der Erde gestartet wäre man für
+  immer im Weltall geblieben und durch die Erdkugel hindurchgeflogen. Neu: `evaEndJetToEarth()`,
+  mit derselben Rückkehrschale wie der Flieger (`EARTH_R + EARTH_Y`).
+
+Dazu drei Dinge, die beim Start von der Erde nötig waren und im Hangar nie aufgefallen sind:
+
+- **`earthWorldVisible(false)`** — sonst stehen Inseln, Meer, Wolken, Träger und der Flugverkehr
+  weiter im Bild, während man zwischen den Planeten fliegt.
+- **`layoutBodies(true)` und `jetHost = null`** — `hangarHost` war noch vom letzten Hangarbesuch
+  gesetzt und hätte einen von der Insel weg direkt an den Todesstern gebeamt. Und ohne `fromEarth`
+  läge die Erdkugel weit ab, der Rückweg zeigte auf eine Stelle ohne Erde.
+- **`state.pos` muss gleich mitkommen**, nicht erst im nächsten `updateJet`: `updateLocale()` läuft
+  in **demselben** Frame weiter, auch während der EVA. Bliebe es auf der Insel, wäre der Abstand zu
+  `earthHome` genau `EARTH_R` — `updateSpaceBodies` sieht das als Wiedereintritt und ruft
+  `enterEarth`, **ohne `dockLock` zu beachten**: das Jetpack wäre im selben Frame wieder aus.
+
+Verifiziert im Browser, 0 Konsolenfehler, Frames echt getaktet:
+
+| Weg | Ergebnis |
+|---|---|
+| Y auf der Erde | Jetpack an, Ort `space`, auf `SPACE_Y` = 4000 m, `jetHost` null, `jetFrom` = earth, Inselzellen 0 |
+| 40 Bilder frei fliegen | bleibt im Weltall — fällt **nicht** von allein zurück |
+| Rückflug zur Erde | Ort `earth`, Astronaut auf 0,30 m = Bodenhöhe, `onGround`, 49 Inselzellen, Flieger 6,7 m weg und einsteigbar, `jetFrom` geleert |
+| Y auf dem Mond, 400 m vom Flieger | Jetpack an, `jetFrom` = moon |
+| Rückflug nach Mond-Start | landet auf der **Startinsel** (0,0), auf Land, Boden 0,30 m, Flieger erreichbar |
+| Y im Hangar, X-Wing daneben | **steigt ein** (richtig — Fahrzeuge haben Vorrang) |
+| Y im Hangar, nichts in Reichweite | Jetpack an, Ort `space` |
+
+Der Fallback ist die Startinsel bei (0,0): sie ist die einzige Zelle, die **garantiert** eine Insel
+trägt (`islandInfo`: `isStart`), dort gibt es also immer festen Grund.
+
+### Drei Testfehler, die nach Spielfehlern aussahen
+
+- **Auf dem Mond zündete Y das Jetpack nicht.** Ich hatte `eva.planeAt` auf die Astronautenposition
+  kopiert — damit stand der Flieger **auf** ihm, `evaCanBoard()` war wahr, und Y stieg völlig korrekt
+  ein. Mein Test, nicht das Spiel.
+- **Im Hangar tat `evaExit()` gar nichts.** `evaAllowed()` verlangt `state.onGround` und kein Fallen;
+  nach `enterGround`/`setupApproach` fliegt der X-Wing aber mit **110 m/s in 900 m Höhe**. Erst
+  richtig hinstellen, dann aussteigen.
+- **Der Astronaut stand nach dem Rückflug 3 m über dem Boden.** Die Zielstelle war in meinem Test
+  offenes Meer (`planeAt` künstlich auf 3000/3000) — das **Schlauchboot** hat ihn aufgefangen, wie es
+  soll. Nachgemessen: `isOpenWater` true, `eva.boat` gesetzt, Bootshöhe 2,52 m. Bestehende Logik,
+  kein Fehler.
+
+### Nebenbei: die Datei hatte gemischte Zeilenenden
+
+`Flugspiel.html` ist CRLF, aber ein Block von 37 Zeilen (1936–1972, genau um `evaBoardY`) war auf
+**LF** gekippt. `patch.ps1` normalisiert den Suchtext auf die Zeilenenden der Datei und fand deshalb
+nichts — genau daran war der Versuch im letzten Durchlauf gescheitert, ohne dass der Grund klar war.
+Der Inhalt war mit HEAD identisch, `core.autocrlf=true` versteckt so etwas im Diff. Datei ist jetzt
+wieder durchgehend CRLF (geprüft: 9132 CRLF, 0 nur-LF).
+
+**Merken:** wenn `patch.ps1` „Suchtext 0 mal gefunden" sagt, obwohl der Text sichtbar da ist, jede
+Zeile **einzeln** zählen. Sind alle einzeln da, aber zusammen nicht, liegt es zwischen den Zeilen —
+also an den Zeilenenden.
+
+## Offen: neue Schub-Steuerung für X-Wing und Jetpack
+
+Wörtlich: „x wing/jetpack. neue steuerung 20% = schweben. 10% langsam landen 0% gleich schneller aber
+immer noch sicher landen. Im weltall sind 0%, 10 und 20% normale geschwindigkeiten weil ja landen
+nicht möglich"
+
+Also am Boden (Mond, Mars, Hangar, Erde) drei Stufen unter 30 %:
+
+| Schub | Verhalten |
+|---|---|
+| 20 % | schweben, Höhe halten |
+| 10 % | langsam sinken → sanft landen |
+| 0 % | schneller sinken, aber immer noch **sicher** landen (kein Crash) |
+
+Im Weltall gibt es keinen Boden, dort sind 0/10/20 % ganz normale Fahrstufen. `APPROACH_THR` ist
+heute 0,3 und der Kommentar dort beschreibt die Schwelle schon so („20 % schweben, 10 % sinken") —
+das ist beim Umsetzen der Bezugspunkt.
