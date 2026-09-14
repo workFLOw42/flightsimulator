@@ -2102,16 +2102,28 @@ function buttonB(){
 // Die Reihenfolge zaehlt: wer in einem Fahrzeug sitzt, will heraus; wer daneben steht, hinein.
 function buttonY(){
   if(eva){ evaBoardY(); return; }
-  // Im FEUERWEHRBOOT, das man am Strand bestiegen hat: Y bringt einen zurueck zum eigenen Flieger,
-  // aber nur AM UFER — man soll ans Land fahren und dort aussteigen, nicht mitten auf dem Meer
-  // verschwinden (so gewuenscht). Das muss VOR evaAllowed stehen: das Boot schwimmt, und dort ist
-  // Aussteigen grundsaetzlich verboten. Fuer die Pruefung zaehlt ein Punkt vor dem Bug, denn das Boot
-  // liegt selbst nie auf dem Sand — es haelt davor an (siehe boatWaterFree).
-  if(isBoat() && harborBoatFrom){
+  // Im FEUERWEHRBOOT: Y steigt AM UFER aus — man faehrt an den Strand und geht von Bord, nicht
+  // mitten auf dem Meer. Das muss VOR evaAllowed stehen, denn das sperrt Boote grundsaetzlich
+  // (if(isBoat()) return false): ein Boot schwimmt, und ueber Wasser gibt es keinen Grund zum Stehen.
+  // Am Ufer gibt es den, deshalb hier die feinere Pruefung.
+  //
+  // Gilt fuer BEIDE Wege ins Boot, und das war der Fehler: erst hing dieser Zweig an harborBoatFrom,
+  // also nur am Strand-Einstieg. Wer das Boot ueber die MODELLAUSWAHL nahm, kam gar nicht mehr heraus
+  // — Y tat nichts, weil evaAllowed die Boote sperrt. Gemeldet als „aussteigen bei feuerwehrboot
+  // ueber modelauswahl nicht moeglich".
+  //
+  // Fuer die Pruefung zaehlt ein Punkt vor dem Bug, denn das Boot liegt selbst nie auf dem Sand — es
+  // haelt davor an (boatWaterFree schliesst den Strand aus).
+  if(isBoat()){
     const bf = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
     const px = state.pos.x + bf.x*BOAT_LOOK*1.6, pz = state.pos.z + bf.z*BOAT_LOOK*1.6;
-    if(isOnLand(px, pz) || isOnBeach(px, pz)) leaveHarborBoat();
-    else showBig('\u{1F3D6}\u{FE0F}'), bigTimer = 1.2;   // Hinweis: erst an den Strand fahren
+    if(isOnLand(px, pz) || isOnBeach(px, pz)){
+      // Ueber den Strand eingestiegen? Dann wartet der eigene Flieger an seinem gemerkten Platz.
+      // Sonst (Modellauswahl) einfach zu Fuss von Bord, das Boot bleibt liegen, wo es ist.
+      if(harborBoatFrom) leaveHarborBoat();
+      else evaExitFromBoat(px, pz);
+    }
+    else { showBig('\u{1F3D6}\u{FE0F}'); bigTimer = 1.2; }   // Hinweis: erst an den Strand fahren
     return;
   }
   // Im Flieger: aussteigen, wo es erlaubt ist (am Boden, auf festem Grund - siehe evaAllowed).
@@ -5162,6 +5174,25 @@ function evaBoardHarborBoat(cx, cz){
 }
 // Zurueck zum eigenen Flieger. Er steht dort, wo man ihn gelassen hat — deshalb wurde der Platz beim
 // Einsteigen gemerkt. Ohne das waere der Flieger nach einer Bootsfahrt unerreichbar.
+// Aus dem Boot an Land gehen, OHNE gemerkten Flieger — also wenn man es ueber die Modellauswahl
+// genommen hat. Das Boot bleibt liegen, wo es ist, und man steht zu Fuss davor. Weiterfliegen geht
+// dann ueber ein geparktes Flugzeug auf dem Vorfeld oder ueber die Modellauswahl.
+//
+// eva.planeAt zeigt hier auf das BOOT: es ist das Fahrzeug, in dem man sass, und damit der Punkt, zu
+// dem man zurueckkehrt (dieselbe Rolle wie der Flieger sonst). So kann man mit Y wieder einsteigen.
+function evaExitFromBoat(x, z){
+  if(eva) return;
+  const g = makeAstronaut();
+  const eul = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  g.position.set(x, evaFootY(x, z), z);
+  g.rotation.y = eul.y;
+  scene.add(g);
+  eva = { group:g, vy:0, onGround:true, yaw:eul.y,
+          planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
+  state.throttle = 0;
+  jetSnapCam();      // Kamera auf den ASTRONAUTEN, nicht auf das Boot
+  showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
+}
 // An Land aussteigen: man steht ZU FUSS am Strand, nicht ploetzlich wieder im Flieger. Der wartet
 // dort, wo man ihn gelassen hat — man laeuft also zurueck und steigt mit Y ein, wie beim Rover.
 //
@@ -5205,7 +5236,9 @@ function leaveHarborBoat(){
   state.throttle = 0;
   refreshIslands();  // das Kai-Boot liegt wieder da (man faehrt es ja nicht mehr)
   jetSnapCam();      // Kamera auf den ASTRONAUTEN, nicht auf den Flieger
-  showBig('\u{1F9D1}'); bigTimer = 1.2;
+  // Derselbe Astronaut wie bei jedem anderen Ausstieg: Person + ZWJ + Rakete. Ohne die
+  // ZWJ-Sequenz kommt nur die Person heraus, und das sah wie ein anderes Symbol aus.
+  showBig('\u{1F9D1}\u{200D}\u{1F680}'); bigTimer = 1.2;
 }
 // In den geparkten X-Wing umsteigen. Er startet auf der LANDEBAHN, nicht am Parkplatz: von der
 // Wiese zwischen Haeusern wegzurollen waere muehsam, und placeAtStart setzt ohnehin schon alles

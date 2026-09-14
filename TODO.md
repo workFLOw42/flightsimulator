@@ -1806,3 +1806,37 @@ Jetzt steigt man **zu Fuß** am Strand aus: der Astronaut wird an Land vor dem B
 voraus gesucht, bis fester Grund kommt — dieselbe Idee wie beim Schlauchboot-Ausstieg), der Flieger
 wartet an seinem gemerkten Platz. Man läuft also zurück und steigt mit Y ein, wie beim Rover. Die
 Kamera geht auf den Astronauten, nicht auf den Flieger.
+
+## Aus dem Boot kam man nur auf einem Weg heraus
+
+Gemeldet: „aussteigen bei feuerwehrboot über modelauswahl nicht möglich. nur über boot in welches man
+eingestiegen ist. zweitens das symbol nach bootausstieg ist ein anderes."
+
+### Der Ausstieg hing am Einstiegsweg
+
+Mein Y-Zweig fragte `isBoat() && harborBoatFrom` — also nur das Boot, das man **am Strand** bestiegen
+hat. Über die Modellauswahl ist `harborBoatFrom` null, damit fiel Y durch auf `evaAllowed()`, und das
+sperrt Boote grundsätzlich (`if(isBoat()) return false`). Y tat also gar nichts.
+
+Die Sperre in `evaAllowed` ist an sich richtig — ein Boot schwimmt, über Wasser gibt es keinen Grund zum
+Stehen. Nur ist sie zu grob: **am Ufer** kann man aussteigen.
+
+Jetzt gilt der Zweig für jedes Boot, und die Unterscheidung liegt dahinter:
+
+| Einstieg über | Y am Ufer |
+|---|---|
+| Strand (Y am Kai-Boot) | zurück zum gemerkten Flieger, zu Fuß am Strand |
+| Modellauswahl | zu Fuß von Bord, das Boot bleibt liegen |
+
+Für den zweiten Fall ist `evaExitFromBoat` neu. Dabei zeigt `eva.planeAt` auf das **Boot** — es ist das
+Fahrzeug, in dem man saß, also der Punkt, zu dem man mit Y zurückkehrt (dieselbe Rolle wie der Flieger
+sonst). Nachgerechnet: der Ausstiegspunkt liegt 12,8 m vor dem Bug, die Einstiegsreichweite ist 8 m —
+man läuft also knapp 5 m zurück und ist wieder drin.
+
+Über Wasser kommt weiterhin das Strand-Symbol als Hinweis, dass man erst hinfahren muss.
+
+### Das Symbol
+
+Ich hatte `\u{1F9D1}` genommen, also nur die Person. Überall sonst im Spiel steht der Astronaut als
+ZWJ-Sequenz: Person + ZWJ + Rakete (`\u{1F9D1}\u{200D}\u{1F680}`). Beide Boot-Ausstiege zeigen jetzt
+dasselbe Zeichen wie jeder andere Ausstieg.
