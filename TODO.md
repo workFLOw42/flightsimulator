@@ -1186,3 +1186,59 @@ eingebaut hatte** — meist mit einer plausibel klingenden Begründung im Kommen
 von Anfang an „wie der X-Wing". Wo ein Fahrzeug „wie X" sein soll, ist die kürzeste Prüfung, die
 Eingaben und Bausteine von X einmal durchzuzählen und zu fragen, was fehlt — nicht, das Verhalten
 nachzuempfinden.
+
+## Jetpack: der Astronaut nickte verkehrt — und das Gyroskop kannte ihn nicht
+
+Gemeldet: „nur noch die kamera bei steigen und sinken. die passt noch nicht wie bei einem flieger" und
+„der jetpack hat aber auch keine verbindung zum gyroskop, ist also noch nicht überall ein flieger".
+
+### Es war nie die Kamera
+
+Dreimal habe ich beim Steigen und Sinken an der Kamera gesucht. Nachgerechnet stand sie längst korrekt:
+bei `jetPitch` = +0,5 (Flugrichtung y = +0,479, also steigen) sitzt sie bei y = −0,479, also darunter —
+genau richtig für einen Steigflug.
+
+Verkehrt kippte das **Modell**. Die Nase des Astronauten zeigt auf −Z (`makeAstronaut` dreht die Vorlage
+dafür um 180°), und eine −Z-Nase wird von `Euler.x` = **+**pitch gehoben. Im Code stand
+`Euler(-eva.jetPitch, …)`:
+
+| jetPitch | Flugrichtung y | Nase y (vorher) | Nase y (jetzt) |
+|---|---|---|---|
+| −1,25 (sinken) | −0,949 | +0,949 | −0,949 |
+| −0,50 | −0,479 | +0,479 | −0,479 |
+| 0 | 0,000 | 0,000 | 0,000 |
+| +0,50 | +0,479 | −0,479 | +0,479 |
+| +1,25 (steigen) | +0,949 | −0,949 | +0,949 |
+
+Er schaute beim Steigen nach unten und beim Sinken nach oben, während die Kamera korrekt auf der
+Flugachse saß. Von hinten betrachtet sieht das genau aus wie eine falsch stehende Kamera — deshalb habe
+ich dreimal an der falschen Stelle gesucht. Beim Drehen fiel es nicht auf, weil der Yaw-Anteil stimmte.
+
+Warum es beim Rollen ebenfalls nicht auffiel: `jetRoll` ist um dieselbe Achse gespiegelt symmetrisch,
+und die Kamera rollt mit — die Querlage stimmte also relativ.
+
+### Das Gyroskop hing am Flieger
+
+`updateGyro` liest `state.quat` und `state.vel` — beides gehört dem stehenden Flieger, und `updateJet`
+setzt es an einem Ort mit Boden gar nicht. Das Instrument zeigte also die Lage eines Fliegers, der
+irgendwo geparkt ist: unbeweglich, während man selbst fliegt.
+
+Jetzt liest es am Jetpack `eva.jetPitch`, `eva.jetRoll` und `eva.jetVel`, mit denselben Grenzen fürs
+Landefenster. Als Bezugstempo dient dort die Schwebestufe (20 % von `JET_VMAX` = 9 m/s) statt der
+Abhebegeschwindigkeit des Fliegers — mal 1,4, genau wie beim Flieger.
+
+### Systematisch nachgesehen, was sonst noch fehlt
+
+Statt aufs nächste Symptom zu warten, habe ich alle Instrumente durchgezählt, die `state.quat` oder
+`state.vel` lesen und während der EVA weiterlaufen:
+
+| | liest Flieger-Lage | am Jetpack |
+|---|---|---|
+| `updateGyro` | ja | **war die Lücke, behoben** |
+| `updateRadar` | ja, aber `eva ? eva.yaw : …` | korrekt angebunden |
+| `updateShadow` | ja | steigt bei `eva` aus (kein Schatten zu Fuß) |
+| `updateSonic` | ja | verlangt `spec.aero`, greift nie |
+| `updateRumble`, `updateEngineSound`, `updateSpaceHint` | nein | unkritisch |
+
+Damit ist die Liste leer. Der Lernpunkt aus der Runde davor hat hier gezogen: erst durchzählen, dann
+beheben — nicht das nächste gemeldete Symptom abwarten.

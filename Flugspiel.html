@@ -3489,7 +3489,13 @@ function updateJet(dt, inp){
   // gedreht, wodurch die schon gekippte Laengsachse mitwandert und der Astronaut SEITLICH haengt —
   // gemessen 45,8 Grad Querlage bei halbem Nickwinkel und 71,6 Grad am Anschlag. Genau das war das
   // gemeldete Drehen nach rechts. Der Rest des Spiels rechnet ueberall in YXZ.
-  g.setRotationFromEuler(new THREE.Euler(-eva.jetPitch, eva.yaw, eva.jetRoll, 'YXZ'));
+  // Nickwinkel mit POSITIVEM Vorzeichen: die Nase des Astronauten zeigt auf -Z (makeAstronaut dreht
+  // die Vorlage dafuer um 180 Grad), und eine -Z-Nase wird von Euler.x = +pitch GEHOBEN. Mit dem
+  // frueheren -eva.jetPitch kippte er genau verkehrt: beim Steigen schaute er nach unten und
+  // umgekehrt. Nachgerechnet bei jetPitch = +0,5 (Flugrichtung dir.y = +0,479, also steigen) zeigte
+  // die Nase auf y = -0,479. Die KAMERA stand dabei korrekt auf der Flugachse — es sah nur aus wie
+  // ein Kamerafehler beim Steigen und Sinken, und genau so wurde es dreimal gemeldet.
+  g.setRotationFromEuler(new THREE.Euler(eva.jetPitch, eva.yaw, eva.jetRoll, 'YXZ'));
   eva.vy = 0; eva.onGround = false;
   // state.pos MUSS mitwandern: daran haengt die gesamte Weltall-Logik (Anflug, Andocken,
   // Asteroiden, Sternenkuppel, Nebel, Kamera-Bezug). Ohne das schaut das Spiel weiter auf die
@@ -8548,14 +8554,33 @@ function updateGyro(){
   // Beim Boot gibt es keine Fluglage und nichts zu landen -> Instrument bleibt leer.
   if(isBoat()){ gyroCv.style.display='none'; return; }
   gyroCv.style.display='';
-  // Fluglage aus der Orientierung (Nicken/Rollen)
-  const e = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
-  const pitch = e.x;                 // + = Nase hoch
-  const roll  = e.z;                 // Querlage
-  const sink  = -state.vel.y;        // >0 = sinkt
-  const spdK  = state.vel.length();
+  // Fluglage aus der Orientierung (Nicken/Rollen).
+  //
+  // AM JETPACK aus eva.jetPitch/jetRoll und eva.jetVel: state.quat und state.vel gehoeren dem
+  // stehenden Flieger, und updateJet setzt sie am Boden gar nicht — das Instrument zeigte dort also
+  // die Lage eines Fliegers, der irgendwo geparkt ist. Gemeldet als „der jetpack hat aber auch keine
+  // verbindung zum gyroskop, ist also noch nicht ueberall ein flieger". Es fliegt wie ein Flieger,
+  // also bekommt es auch den kuenstlichen Horizont — mit denselben Grenzen fuers Landefenster.
+  const jetAn = !!(eva && eva.jet);
+  let pitch, roll, sink, spdK, vTOref;
+  if(jetAn){
+    pitch = eva.jetPitch;            // + = Nase hoch, dieselbe Vorzeichen-Regel wie beim Flieger
+    roll  = eva.jetRoll || 0;
+    sink  = eva.jetVel ? -eva.jetVel.y : 0;
+    spdK  = eva.jetVel ? eva.jetVel.length() : 0;
+    // Bezugstempo fuers Landefenster: beim Flieger die Abhebegeschwindigkeit, am Jetpack die
+    // Schwebestufe (20 % von JET_VMAX = 9 m/s). Mal 1,4 wie beim Flieger.
+    vTOref = JET_VMAX * VTOL_HOVER;
+  } else {
+    const e = new THREE.Euler().setFromQuaternion(state.quat,'YXZ');
+    pitch = e.x;                     // + = Nase hoch
+    roll  = e.z;                     // Querlage
+    sink  = -state.vel.y;            // >0 = sinkt
+    spdK  = state.vel.length();
+    vTOref = spec.vTO;
+  }
   // "Sanfte-Landung-Fenster": fast waagerecht + moderate Sinkrate + nicht zu schnell.
-  const softOk = Math.abs(pitch) < 0.22 && Math.abs(roll) < 0.22 && sink < 6 && sink > -1 && spdK < spec.vTO*1.4;
+  const softOk = Math.abs(pitch) < 0.22 && Math.abs(roll) < 0.22 && sink < 6 && sink > -1 && spdK < vTOref*1.4;
   // Instrument-Ring
   g.save(); g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.clip();
   // Himmel/Boden, um Roll gedreht und um Pitch verschoben (künstlicher Horizont)
