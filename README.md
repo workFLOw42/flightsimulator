@@ -916,6 +916,125 @@ taucht in deiner Nähe ein neuer mit neuer Mission auf, so bleibt der Himmel imm
 
 Nah vorbeikommende Flieger **wackeln** zum Gruß mit den Flügeln; schnelle/hohe ziehen
 **Kondensstreifen**. Der Verkehr **läuft immer** — der frühere Schalter (J / LB) ist entfallen.
+
+## 🌊 Die Unterwasserwelt und das fahrbare U-Boot
+
+Unter der Wasserfläche war bisher **nichts** — kein Boden, keine Rückseite der Wellen, und die Kamera
+durfte gar nicht unter `y = 2`. Jetzt gibt es eine Welt darunter, und das **U-Boot** ist das
+Fahrzeug, mit dem man sie ansieht. Es ist dasselbe Modell (**submarine by Helindu**), das schon als
+KI-Kulisse auf dem Meer auf- und abtauchte — jetzt sitzt man selbst darin.
+
+### Einsteigen: genau wie beim Feuerwehrboot
+
+Das U-Boot liegt **rückwärts am Strand jeder Insel**, auf der **dritten Seite des Hafens**: das
+Feuerwehrboot liegt 55 m tangential neben dem Hafen, die Canadair auf der anderen Seite, das U-Boot
+165 m weiter — zwischen den Rümpfen bleiben 55 m Luft (nachgemessen 120 m von Bootsmitte zu
+Bootsmitte). Es liegt **im Wasser** und nicht im Sand: mit 13 m Rumpfdurchmesser läge es auf der
+Sandkante zur Hälfte im Strand, deshalb steht seine Mitte etwas weiter draußen (Faktor 1,30 gegen
+1,12 beim Feuerwehrboot).
+
+- **Hinlaufen und Y drücken.** Man kommt von hinten heran (das Heck zeigt zur Insel), steigt ein und
+  fährt vorwärts los. Wie beim Feuerwehrboot wird der **Platz des eigenen Fliegers gemerkt** — Y an
+  Land bringt einen dorthin zurück.
+- **Oder über die Modellauswahl** (D-Pad → bzw. M): das U-Boot steht **als letztes** in der Reihe.
+  Dann liegt es an seinem Strandplatz und man sitzt gleich darin.
+- **Es steht nie doppelt da.** Solange man es fährt, verschwindet die Kulisse am Strand — dieselbe
+  Regel, die beim Feuerwehrboot schon gilt (sonst sitzt man in einem zweiten Boot).
+- **Aussteigen geht überall auf dem Wasser** — man landet im **Schlauchboot** und kann sofort
+  losfahren. **Zurück ins U-Boot: heranfahren und den Rumpf berühren.** Nur **getaucht** geht es
+  nicht: dann zeigt Y ein **⬆️** („erst auftauchen").
+
+  Das war zuerst anders gebaut — Y setzte den Astronauten **an den Strand**, wie beim Feuerwehrboot.
+  Nachgemessen stand er dabei **im Wasser**: das U-Boot hält **85 m** vor der Sandkante (95 m Rumpf,
+  Liegeplatz weiter draußen), und die Ufersuche des Feuerwehrboots reicht nur 24 m. Statt sie zu
+  verlängern ist jetzt das Schlauchboot der Weg — dasselbe Muster, mit dem das Spiel schon jede
+  andere Wasserkante löst (Trägerdeck, Kaikante): es **fängt den Schritt auf**, statt ihn zu
+  verbieten. Damit gibt es das Wasserproblem gar nicht mehr. Wer trotzdem an den Strand fährt und
+  über ihn eingestiegen ist, kommt mit Y wie gehabt zu seinem Flieger zurück.
+
+  Eine Feinheit steckt darin: das Schlauchboot entsteht **direkt neben dem Rumpf**, also noch in der
+  Berührungszone — ohne Gegenmaßnahme saß man im selben Moment wieder im U-Boot (gemessen: Umstieg
+  nach **0 Frames**, Aussteigen unmöglich). Eine Sperre löst deshalb erst, wenn man die Zone einmal
+  verlassen hat; im Spiel nach **0,9 Sekunden**.
+
+### Fahren und tauchen: die Nase steuert die Tiefe
+
+| | |
+|---|---|
+| **Fahrt** | rechter Stick ↕ (W/S, Leertaste = Vollgas) — bis **50 km/h** |
+| **Lenken** | linker Stick ←→ (Pfeile ←→) |
+| **Tiefe** | linker Stick ↕ bzw. **Pfeil ↑ = abtauchen, ↓ = auftauchen** |
+| **Tiefste Stelle** | rund **200 m** auf offener See |
+
+Getaucht wird **wie mit einem Flugzeug**: man legt die Nase an (höchstens 30°), und die **Fahrt**
+trägt das Boot hinunter oder hinauf. Steht es still, bringt die schönste Nasenlage nichts — ohne
+Anströmung wirken die Tiefenruder nicht. Das ist physikalisch richtig und spielt sich gut, weil man
+dadurch von selbst Gas gibt, statt sich senkrecht auf den Grund zu setzen. Bei Vollgas sinkt es
+5,2 m/s, von der Oberfläche auf 200 m sind das rund 38 Sekunden.
+
+Zwei Dinge, die man sofort merkt:
+
+- **Es taucht nicht von allein wieder auf.** Lässt man den Stick los, richtet sich nur die **Nase**
+  waagerecht; die **Tiefe bleibt stehen**, wie bei einem austarierten U-Boot. Ohne das müsste man
+  dauernd gegen einen Auftrieb ansteuern.
+- **Es setzt sich nicht auf den Grund.** 12 m über dem Boden ist Schluss (der Rumpf ist 13 m dick) —
+  nachgemessen bleibt die Bodenfreiheit auf genau diesem Wert stehen, auch wenn man voll dagegen
+  drückt. Nach oben ist die **Wellenhöhe** die Grenze: aufgetaucht liegt es auf seiner Wasserlinie
+  und fährt wie ein Boot weiter.
+
+Das **HUD** stellt sich mit um: die Höhenzeile heißt im U-Boot **„Tiefe"** und zählt nach unten,
+Bezug ist die Wasseroberfläche **an dieser Stelle** (bei 2 m Dünung wäre ein fester Nullpunkt dauernd
+daneben). Das **Gyro ist aus** — es gibt keine Fluglage und nichts zu landen. Das Symbol zeigt
+🛥️ aufgetaucht und **🛥️ 🌊 getaucht**.
+
+### Was man unten sieht
+
+- **Der Meeresboden** steigt zu jeder Insel hin an: ein flacher **Schelf** von rund 100 m Breite am
+  Ufer, dann eine sichtbare Abbruchkante in die Tiefe (`smoothstep`, keine gleichmäßige Rampe). Dazu
+  Relief aus zwei überlagerten langen Wellen — Sandbänke und Hügel. Die Farbe folgt der Tiefe: heller
+  Sand am Ufer, Schlick in der Mitte, fast schwarz unten.
+- **Wracks.** Der **Liberty-Frachter** (135 m) und der **Großsegler** (90 m) liegen gekippt auf dem
+  Grund, um 35 bis 80 Grad auf die Seite gelegt und leicht über Bug oder Heck geneigt. Beide sind
+  **rostbraun umgefärbt** und ohne Textur — ein Wrack ist nicht mehr weiß und rot. Sie sind
+  **dieselben Modelle**, die oben als Handelsschiffe fahren: kein neues GLB, kein Megabyte mehr.
+  Nachgemessen liegt eines etwa alle **4,7 km**, und im Schnitt sind 0,7 gleichzeitig geladen — ein
+  Wrack soll ein Fund sein, kein Schrottplatz. Sie liegen nur, wo es **mindestens 45 m tief** ist,
+  sonst ragten sie heraus.
+- **Seegras und Korallen** wachsen ringsum auf dem Schelf, bis 40 m Tiefe — tiefer kommt kein Licht
+  hin. Rund 33 Büschel und Stöcke je Insel.
+- **Fischschwärme**, fünf gleichzeitig, je 34 Fische in einer Wolke, die selbst langsam wandert. Sie
+  bleiben über dem Grund und springen nicht aus dem Wasser. Bewusst **kein Modell**, sondern
+  abgeflachte Kugeln in einer `InstancedMesh`: ein Schwarm kostet damit einen einzigen Draw-Call.
+- **Die Orcas und die Schiffsrümpfe von unten.** Beides hing schon immer im Wasser, war aber nie zu
+  sehen. Die Wasserfläche selbst ist jetzt **beidseitig** (`DoubleSide`) — von unten steht sie
+  dunkel im Licht, genau wie eine echte Wasseroberfläche aus der Tiefe.
+
+**Die Sicht** macht den Unterschied zwischen „die Kamera ist unter Null" und „ich bin im Meer": Der
+Nebel steht an Luft auf 900/3000 m, unter Wasser auf **3 bis 42 m** — und mit der Tiefe wird daraus
+16 m. Die Farbe läuft von Türkis an der Oberfläche nach fast Schwarz auf 200 m (Rot verschwindet im
+Wasser zuerst, deshalb nach Blaugrün und nicht nach Grau), und das Sonnenlicht dringt nicht mit ein.
+Der Übergang wird geblendet, das Durchtauchen der Oberfläche ist also kein Schnitt.
+
+**Getaucht gelten andere Hindernisse.** Eine Insel ist unter Wasser kein Land mehr, sondern ein Hang,
+der zum Strand hinaufführt — dagegen schützt schon die Bodenfreiheit. Was weiterhin sperrt, sind die
+**Schiffsrümpfe**: durch einen 300-m-Frachter fährt man nicht hindurch, auch nicht darunter.
+
+### Warum der Boden nicht Bildrate kostet
+
+Das Meeresgitter rechnet **jeden Frame** alle 9.409 Punkte neu — die Wellen wandern ja (gemessen
+6,8 ms von 16,7 ms Budget). Der Boden bewegt sich nicht, also darf er das nicht auch tun. Zwei
+Maßnahmen, beide nachgemessen:
+
+1. **Er rastet auf ein festes Weltgitter ein** (125 m) und wird nur neu berechnet, wenn der Spieler
+   eine Rasterzelle weiterfährt — nicht 60-mal pro Sekunde.
+2. **Die Neuberechnung läuft in Häppchen** über mehrere Bilder, 6 Gitterzeilen pro Frame. Alles auf
+   einmal kostete **9,3 ms** und hätte zusammen mit dem Meer das Budget gesprengt; verteilt sind es
+   **0,8 ms**. Dasselbe Verfahren, mit dem `stepGroundFields` das Höhenraster von Mond und Mars
+   ausmisst.
+
+Gesamtkosten der Unterwasserwelt nach der Messung: rund **1,05 ms** pro Frame (Boden 0,80 · Fische
+0,12 · Strand-U-Boote 0,11 · Zellen 0,02) — gegen 6,8 ms für das bestehende Meer.
+
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.
@@ -963,6 +1082,8 @@ Ein herzliches Dankeschön an die folgenden Damen und Herren, deren 3D-Modelle �
 | Liberty-Frachter | **AlanTinka** |
 | Containerschiff | **RM02** |
 | Großsegler | **Liaval** |
+| U-Boot (Submarine) | **Helindu** |
+| Killerwal (Killer Whale) | **Trouvaille** |
 | Ariane 6 (ESA) | **Clarence365** |
 
 Vielen Dank für eure Kreativität und dafür, dass ihr eure Werke mit der Community teilt! ❤️
@@ -1025,7 +1146,7 @@ sitzt, will heraus; wer daneben steht, hinein. Am **Jetpack** tut Y nichts — d
 Andocken am Todesstern zurück, und eine Taste, die im leeren Raum aussteigen ließe, wäre eine Falle.
 
 Neue Reihenfolge des Modellwechsels: **X-Wing, Canadair, Mustang, Feuerwehrboot, Alpha Jet, Airbus,
-Transall**. `currentModel` ist nur ein Index in `MODEL_NAMES` — vor dem Umsortieren geprüft, dass keine
+Transall, U-Boot**. Das U-Boot steht als letztes: es kam zuletzt dazu und ist das einzige, das taucht. `currentModel` ist nur ein Index in `MODEL_NAMES` — vor dem Umsortieren geprüft, dass keine
 Stelle im Code einen harten Index annimmt.
 
 ## 📄 Lizenz

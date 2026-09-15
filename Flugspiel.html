@@ -45,7 +45,7 @@
 <body>
 <div id="hud">
   <div>Modell: <span id="mdl">XWing</span></div>
-  <div id="altrow">Höhe: <span id="alt">0</span> m</div>
+  <div id="altrow"><span id="altlbl">Höhe</span>: <span id="alt">0</span> m</div>
   <div>Speed: <span id="spd">0</span><span id="spdu"> km/h</span></div>
   <div><span id="thrlbl">Schub</span>: <span id="thr">0</span><span id="thru"> %</span></div>
   <div id="status" style="color:#ffd">am Boden</div>
@@ -89,6 +89,7 @@
     <div class="htitle">🎯 Was man machen kann</div>
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B. Sie landet <b>überall</b>: Wasser, Landebahn, Trägerdeck und <b>Wiese</b> — und rollt dort auch</b></div>
     <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer, liegt im Wasser und nickt mit den Wellen · B = Wasserstrahl nach vorn (bis 160 m), löscht Feuer und brennende Wracks · braucht keinen Tank · Land und Strand sind eine Wand, schräg fährt man daran entlang</b></div>
+    <div class="hrow"><span>🛥️ U-Boot</span><b>liegt am <b>Strand jeder Insel</b> neben dem Feuerwehrboot (und steht als letztes in der Modellauswahl). <b>Y</b> = einsteigen. Pfeil <b>↑ taucht ab</b>, <b>↓ wieder auf</b> — es braucht dazu <b>Fahrt</b>, wie ein Flugzeug. Unten liegen <b>Schiffswracks</b>, Seegras, Korallen und <b>Fischschwärme</b>; bis rund <b>200 m</b> tief. Es hält die Tiefe von allein und setzt sich nicht auf den Grund. <b>Aussteigen</b>: auftauchen und <b>Y</b> — du sitzt dann im <b>Schlauchboot</b> und kannst herumfahren. Wieder <b>hin</b>? Einfach mit dem Schlauchboot ans U-Boot fahren und es <b>berühren</b></b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf der <b>Landebahn</b> oder auf dem <b>Trägerdeck</b> laden (📦 zeigt es an), mit <b>B</b> abwerfen — wo man mag</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
@@ -212,7 +213,10 @@ const SEA_SEG = 96;
 const SEA_STEP = SEA_SIZE / SEA_SEG;
 const seaGeo = new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE, SEA_SEG, SEA_SEG);
 seaGeo.rotateX(-Math.PI/2);
-const ground = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+// side: DoubleSide, seit es eine Unterwasserwelt gibt. Vorher war die Meeresflaeche einseitig —
+// wer im U-Boot abtauchte, sah nach oben ins Leere, weil die Rueckseiten weggeworfen wurden.
+const ground = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ vertexColors:true,
+  side: THREE.DoubleSide }));
 ground.position.y = 0;
 scene.add(ground);
 // Ausgangs-Höhen merken (für die Wellen-Animation) + Vertexfarben-Puffer
@@ -327,6 +331,169 @@ function updateSea(dt){
   seaCol.needsUpdate = true;
   seaGeo.computeVertexNormals();   // damit das Licht auf den Wellen schimmert
 }
+
+// ---------- Meeresboden (Unterwasserwelt) ----------------------------------------------------
+// Unter der Wasserflaeche war bis hierher NICHTS: seabed/underwater gab es im ganzen Quelltext
+// nicht, man sah ins Leere. Das ist der Boden dazu, aufgebaut wie das Meer selbst — eine Ebene,
+// die dem Spieler folgt.
+//
+// EIN Unterschied ist wesentlich, und er ist der Grund, warum das bezahlbar ist: das Meeresgitter
+// rechnet JEDEN Frame alle 9.409 Punkte neu (die Wellen wandern ja). Der Boden bewegt sich nicht.
+// Er RASTET deshalb auf ein festes Weltgitter ein (SEABED_STEP) und wird nur neu berechnet, wenn
+// der Spieler eine Rasterzelle weiterfaehrt — also etwa alle 125 m statt 60-mal pro Sekunde.
+// Ohne das kostete seabedY (es sucht pro Punkt die naechste Insel) mehr als das ganze uebrige Bild.
+const SEA_DEPTH   = 200;    // Tiefe auf offener See (m). Gewuenscht: "Mittel, ~200 m".
+const SEABED_SIZE = 6000;   // wie das Meeresgitter (SEA_SIZE) — Boden und Wasser enden zusammen
+const SEABED_SEG  = 48;     // halb so fein wie das Meer: der Boden hat keine Wellen, nur Relief
+const SEABED_STEP = SEABED_SIZE / SEABED_SEG;   // 125 m Rasterschritt (siehe oben)
+// Wie weit vor der Insel der Schelf liegt: innerhalb dieser Strecke steigt der Boden vom Tiefenwert
+// bis unter den Strand. 400 m sind bei 170-330 m Inselradius ein breiter, flacher Saum — dort steht
+// die Vegetation, dort schwimmen die Fische, und dort sieht man beides zusammen mit der Oberflaeche.
+const SHELF_W     = 400;
+// Bodenhoehe direkt am Strand, knapp unter dem Sand. Als ZAHL und nicht als ISLAND_Y - 1.5:
+// dieser Block laeuft zur Ladezeit, und ISLAND_Y wird erst weiter unten deklariert (das
+// Insel-System steht nach dem Meer). const wird nicht gehoistet — die Rechnung waere ein
+// ReferenceError und das Spiel bliebe schwarz. Wer ISLAND_Y (0,30) aendert, muss hier mit.
+const SEABED_SHORE_Y = -1.2;
+// Bodenhoehe an einer WELTposition. Deterministisch, ohne Zufall pro Aufruf — dieselbe Stelle gibt
+// immer denselben Wert, sonst wuerde der Boden beim Neurastern zappeln.
+// islands ist die vorgesammelte Inselliste (siehe collectSeabedIslands); ohne sie fragt die
+// Funktion die Zellen selbst ab — bequem fuer Einzelabfragen, zu teuer fuer 2.401 Gitterpunkte.
+function seabedY(x, z, islands){
+  let rand = 1e9;                     // Abstand zur naechsten Strandkante
+  if(islands){
+    for(let k=0;k<islands.length;k+=3){
+      const d = Math.hypot(x-islands[k], z-islands[k+1]) - islands[k+2];
+      if(d < rand) rand = d;
+    }
+  } else {
+    const pcx = Math.round(x/CELL), pcz = Math.round(z/CELL);
+    const span = Math.ceil(SHELF_W/CELL) + 1;
+    for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
+      const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+      const d = Math.hypot(x-info.wx, z-info.wz) - info.radius*BEACH_FACTOR;
+      if(d < rand) rand = d;
+    }
+  }
+  if(rand <= 0) return SEABED_SHORE_Y;           // unter Insel und Strand: knapp darunter
+  // Vom Strand hinaus in die Tiefe. smoothstep und nicht linear: so entsteht ein flacher Schelf am
+  // Ufer und danach eine sichtbare Abbruchkante, statt einer gleichmaessigen Rampe.
+  const f = Math.min(1, rand / SHELF_W);
+  const sm = f*f*(3 - 2*f);
+  // Relief. Zwei ueberlagerte lange Wellen geben Sandbaenke und Huegel; sie greifen mit sm an,
+  // damit der Schelf am Strand glatt bleibt und das Relief erst draussen einsetzt.
+  const dune = Math.sin(x*0.0035)*Math.cos(z*0.0041)*15 + Math.sin((x+z)*0.0017)*24;
+  return SEABED_SHORE_Y + (-SEA_DEPTH - SEABED_SHORE_Y)*sm + dune*sm;
+}
+const seabedGeo = new THREE.PlaneGeometry(SEABED_SIZE, SEABED_SIZE, SEABED_SEG, SEABED_SEG);
+seabedGeo.rotateX(-Math.PI/2);
+const seabedMesh = new THREE.Mesh(seabedGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+seabedMesh.position.y = 0;
+scene.add(seabedMesh);
+const seabedPos = seabedGeo.attributes.position;
+const seabedBaseX = new Float32Array(seabedPos.count), seabedBaseZ = new Float32Array(seabedPos.count);
+for(let i=0;i<seabedPos.count;i++){ seabedBaseX[i]=seabedPos.getX(i); seabedBaseZ[i]=seabedPos.getZ(i); }
+seabedGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(seabedPos.count*3), 3));
+const seabedCol = seabedGeo.attributes.color;
+// Farben nach Tiefe: heller Sand am Ufer, Schlick in der Mitte, fast schwarz im Tiefen.
+const sbShallow = new THREE.Color(0xcdbe8a);
+const sbMid     = new THREE.Color(0x6d7a63);
+const sbDeep    = new THREE.Color(0x1d2a33);
+const _sbIslands = [];
+function collectSeabedIslands(ox, oz){
+  _sbIslands.length = 0;
+  const half = SEABED_SIZE/2 + SHELF_W;
+  const c0x = Math.round((ox-half)/CELL), c1x = Math.round((ox+half)/CELL);
+  const c0z = Math.round((oz-half)/CELL), c1z = Math.round((oz+half)/CELL);
+  for(let cz=c0z-1; cz<=c1z+1; cz++) for(let cx=c0x-1; cx<=c1x+1; cx++){
+    const info = islandInfo(cx, cz);
+    if(info) _sbIslands.push(info.wx, info.wz, info.radius*BEACH_FACTOR);
+  }
+}
+let seabedAtX = null, seabedAtZ = null;      // Rasterstelle, fuer die der Boden gerechnet ist
+// Fortschritt der HAEPPCHENWEISEN Neuberechnung (siehe updateSeabed). -1 heisst "fertig".
+let seabedRow = -1, seabedPendX = 0, seabedPendZ = 0;
+// Zeilen pro Frame. NACHGEMESSEN: die ganzen 49 Zeilen auf einmal kosten 9,3 ms, und das Meer
+// braucht davor schon 6,7 von 16,7 ms — zusammen waere das Bild ueber dem Budget. Mit 6 Zeilen
+// sind es rund 1,1 ms pro Frame, verteilt auf 9 Bilder (0,15 s). Dasselbe Verfahren, mit dem
+// stepGroundFields das Hoehenraster von Mond und Mars ausmisst (8 Zeilen pro Frame).
+const SEABED_ROWS_PER_FRAME = 6;
+const _sbC = new THREE.Color();
+function updateSeabed(){
+  const F = worldFocus();
+  // Auf das feste Weltraster einrasten (siehe oben). Damit sitzen die Gitterpunkte immer auf
+  // denselben Weltkoordinaten und die Hoehen bleiben zwischen zwei Rasterschritten unveraendert.
+  const sx = Math.round(F.x / SEABED_STEP) * SEABED_STEP;
+  const sz = Math.round(F.z / SEABED_STEP) * SEABED_STEP;
+  // Die Position wird SOFORT gesetzt, auch waehrend noch gerechnet wird: das Gitter soll dem
+  // Spieler folgen, nicht dem Rechenfortschritt hinterherhaengen. Ein halb neu gerechneter Boden
+  // sieht man nicht — die Hoehen aendern sich zwischen zwei Rasterschritten (125 m) nur wenig,
+  // und die Sichtweite unter Wasser ist 16 bis 42 m.
+  seabedMesh.position.x = sx;
+  seabedMesh.position.z = sz;
+  // Neuer Rasterplatz -> Neuberechnung anstossen (und eine laufende dabei verwerfen: der neue
+  // Platz gilt, nicht der alte).
+  if(sx !== seabedAtX || sz !== seabedAtZ){
+    seabedAtX = sx; seabedAtZ = sz;
+    seabedPendX = sx; seabedPendZ = sz;
+    seabedRow = 0;
+    collectSeabedIslands(sx, sz);
+  }
+  if(seabedRow < 0) return;                   // fertig, nichts zu tun
+  const N = SEABED_SEG + 1;                   // Punkte je Zeile
+  for(let n = 0; n < SEABED_ROWS_PER_FRAME && seabedRow < N; n++, seabedRow++){
+    const base = seabedRow * N;
+    for(let ix = 0; ix < N; ix++){
+      const i = base + ix;
+      const wx = seabedBaseX[i] + seabedPendX, wz = seabedBaseZ[i] + seabedPendZ;
+      const y = seabedY(wx, wz, _sbIslands);
+      seabedPos.setY(i, y);
+      const t = Math.min(1, Math.max(0, (SEABED_SHORE_Y - y) / SEA_DEPTH));
+      if(t < 0.35) _sbC.copy(sbShallow).lerp(sbMid, t/0.35);
+      else         _sbC.copy(sbMid).lerp(sbDeep, (t-0.35)/0.65);
+      seabedCol.setXYZ(i, _sbC.r, _sbC.g, _sbC.b);
+    }
+  }
+  seabedPos.needsUpdate = true;
+  seabedCol.needsUpdate = true;
+  if(seabedRow >= N){
+    seabedRow = -1;
+    // Normalen erst am Ende: computeVertexNormals laeuft ueber das ganze Gitter und waere pro
+    // Haeppchen neunmal umsonst gerechnet.
+    seabedGeo.computeVertexNormals();
+  }
+}
+// Beim ersten Bild soll der Boden schon KOMPLETT da sein — sonst sieht man beim Start einen halb
+// gebauten Grund. Einmal alles auf einen Schlag, das kostet die gemessenen 9,3 ms genau einmal.
+function seabedInit(){
+  const sx = 0, sz = 0;
+  seabedAtX = sx; seabedAtZ = sz; seabedPendX = sx; seabedPendZ = sz;
+  collectSeabedIslands(sx, sz);
+  seabedRow = 0;
+  const N = SEABED_SEG + 1;
+  while(seabedRow >= 0){
+    const vorher = SEABED_ROWS_PER_FRAME;
+    for(let n = 0; n < vorher && seabedRow < N; n++, seabedRow++){
+      const base = seabedRow * N;
+      for(let ix = 0; ix < N; ix++){
+        const i = base + ix;
+        const y = seabedY(seabedBaseX[i] + sx, seabedBaseZ[i] + sz, _sbIslands);
+        seabedPos.setY(i, y);
+        const t = Math.min(1, Math.max(0, (SEABED_SHORE_Y - y) / SEA_DEPTH));
+        if(t < 0.35) _sbC.copy(sbShallow).lerp(sbMid, t/0.35);
+        else         _sbC.copy(sbMid).lerp(sbDeep, (t-0.35)/0.65);
+        seabedCol.setXYZ(i, _sbC.r, _sbC.g, _sbC.b);
+      }
+    }
+    if(seabedRow >= N) seabedRow = -1;
+  }
+  seabedPos.needsUpdate = true;
+  seabedCol.needsUpdate = true;
+  seabedGeo.computeVertexNormals();
+}
+// seabedInit() wird NICHT hier gerufen: dieser Block laeuft vor dem Insel-System, und der Boden
+// braucht CELL und islandInfo (siehe seabedY). Der Aufruf steht beim Spielstart, unten neben
+// updateIslands() — dort ist alles deklariert.
 
 // ---------- Insel-System (endloses, ortsfestes Zellen-Raster) ----------
 // Jede Rasterzelle CELL×CELL enthält deterministisch (per Hash) evtl. eine Insel.
@@ -544,6 +711,7 @@ function canLandHere(x, z) {
   // die pruefen hitsBuilding, nicht canLandHere, und dort kracht man schon im Anflug hinein.
   if (model === 'Canadair') return true;
   if (model === 'Boat')     return !onLand && !onCarrier;                // Boot: nur offenes Wasser
+  if (model === 'Sub')      return !onLand && !onCarrier;                // U-Boot: wie das Boot
   // Die Transall darf ebenfalls aufs Deck (gewuenscht) — sie ist der Transporter, und Fracht auf
   // einen Traeger zu bringen ist genau ihre Aufgabe. Mit 20 m Spannweite passt sie aufs 38 m breite
   // Deck, und traege ist sie nur in der Luft, nicht beim Aufsetzen.
@@ -884,6 +1052,21 @@ function buildIsland(cx, cz) {
   // Nicht, waehrend man SELBST das Boot faehrt: dann sitzt man ja darin, und ein zweites am Kai
   // waere dasselbe Boot doppelt. refreshIslands baut die Zellen bei jedem Ein- und Aussteigen neu
   // (siehe evaBoardHarborBoat), der Wechsel ist also sofort sichtbar.
+  // ---- U-Boot am Strand: an JEDEM Hafen liegt eines, zum Hinlaufen und Einsteigen mit Y.
+  // Genau wie beim Feuerwehrboot NICHT, waehrend man es selbst faehrt (isSub()) — sonst stuende
+  // dasselbe Boot doppelt da, einmal unter dem Spieler und einmal als Kulisse. Gemeldet war das
+  // damals als "jetzt sind wenn man das boot nimmt 2 boote uebereinander"; refreshIslands baut die
+  // Zellen bei jedem Ein- und Aussteigen neu, der Wechsel ist also sofort sichtbar.
+  const sbl = isSub() ? null : harborSubLocal(cx, cz);
+  if(sbl && shipTemplates['sub']){
+    const su = shipTemplates['sub'].clone(true);
+    // Starthoehe wie beim Kai-Boot (updateHarborSubs zieht sie jeden Frame nach) — so sitzt es
+    // schon im ersten Bild richtig und rutscht nicht sichtbar an seinen Platz.
+    su.position.set(sbl.x, 0, sbl.z);
+    su.rotation.y = sbl.rot;
+    g.add(su);
+    g.userData.harborSub = su;   // fuers Nachfuehren der Wellenhoehe
+  }
   const hbl = isBoat() ? null : harborBoatLocal(cx, cz);
   if(hbl){
     const fb = makeFireBoat();
@@ -980,6 +1163,45 @@ const HARBOR_BOAT_SIDE = 55;    // m seitlich neben dem Hafen (tangential)
 // Grund, aber der Bug ragt ins Wasser: wer vorne herumlaeuft, traete hinein, und dann setzt
 // evaEnterDinghy ein — man saesse im Schlauchboot, statt einzusteigen. 26 m deckt das Boot (16 m
 // lang) samt Einstiegsreichweite ab.
+// ---- U-BOOT am Strand: hinlaufen und einsteigen ------------------------------------------------
+// Eine KOPIE der Feuerwehrboot-Mechanik, Stueck fuer Stueck: derselbe Strandplatz-Aufbau
+// (harborBoatLocal), dasselbe Einsteigen per Modellwechsel mit gemerktem Flieger-Platz
+// (evaBoardHarborBoat / harborBoatFrom), dieselbe Sperre gegen das Schlauchboot und dieselbe
+// Regel "nicht doppelt dastehen" (buildIsland fragt isSub()).
+//
+// Es liegt auf der DRITTEN Seite des Hafens. Zwei waren schon belegt: das Feuerwehrboot
+// +HARBOR_BOAT_SIDE tangential, die Canadair -HARBOR_BOAT_SIDE (siehe findStart). Das U-Boot ist
+// mit 95 m aber sechsmal so lang wie das Boot — mit 55 m Versatz laege es quer ueber beiden.
+// Deshalb der doppelte Abstand auf der Bootsseite: 55 + 110 = 165 m von der Hafenmitte, und das
+// Feuerwehrboot liegt bei 55. Zwischen den beiden Ruempfen bleiben damit 110 - 8 - 47 = 55 m Luft.
+const HARBOR_SUB_SIDE = HARBOR_BOAT_SIDE + 110;
+// Radial etwas WEITER draussen als das Feuerwehrboot (1,12 = Sandkante). Das U-Boot hat 13 m
+// Rumpfdurchmesser und liegt tief: auf der Sandkante staeke sein halber Rumpf im Strand. 1,30
+// setzt die Mitte ins Wasser, und weil der Wert relativ ist, gilt das auf jeder Inselgroesse.
+// Erreichbar ist es auf zwei Wegen: zu Fuss von hinten heran (das Heck liegt in Strandnaehe, Y steigt
+// ein), oder mit dem SCHLAUCHBOOT laengsseits — wer es damit beruehrt, steigt um. Der zweite Weg ist
+// der Grund, warum hier KEINE Sperrzone gegen das Schlauchboot steht: am Kai-Feuerwehrboot gibt es
+// eine, hier waere sie das Gegenteil von dem, was man will.
+const HARBOR_SUB_FAC = 1.30;
+function harborSubLocal(cx, cz){
+  const info = islandInfo(cx, cz);
+  if(!info) return null;
+  const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // GLEICHER Winkel wie der Hafen
+  const rr = info.radius * HARBOR_SUB_FAC;
+  const rx = Math.cos(ang), rz = Math.sin(ang);            // radial nach aussen
+  const tx = -rz,           tz = rx;                       // tangential (90 Grad dazu)
+  return { x: rx*rr + tx*HARBOR_SUB_SIDE,
+           z: rz*rr + tz*HARBOR_SUB_SIDE,
+           // RUECKWAERTS am Strand, wie das Feuerwehrboot (so gewuenscht): der Bug zeigt radial
+           // nach AUSSEN aufs Wasser, das Heck zur Insel. Man laeuft also von hinten heran und
+           // faehrt vorwaerts los. Dieselbe Rechnung wie in harborBoatLocal.
+           rot: Math.atan2(-rx, -rz) };
+}
+// Die frueher hier stehende Sperrzone (nearHarborSub / HARBOR_SUB_NODINGHY) ist ENTFALLEN. Sie hielt
+// das Schlauchboot vom U-Boot fern, damit man einsteigt statt hineinzufallen — wie am Kai-Feuerwehr-
+// boot. Am U-Boot ist das Schlauchboot inzwischen aber der VORGESEHENE Weg: man faehrt heran und
+// steigt bei Beruehrung um (dinghyTouchesHarborSub). Eine Sperre waere jetzt genau das Gegenteil.
+
 const HARBOR_BOAT_NODINGHY = 26;
 function harborBoatLocal(cx, cz){
   const info = islandInfo(cx, cz);
@@ -1570,6 +1792,15 @@ function preloadSeaShips(){
         top: box4.max.y };
       // Schon fahrende Platzhalter dieses Typs gegen das echte Modell tauschen.
       for(const sh of seaShips) if(sh.key === def.key) refreshSeaShip(sh);
+      // Und die Inseln neu bauen, sobald das U-BOOT-Modell da ist: an jedem Strand liegt eines als
+      // Kulisse (siehe buildIsland), und die Inselzellen der ersten Sekunden wurden ohne es gebaut.
+      // Ohne diesen Aufruf blieb der Platz dauerhaft leer — im laufenden Spiel nachgemessen, genau
+      // wie es preloadBoat fuer das Kai-Feuerwehrboot loest.
+      // Auch 'liberty' und 'sail' zaehlen: aus ihnen entstehen die WRACKS am Meeresboden, und
+      // updateUwCells merkt eine Zelle absichtlich nicht als leer, solange die Vorlagen fehlen —
+      // die Zellen sind dann aber schon gebaut und muessen einmal fallen.
+      if(def.key === 'sub') refreshIslands();
+      if(def.key === 'liberty' || def.key === 'sail') clearUwCells();
     }, (err)=>{ console.warn('Schiff-GLB Ladefehler ('+def.key+'):', err); });
   }
 }
@@ -1821,6 +2052,300 @@ function updateHarborBoats(dt){
     const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
     const bow = seaYAt(wx + fbx*7, wz + fbz*7, dt);
     fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 0.35;
+  }
+}
+// ---------- Unterwasser-Welt: Wracks, Vegetation, Fische ----------------------------------------
+// Alles hier haengt am DETERMINISTISCHEN Zellenraster, genau wie die Inseln (islandInfo) und die
+// Traeger (carrierInfo): dieselbe Zelle enthaelt immer dasselbe. Das ist wichtiger, als es klingt —
+// wer ein Wrack gefunden hat, findet es wieder, und ohne diese Eigenschaft waere eine
+// Unterwasserwelt beim Wegfahren einfach vergessen.
+//
+// WRACKS: die Modelle sind schon da. shipTemplates['liberty'] (135 m Frachter) und ['sail']
+// (90 m Grosssegler) werden fuer die Handelsschiffe geladen — als Wrack werden sie nur gekippt und
+// auf den Grund gesetzt. Kein neues GLB, kein Megabyte mehr, und weil beide auf ihre Wasserlinie
+// normiert sind, kennt man ihre Lage genau.
+const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln korrelieren
+// Anteil der WASSERzellen mit einem Wrack. NACHGEMESSEN und deshalb so niedrig: mit 0,22 lag in
+// 43x43 km alle 2,5 km eines, also dichter als die Flugzeugtraeger auf dem Meer — ein Wrack soll
+// ein Fund sein, kein Schrottplatz. Und jede Kopie ist ein volles Schiffsmodell (die Liberty hat
+// zehn UV-Saetze, siehe die Notizen zur GLB-Verkleinerung): drei gleichzeitig geladen kosten
+// sichtbar Bildrate. Mit 0,07 findet man rund alle 4,5 km eines und selten mehr als eines zugleich.
+const WRECK_CHANCE = 0.07;
+// Nur wo es tief genug ist: ein Wrack im 8-m-Flachwasser ragte aus dem Meer heraus. Der Frachter
+// ist 135 m lang und liegt auf der Seite, das sind gut 20 m Aufbauhoehe.
+const WRECK_MIN_DEPTH = 45;
+function wreckInfo(cx, cz){
+  if(cx===0 && cz===0) return null;             // Startzelle frei halten
+  if(islandInfo(cx, cz)) return null;           // die Zelle selbst muss Wasser sein
+  if(cellRnd(cx, cz, WRECK_SALT) >= WRECK_CHANCE) return null;
+  const wx = cx*CELL + (cellRnd(cx,cz,WRECK_SALT+1)-0.5)*CELL*0.6;
+  const wz = cz*CELL + (cellRnd(cx,cz,WRECK_SALT+2)-0.5)*CELL*0.6;
+  const y = seabedY(wx, wz);
+  if(y > -WRECK_MIN_DEPTH) return null;          // zu flach (siehe oben)
+  // Welches der beiden: der Frachter haeufiger, weil er der eindrucksvollere Fund ist.
+  const key = cellRnd(cx,cz,WRECK_SALT+3) < 0.6 ? 'liberty' : 'sail';
+  return { wx, wz, y, key,
+           rot:  cellRnd(cx,cz,WRECK_SALT+4)*Math.PI*2,      // Kurs, in dem es gesunken ist
+           // Krängung: auf welche Seite es gekippt liegt. Zwischen 35 und 80 Grad — aufrecht sähe
+           // aus wie ein fahrendes Schiff, ganz auf dem Kopf wie ein Fehler.
+           roll: (0.6 + cellRnd(cx,cz,WRECK_SALT+5)*0.8) * (cellRnd(cx,cz,WRECK_SALT+6)<0.5?-1:1),
+           // Und ein wenig ueber Bug oder Heck geneigt, weil der Grund nicht eben ist.
+           pitch:(cellRnd(cx,cz,WRECK_SALT+7)-0.5)*0.35 };
+}
+// Ein Wrack bauen. Es liegt auf dem Grund, also muss der Ursprung so tief, dass der gekippte Rumpf
+// aufliegt statt zu schweben: bei Krängung sinkt die Bordwand um sin(roll) mal halbe Rumpfbreite.
+// Ausgemessen wird das nicht — shipHalf kennt hw schon aus dem Wasserlinienband (preloadSeaShips).
+function makeWreck(info){
+  const tpl = shipTemplates[info.key];
+  if(!tpl) return null;
+  const g = new THREE.Group();
+  const m = tpl.clone(true);
+  // Farbe: ein Wrack ist nicht mehr weiss und rot. Alle Materialien nach Braungruen ziehen —
+  // Rost und Algen. Eigene Materialinstanz je Mesh, sonst faerbt man die fahrenden Schiffe mit.
+  m.traverse(o=>{
+    if(!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    o.material = mats.map(src=>{
+      const mat = src.clone();
+      if(mat.color) mat.color.lerp(new THREE.Color(0x4a4a38), 0.72);
+      if(mat.map) mat.map = null;      // Textur weg: sonst leuchtet die Lackierung durch
+      return mat;
+    });
+    if(!Array.isArray(o.material)) o.material = o.material[0];
+  });
+  g.add(m);
+  const h = shipHalf[info.key];
+  const hw = h ? h.hw : 12;
+  g.position.set(info.wx, info.y + Math.abs(Math.sin(info.roll))*hw, info.wz);
+  g.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
+  return g;
+}
+// ---- VEGETATION: Seegras und Korallen auf dem Schelf -------------------------------------------
+// Nur im flachen Wasser am Inselsaum, wo Licht hinkommt — dort, wo auch echte Pflanzen wachsen.
+// Gebaut wie die Palmen und Häuser: einfache Geometrie, deterministisch platziert.
+const weedMat  = new THREE.MeshLambertMaterial({ color:0x2f6b3a, side:THREE.DoubleSide });
+const coralMat = new THREE.MeshLambertMaterial({ color:0xc4665c });
+const coral2Mat= new THREE.MeshLambertMaterial({ color:0xcf9a3d });
+// Ein Büschel Seegras: drei bis fünf schmale, hohe Fächer in leicht verschiedenen Winkeln.
+function makeWeed(rnd, rnd2){
+  const g = new THREE.Group();
+  const n = 3 + Math.floor(rnd*3);
+  for(let i=0;i<n;i++){
+    const h = 2.2 + rnd2*3.4;
+    const bl = new THREE.Mesh(new THREE.PlaneGeometry(0.5 + rnd*0.5, h), weedMat);
+    bl.position.y = h/2;
+    bl.rotation.y = (i/n)*Math.PI*2 + rnd*2;
+    bl.rotation.z = (rnd2-0.5)*0.5;
+    g.add(bl);
+  }
+  return g;
+}
+// Eine Koralle: ein gedrungener Stock mit zwei Auswuechsen. Zwei Farben im Wechsel, damit ein
+// Korallenfeld nicht einfarbig wirkt.
+function makeCoral(rnd, rnd2){
+  const g = new THREE.Group();
+  const mat = rnd < 0.5 ? coralMat : coral2Mat;
+  const r = 1.2 + rnd2*1.6, h = 1.6 + rnd*2.2;
+  const st = new THREE.Mesh(new THREE.CylinderGeometry(r*0.5, r, h, 7), mat);
+  st.position.y = h/2; g.add(st);
+  for(let i=0;i<2;i++){
+    const a = new THREE.Mesh(new THREE.SphereGeometry(r*0.7, 7, 5), mat);
+    a.position.set((i?1:-1)*r*0.8, h*0.8, (rnd2-0.5)*r);
+    a.scale.y = 0.6; g.add(a);
+  }
+  return g;
+}
+// ---- Zellenverwaltung fuer alles unter Wasser ---------------------------------------------------
+// Ein Pool wie islandCells: pro Zelle EINE Group mit Wrack, Seegras und Korallen. Sie entsteht,
+// wenn die Zelle in Sichtweite kommt, und verschwindet, wenn sie hinausfaellt.
+//
+// Warum ein eigener Pool und nicht Teil von buildIsland: die Sachen unter Wasser liegen NICHT auf
+// Inseln, sondern zwischen ihnen (Wracks brauchen Tiefe, Seegras den Saum). Sie folgen also einem
+// anderen Raster als die Inselgruppen, und mit hineingebaut waeren sie beim refreshIslands jedes
+// Ein- und Aussteigens neu gebaut worden — 40 Objekte pro Zelle, ohne Grund.
+const uwCells = new Map();      // "cx,cz" -> Group (oder null: hier ist nichts)
+const UW_VIEW_CELLS = 2;        // Radius in Zellen. Kleiner als VIEW_CELLS (3): unter Wasser sieht
+                                // man 16-42 m weit, alles Weitere waere Rechnerei fuer den Nebel.
+const WEED_PER_CELL  = 26;      // Bueschel pro Zelle
+const CORAL_PER_CELL = 14;
+// Bis zu welcher Tiefe Pflanzen wachsen. Tiefer wird es dunkel, dort steht nichts mehr — das ist
+// auch der Grund, warum die Tiefsee leer aussehen DARF: sie ist es wirklich.
+const WEED_MAX_DEPTH = 40;
+function buildUwCell(cx, cz){
+  const g = new THREE.Group();
+  let leer = true;
+  const wi = wreckInfo(cx, cz);
+  if(wi){
+    const w = makeWreck(wi);
+    if(w){ g.add(w); leer = false; g.userData.wreck = wi; }
+  }
+  // Vegetation GEZIELT auf dem Schelf, nicht ueber die Zelle gestreut. Der erste Versuch verwarf
+  // 34 von 40 Objekten (nachgemessen), weil eine 850-m-Zelle fast nur Tiefwasser ist und nur der
+  // 400-m-Saum um eine Insel in Frage kommt. Jetzt wird die Insel der Zelle gesucht und ringsum
+  // im Schelfband gesetzt: praktisch jedes Objekt bleibt stehen, und sie liegen dort, wo sie
+  // hingehoeren — als Riff um die Insel, im Licht.
+  // Traegt die Zelle keine Insel, waechst hier auch nichts (Tiefsee ist leer, und das ist richtig).
+  const isl = islandInfo(cx, cz);
+  if(isl){
+    for(let i=0;i<WEED_PER_CELL+CORAL_PER_CELL;i++){
+      const coral = i >= WEED_PER_CELL;
+      const r1 = cellRnd(cx, cz, 780+i*3), r2 = cellRnd(cx, cz, 781+i*3), r3 = cellRnd(cx, cz, 782+i*3);
+      // Rings um die Insel, im Band zwischen Sandkante und WEED_MAX_DEPTH. Die Kante selbst wird
+      // ausgelassen (Faktor ab 1,04), sonst stehen Bueschel im Strand.
+      const ang = r1*Math.PI*2;
+      // Bandbreite 0,30 und nicht 0,55 mal SHELF_W — NACHGERECHNET, nicht geschaetzt: bei 0,55
+      // reichte das Band 220 m hinaus, die 40-m-Tiefengrenze liegt aber schon bei rund 107 m
+      // (aus dem smoothstep: 40 m Tiefe entsprechen sm = 0,195, also f = 0,27 von SHELF_W). Die
+      // Haelfte aller Objekte fiel damit hinter der Grenze weg — gemessen 20,1 von 40.
+      const rr = isl.radius*BEACH_FACTOR*1.04 + r2*SHELF_W*0.30;
+      const x = isl.wx + Math.cos(ang)*rr, z = isl.wz + Math.sin(ang)*rr;
+      if(isOnLand(x, z) || isOnBeach(x, z)) continue;       // andere Insel dazwischen
+      const y = seabedY(x, z);
+      if(y < -WEED_MAX_DEPTH || y > SEABED_SHORE_Y - 0.2) continue;
+      const o = coral ? makeCoral(r3, r1) : makeWeed(r3, r2);
+      o.position.set(x, y, z);
+      o.rotation.y = r3*Math.PI*2;
+      g.add(o);
+      leer = false;
+    }
+  }
+  return leer ? null : g;
+}
+function updateUwCells(){
+  const F = worldFocus();
+  const pcx = Math.round(F.x / CELL), pcz = Math.round(F.z / CELL);
+  const needed = new Set();
+  for(let dz=-UW_VIEW_CELLS; dz<=UW_VIEW_CELLS; dz++) for(let dx=-UW_VIEW_CELLS; dx<=UW_VIEW_CELLS; dx++){
+    const key = (pcx+dx) + ',' + (pcz+dz);
+    needed.add(key);
+    if(uwCells.has(key)) continue;
+    // Die Vorlagen kommen asynchron (preloadSeaShips). Ist 'liberty' noch nicht da, wird die Zelle
+    // NICHT als leer gemerkt — sonst blieben die Wracks fuer immer weg, wenn man schneller in der
+    // Naehe ist als das GLB geladen war. Genau die Falle, die beim Kai-Feuerwehrboot schon einmal
+    // aufgetreten ist (dort loest refreshIslands es).
+    if(!shipTemplates['liberty'] || !shipTemplates['sail']) continue;
+    const grp = buildUwCell(pcx+dx, pcz+dz);
+    if(grp) scene.add(grp);
+    uwCells.set(key, grp);
+  }
+  for(const [key, grp] of uwCells){
+    if(!needed.has(key)){ if(grp) scene.remove(grp); uwCells.delete(key); }
+  }
+}
+function clearUwCells(){
+  for(const [, grp] of uwCells) if(grp) scene.remove(grp);
+  uwCells.clear();
+}
+// ---- FISCHSCHWAERME ----------------------------------------------------------------------------
+// Bewusst KEIN Modell: ein Schwarm sind viele kleine Koerper, und dafuer waere jedes GLB zu teuer
+// (die Orcas sind Einzeltiere, deshalb dort ein Modell). Hier sind es abgeflachte Kugeln in einer
+// InstancedMesh — 34 Fische kosten damit einen einzigen Draw-Call.
+//
+// Sie schwimmen als Wolke um einen Mittelpunkt, der selbst langsam wandert, jeder Fisch mit eigener
+// Phase. Das reicht: aus 10 m sieht man Silhouetten, die sich bewegen, und mehr ist im Nebel gar
+// nicht zu erkennen.
+const FISH_SCHOOLS = 5;         // Schwaerme gleichzeitig um den Spieler
+const FISH_PER     = 34;        // Fische pro Schwarm
+const FISH_R       = 9;         // Radius der Wolke (m)
+const FISH_SPD     = 1.8;       // m/s Wanderung des Schwarms
+const FISH_SPAWN_MIN = 40, FISH_SPAWN_MAX = 260, FISH_DESPAWN = 420;
+const fishMat = new THREE.MeshLambertMaterial({ color:0xb9c46a });
+let fishGeo = null;
+const fishSchools = [];
+const _fishM = new THREE.Matrix4(), _fishQ = new THREE.Quaternion();
+const _fishP = new THREE.Vector3(), _fishS = new THREE.Vector3(1,1,1);
+function makeFishSchool(){
+  if(!fishGeo){
+    fishGeo = new THREE.SphereGeometry(0.32, 6, 4);
+    fishGeo.scale(1, 0.55, 2.4);        // flach und lang: ein Fischkoerper
+  }
+  const im = new THREE.InstancedMesh(fishGeo, fishMat, FISH_PER);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  return im;
+}
+function placeFishSchool(f, fx, fz){
+  for(let t=0;t<16;t++){
+    const a = Math.random()*Math.PI*2;
+    const d = FISH_SPAWN_MIN + Math.random()*(FISH_SPAWN_MAX-FISH_SPAWN_MIN);
+    const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
+    if(isOnLand(x, z) || isOnBeach(x, z)) continue;
+    const grund = seabedY(x, z);
+    if(grund > SEABED_SHORE_Y - 3) continue;         // zu flach
+    f.x = x; f.z = z;
+    // Sie stehen ueber dem Grund, nicht an der Oberflaeche: 4 bis 14 m darueber.
+    f.y = Math.min(-3, grund + 4 + Math.random()*10);
+    f.heading = Math.random()*Math.PI*2;
+    f.t = Math.random()*100;
+    return true;
+  }
+  return false;
+}
+function updateFish(dt){
+  if(locale !== 'earth'){
+    if(fishSchools.length){
+      for(const f of fishSchools) if(f.mesh) scene.remove(f.mesh);
+      fishSchools.length = 0;
+    }
+    return;
+  }
+  const F = worldFocus();
+  while(fishSchools.length < FISH_SCHOOLS){
+    const f = { mesh:null, x:0, y:0, z:0, heading:0, t:0, placed:false };
+    f.placed = placeFishSchool(f, F.x, F.z);
+    fishSchools.push(f);
+  }
+  for(const f of fishSchools){
+    if(!f.placed){ f.placed = placeFishSchool(f, F.x, F.z); continue; }
+    if(!f.mesh){ f.mesh = makeFishSchool(); scene.add(f.mesh); }
+    f.t += dt;
+    f.heading += Math.sin(f.t*0.23 + f.x*0.01) * 0.4 * dt;
+    const hx = -Math.sin(f.heading), hz = -Math.cos(f.heading);
+    f.x += hx*FISH_SPD*dt; f.z += hz*FISH_SPD*dt;
+    // Vor Land abdrehen und ueber dem Grund bleiben (er steigt zum Ufer hin an).
+    if(isOnLand(f.x + hx*20, f.z + hz*20) || isOnBeach(f.x + hx*20, f.z + hz*20))
+      f.heading += 1.5*dt*(1+Math.random());
+    const grund = seabedY(f.x, f.z);
+    if(f.y < grund + 3) f.y = grund + 3;
+    if(f.y > -2.5) f.y = -2.5;                      // nicht aus dem Wasser springen
+    if(Math.hypot(f.x-F.x, f.z-F.z) > FISH_DESPAWN){ placeFishSchool(f, F.x, F.z); continue; }
+    // Nur rechnen, was man sehen kann: bei 16-42 m Sichtweite ist alles Weitere im Nebel.
+    const nah = Math.hypot(f.x-camera.position.x, f.z-camera.position.z) < 200;
+    f.mesh.visible = nah;
+    if(!nah) continue;
+    for(let i=0;i<FISH_PER;i++){
+      const ph = f.t*0.9 + i*2.399;                 // 2,399 rad = goldener Winkel, streut gleichmaessig
+      const rr = FISH_R * (0.35 + 0.65*((i*37)%100)/100);
+      const px = f.x + Math.cos(ph)*rr;
+      const pz = f.z + Math.sin(ph)*rr*0.7;
+      const py = f.y + Math.sin(ph*1.7 + i)*1.6;
+      _fishP.set(px, py, pz);
+      // Nase in Schwimmrichtung: die Tangente der Kreisbahn.
+      _fishQ.setFromEuler(new THREE.Euler(0, Math.atan2(-Math.sin(ph), -Math.cos(ph)*0.7) + Math.PI/2, 0, 'YXZ'));
+      _fishM.compose(_fishP, _fishQ, _fishS);
+      f.mesh.setMatrixAt(i, _fishM);
+    }
+    f.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+// Die Strand-U-Boote schwimmen mit der Duenung, wie die Kai-Feuerwehrboote (updateHarborBoats).
+// Ohne das lagen sie fest auf y = 0, waehrend das Wasser um bis zu 1,6 m schwankt — bei einem
+// Wellenberg waere der halbe Rumpf verschwunden.
+// KEINE Untergrenze auf Inselhoehe wie beim Feuerwehrboot: dieses Boot liegt nicht mit dem Heck im
+// Sand, sondern ganz im Wasser (HARBOR_SUB_FAC 1,30 setzt es hinter die Sandkante).
+function updateHarborSubs(dt){
+  if(locale !== 'earth') return;
+  for(const [, isl] of islandCells){
+    if(!isl) continue;
+    const su = isl.userData.harborSub;
+    if(!su) continue;
+    const wx = isl.position.x + su.position.x, wz = isl.position.z + su.position.z;
+    su.position.y = seaYAt(wx, wz, dt);
+    // Leichtes Nicken mit der Welle ueber die halbe Rumpflaenge, damit es lebt. Ein 95-m-Boot
+    // folgt der Duenung kaum (shipWaveFactor waere 120/95) — deshalb nur ein gedaempfter Anteil.
+    const sfx = -Math.sin(su.rotation.y), sfz = -Math.cos(su.rotation.y);
+    const bow = seaYAt(wx + sfx*40, wz + sfz*40, dt);
+    const stn = seaYAt(wx - sfx*40, wz - sfz*40, dt);
+    su.rotation.x = Math.atan2(bow - stn, 80) * 0.6;
   }
 }
 // ---- ORCAS ------------------------------------------------------------------------------------
@@ -2503,6 +3028,17 @@ function isAirbus(){ return MODEL_NAMES[currentModel] === 'Airbus'; }
 function isMustang(){ return MODEL_NAMES[currentModel] === 'Mustang'; }
 function isXWing(){ return MODEL_NAMES[currentModel] === 'XWing'; }
 function isBoat(){ return MODEL_NAMES[currentModel] === 'Boat'; }
+// Steuert man das U-Boot?
+function isSub(){ return MODEL_NAMES[currentModel] === 'Sub'; }
+// Boot ODER U-Boot: alles, was auf dem Wasser statt in der Luft unterwegs ist. Es gibt eine Reihe
+// Stellen, die genau das meinen (kein Gyro, keine Höhenzeile, ovaler Schatten, Bootsmotor) — die
+// fragen diese Funktion, damit nicht jede von ihnen einzeln um das U-Boot erweitert werden muss.
+function isWaterCraft(){ return isBoat() || isSub(); }
+// TAUCHT das U-Boot gerade? Nur dann darf die Kamera unter die Wasserlinie (siehe updateCamera:
+// drei Klemmen auf y = 2 hingen dort ohne Ausnahme). Die Abfrage ist absichtlich weit gefasst —
+// sie gilt, sobald man im U-Boot sitzt, nicht erst ab einer Tiefe: schon beim Aufsetzen der Nase
+// muss die Kamera mitkommen, sonst schneidet sie beim Abtauchen die erste Sekunde ab.
+function subTaucht(){ return isSub() && locale === 'earth'; }
 // Löschfahrzeuge: die Canadair aus der Luft, das Feuerwehrboot vom Wasser aus. Nur mit ihnen
 // brechen Brände aus (updateFire) und nur sie können löschen.
 function isFireFighter(){ return isCanadair() || isBoat(); }
@@ -2548,6 +3084,49 @@ function buttonY(){
     else { showBig('\u{1F3D6}\u{FE0F}'); bigTimer = 1.2; }   // Hinweis: erst an den Strand fahren
     return;
   }
+  // Im U-BOOT laeuft der Ausstieg ANDERS als im Feuerwehrboot, und das ist die Loesung eines echten
+  // Problems: das U-Boot haelt 85 m vor der Sandkante (95 m Rumpf, Liegeplatz weiter draussen), ein
+  // dort an Land abgesetzter Astronaut stand IM WASSER — im laufenden Spiel gemessen (evaSolid false,
+  // Fusshoehe 0,00 statt 0,30).
+  //
+  // Deshalb: Y setzt ihn ins SCHLAUCHBOOT, ueberall auf dem Wasser. Das ist dasselbe Muster, mit dem
+  // das Spiel jede andere Wasserkante behandelt (Traegerdeck, Kaikante): das Boot faengt den Schritt
+  // auf, statt ihn zu verbieten. Zurueck geht es ohne Strand — heranfahren, den Rumpf antippen
+  // (dinghyTouchesHarborSub). Wer an den Strand faehrt und ueber ihn eingestiegen ist, kommt wie
+  // gehabt zum gemerkten Flieger.
+  //
+  // Muss VOR evaAllowed stehen (das sperrt Wasserfahrzeuge grundsaetzlich). Getaucht wird gar nicht
+  // ausgestiegen: wer 80 m unter Wasser von Bord geht, waere sofort ertrunken — erst auftauchen.
+  if(isSub()){
+    // Getaucht wird nicht ausgestiegen. Gefragt wird state.onGround und NICHT die Hoehe gegen
+    // seaSurfaceY: aufgetaucht liegt das Boot auf der WELLE, und die steht bis 2,1 m hoch — ein
+    // Hoehenvergleich hielt es im Wellenberg fuer getaucht und verweigerte den Ausstieg (im
+    // laufenden Spiel nachgemessen). stepSub setzt onGround genau auf "liegt auf der Wasserlinie",
+    // also gibt es so nur eine Wahrheit statt zweier, die auseinanderlaufen.
+    if(!state.onGround){
+      showBig('\u{2B06}\u{FE0F}'); bigTimer = 1.2;    // Hinweis: erst auftauchen
+      return;
+    }
+    // AUSSTEIGEN GEHT UEBERALL auf dem Wasser — man landet im SCHLAUCHBOOT. Das ist der Kern der
+    // Loesung: vorher musste ein Platz an Land gefunden werden, und weil das U-Boot 85 m vor der
+    // Sandkante haelt, stand der Astronaut dabei IM WASSER (gemessen: evaSolid false, Fusshoehe
+    // 0,00 statt 0,30). Jetzt gilt dasselbe Muster wie ueberall sonst am Wasser: das Schlauchboot
+    // faengt den Schritt auf, statt ihn zu verbieten — so wie es den Schritt vom Traegerdeck und
+    // ueber die Kaikante auffaengt. Zurueck ins U-Boot kommt man ohne Strand: heranfahren, antippen
+    // (siehe dinghyTouchesHarborSub).
+    //
+    // Steht LAND voraus, geht es weiter wie beim Feuerwehrboot: wer ueber den Strand eingestiegen
+    // ist, kommt mit Y zum gemerkten Flieger zurueck. Der alte Weg bleibt also erhalten.
+    const sf = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    let ufer = false;
+    for(let s = SUB_LOOK*0.6; s <= SUB_UFER_R && !ufer; s += 6){
+      const px = state.pos.x + sf.x*s, pz = state.pos.z + sf.z*s;
+      if(isOnLand(px, pz) || isOnBeach(px, pz)) ufer = true;
+    }
+    if(ufer && harborBoatFrom){ leaveHarborBoat(); return; }
+    evaExitToDinghy();
+    return;
+  }
   // Im Flieger: aussteigen, wo es erlaubt ist (am Boden, auf festem Grund - siehe evaAllowed).
   if(evaAllowed()){ evaExit(); return; }
 }
@@ -2570,6 +3149,8 @@ function evaBoardY(){
   if(evaCanBoard()){ evaBoard(); return; }                // am eigenen Flieger -> einsteigen
   const hbn = harborBoatNear();
   if(hbn){ evaBoardHarborBoat(hbn.cx, hbn.cz); return; }  // am Kai -> ins Feuerwehrboot
+  const hsn = harborSubNear();
+  if(hsn){ evaBoardHarborSub(hsn.cx, hsn.cz); return; }   // am Strand -> ins U-Boot
   // Nichts da zum Einsteigen — also selbst abheben. Die Koordinaten sind nur der Rueckfall:
   // evaStartJet setzt ihn vor den Todesstern, wenn ein Gastgeber bekannt ist.
   evaStartJet(eva.group.position.x, eva.group.position.z, eva.group.position.y + 0.6);
@@ -3464,6 +4045,10 @@ function updateOvalShadow(){
     px = eva.group.position.x; pz = eva.group.position.z;
     alt = Math.max(0, eva.group.position.y - evaFootY(px, pz));
     yawS = eva.yaw; rx = 0.9; rz = 0.9;
+  } else if(isSub()){                        // U-Boot: 95 m langer Rumpf
+    px = state.pos.x; pz = state.pos.z; alt = 0;
+    const f = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    yawS = Math.atan2(f.x, f.z) + Math.PI; rx = 7.5; rz = 50;
   } else {                                   // Feuerwehrboot: 16 m langer Rumpf
     px = state.pos.x; pz = state.pos.z; alt = 0;
     const f = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
@@ -3533,7 +4118,7 @@ function updateShadow(){
   // Boote und der Astronaut bekommen den OVALEN Schatten (der Flugzeug-Umriss passt dort nicht) —
   // vorher hatten sie gar keinen. Er macht sichtbar, wo man auf dem Wasser steht, und laesst den
   // Astronauten beim Huepfen nicht mehr schwerelos wirken.
-  if(isBoat() || eva){
+  if(isWaterCraft() || eva){
     planeShadow.visible = false;
     updateOvalShadow();
     return;
@@ -3806,7 +4391,9 @@ let eva = null;               // { group, vy, onGround, yaw, planeAt, boat, boat
 // Wasser ist keine Bühne für einen Astronauten, und das Boot fährt selbst schon "zu Fuß".
 function evaAllowed(){
   if(eva || state.crashed || state.ejected || state.falling || !state.onGround) return false;
-  if(isBoat()) return false;
+  // Beide Wasserfahrzeuge: ueber Wasser gibt es keinen Grund zum Stehen. Der Ausstieg am Ufer
+  // laeuft ueber den eigenen Zweig in buttonY, wie beim Feuerwehrboot.
+  if(isWaterCraft()) return false;
   if(locale === 'space') return false;                 // im All gibt es keinen Boden
   if(GROUNDS[locale] || locale === 'death') return true;   // Mond, Mars, Hangarboden
   // Erde: Insel oder Trägerdeck, aber nicht das Wasser
@@ -3854,6 +4441,10 @@ function evaEnterDinghy(x, z){
   // nearHarborBoat). Die Sperre steht HIER und nicht an den beiden Ausloesern, damit sie fuer beide
   // gilt — hineinlaufen und hineinfallen.
   if(nearHarborBoat(x, z)) return;
+  // Am U-Boot gilt die Sperre NICHT (anders als am Kai-Feuerwehrboot): dort ist das Schlauchboot der
+  // vorgesehene Weg. Wer neben dem U-Boot ins Wasser tritt, faehrt die letzten Meter im Schlauchboot
+  // heran und steigt bei Beruehrung um (siehe dinghyTouchesHarborSub). Das ersetzt das Absetzen an
+  // den Strand, bei dem der Astronaut im Wasser landete.
   const b = makeDinghy();
   b.position.set(x, seaYAt(x, z) - DINGHY_DRAFT, z);
   b.rotation.y = eva.yaw;
@@ -4650,6 +5241,15 @@ function updateDinghy(dt, inp){
   } else {
     coastSlide(b.position, v, fwd, dt);
   }
+  // Beruehrt es das U-Boot am Strand? Dann UMSTEIGEN — das ist der Weg hinein, seit der Ausstieg ins
+  // Schlauchboot geht: heranfahren, antippen, drin. Geprueft VOR pushOutOfSeaShip, denn das liegende
+  // U-Boot ist kein fahrendes Schiff und wird dort gar nicht gesehen.
+  const treffer = dinghyTouchesHarborSub(b.position.x, b.position.z);
+  // Erst wenn man die Huelle EINMAL verlassen hat, zaehlt eine Beruehrung als Einsteigen. Ohne diese
+  // Sperre stiege man sofort wieder ein, weil das Schlauchboot beim Ausstieg direkt neben dem Rumpf
+  // entsteht (gemessen: Umstieg nach 0 Frames, Aussteigen unmoeglich).
+  if(eva.subLatch){ if(!treffer) eva.subLatch = false; }
+  else if(treffer){ dinghyBoardSub(treffer); return; }
   // Wie beim Feuerwehrboot: ein fahrendes Schiff kann sich darueberschieben -> quer hinausdruecken.
   pushOutOfSeaShip(b.position, v, dt);
   // Auf der Duenung liegen und mit ihr nicken. Bezug ist die WELTposition -> seaYAt (das Boot ist
@@ -4673,9 +5273,14 @@ function updateEva(dt, inp){
   // Tempo und Sprungweite werden trotzdem gefuehrt (dafuer der gemeinsame Schluss unten).
   if(eva.boat){
     updateDinghy(dt, inp);
+    // Sicherheitsnetz: updateDinghy kann eva INNERHALB dieses Frames aufloesen — beim Umsteigen ins
+    // U-Boot (dinghyBoardSub) und beim Aussteigen an Land. Ohne diese Pruefung wirft die Zeile
+    // darunter, und das haelt den ganzen Frame an. Genau die Vorsicht, die updateJet schon uebt.
+    if(!eva) return;
     const movedB = Math.hypot(g.position.x - _wasX, g.position.z - _wasZ);
     evaKmh += ((dt > 1e-6 ? movedB/dt*3.6 : 0) - evaKmh) * Math.min(1, 8*dt);
-    state.pos.copy(eva.planeAt);
+    // Und nur, solange er noch IM Boot sitzt: an Land steigt er aus, dann gilt der Zweig nicht mehr.
+    if(eva.boat) state.pos.copy(eva.planeAt);
     return;
   }
   // Im Rover laeuft eine eigene Physik — Laufen, Springen und Bodenhoehe gelten dort nicht,
@@ -4913,7 +5518,12 @@ for (let i=0;i<45;i++){ const c=makeCloud();
 // mit B löscht (siehe stepBoat und extinguishNear).
 // Die Reihenfolge, in der M durchschaltet. So gewuenscht: erst die beiden, mit denen man am
 // haeufigsten fliegt, dann die Mustang, dann das Boot, danach die grossen und traegen.
-const MODEL_NAMES = ['XWing', 'Canadair', 'Mustang', 'Boat', 'AlphaJet', 'Airbus', 'Transall'];
+// Das U-BOOT steht ganz am Ende: es ist das jüngste Fahrzeug und das einzige, das taucht — wer es
+// sucht, schaltet einmal durch. Ein eigenes Modell (kein Sub-Modus wie der Rover), nach genau
+// demselben Muster wie das Feuerwehrboot: eigene Physik (stepSub), eigener Startplatz am Strand,
+// Ein- und Aussteigen mit Y. Deshalb muss es hier UND in PLANE_SPECS, buildModel, canLandHere,
+// findStart und CAM_CFG stehen — dieselben sechs Stellen, an denen auch 'Boat' vorkommt.
+const MODEL_NAMES = ['XWing', 'Canadair', 'Mustang', 'Boat', 'AlphaJet', 'Airbus', 'Transall', 'Sub'];
 const loader = new THREE.TextureLoader();
 const planeGroup = new THREE.Group();  // Container, den wir bewegen
 scene.add(planeGroup);
@@ -5554,7 +6164,7 @@ function evaBoardParked(name, cx, cz){
 function harborBoatNear(){
   if(!eva || eva.rover || eva.boat || eva.jet) return null;
   if(locale !== 'earth') return null;
-  if(isBoat()) return null;                     // im Boot sitzt man schon
+  if(isWaterCraft()) return null;               // in einem Boot sitzt man schon
   const p = eva.group.position;
   const pcx = Math.round(p.x / CELL), pcz = Math.round(p.z / CELL);
   for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
@@ -5566,6 +6176,165 @@ function harborBoatNear(){
   }
   return null;
 }
+// ---- U-Boot am Strand: einsteigen und zurueck --------------------------------------------------
+// Wortgleich zu harborBoatNear/evaBoardHarborBoat, nur mit harborSubLocal und 'Sub'. Bewusst als
+// Kopie und nicht als Verallgemeinerung: die beiden Fahrzeuge werden sich weiter auseinander
+// entwickeln (das Boot loescht, das U-Boot taucht), und eine gemeinsame Funktion mit Fallunter-
+// scheidungen waere schwerer zu lesen als zwei kurze.
+//
+// Steht der Astronaut neben dem Strand-U-Boot? Gibt { cx, cz } der Inselzelle oder null.
+function harborSubNear(){
+  if(!eva || eva.rover || eva.boat || eva.jet) return null;
+  if(locale !== 'earth') return null;
+  if(isSub()) return null;                      // im U-Boot sitzt man schon
+  const p = eva.group.position;
+  const pcx = Math.round(p.x / CELL), pcz = Math.round(p.z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const bl = harborSubLocal(pcx+dx, pcz+dz); if(!bl) continue;
+    // 55 m: das Boot ist 95 m lang, man soll auch am Heck oder mittschiffs einsteigen koennen.
+    // Beim 16-m-Feuerwehrboot sind es 12 m — dasselbe Verhaeltnis.
+    if(Math.hypot(p.x - (info.wx + bl.x), p.z - (info.wz + bl.z)) < 55)
+      return { cx:pcx+dx, cz:pcz+dz };
+  }
+  return null;
+}
+// ---- Umsteigen Schlauchboot <-> U-Boot ---------------------------------------------------------
+// Der Weg, den ein Kind von selbst findet: aus dem U-Boot steigt man ins SCHLAUCHBOOT aus (nicht an
+// den Strand), faehrt damit herum, und wer das U-Boot beruehrt, ist wieder drin. Damit gibt es das
+// Wasserproblem gar nicht mehr — vorher musste der Astronaut an Land gesetzt werden, und weil das
+// U-Boot 85 m vor der Sandkante haelt (95 m Rumpf, Liegeplatz weiter draussen als das
+// Feuerwehrboot), stand er dabei im Wasser statt im Sand (gemessen: evaSolid false, Fusshoehe 0,00).
+//
+// Beruehrt wird der RUMPF, nicht ein Punkt: das Boot ist 95 m lang und 24 m breit, ein reiner
+// Mittelpunktsabstand waere an Bug und Heck 47 m daneben. Gerechnet wird im Bootssystem — genau so,
+// wie hitsSeaShip es fuer die fahrenden Schiffe macht.
+const SUB_TOUCH_PAD = 6;     // m Puffer um den Rumpf: man muss nicht auf den Zentimeter treffen
+// Beruehrt das Schlauchboot an (x,z) das Strand-U-Boot einer Insel? Gibt {cx,cz} oder null.
+function dinghyTouchesHarborSub(x, z){
+  if(locale !== 'earth') return null;
+  // NICHT bei isSub() aussteigen — das war ein Fehler, und zwar der entscheidende: nach dem Ausstieg
+  // ins Schlauchboot bleibt MODEL_NAMES weiter auf 'Sub' (das U-Boot ist das Fahrzeug, zu dem man
+  // zurueckkehrt, genau wie der Flieger beim Aussteigen), und an seinem Strandplatz liegt keine
+  // Kulisse, weil man ja darin sass. Mit der Sperre gab es also NIE einen Treffer: im laufenden Spiel
+  // nachgemessen, nach 30 s Heranfahren kein Umstieg — man kam nicht zurueck.
+  //
+  // Zuerst deshalb das EIGENE U-Boot: eva.planeAt ist sein gemerkter Platz (dieselbe Groesse, mit der
+  // evaCanBoard den Flieger wiederfindet). Es kann ueberall liegen, nicht nur am Strand.
+  if(eva && eva.planeAt && isSub()){
+    const kurs = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ').y;
+    if(subHullNear(x, z, eva.planeAt.x, eva.planeAt.z, kurs)) return { eigen:true };
+    return null;                                 // das eigene liegt woanders: keine Kulisse suchen
+  }
+  const pcx = Math.round(x / CELL), pcz = Math.round(z / CELL);
+  for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+    const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+    const bl = harborSubLocal(pcx+dx, pcz+dz); if(!bl) continue;
+    if(subHullNear(x, z, info.wx + bl.x, info.wz + bl.z, bl.rot)) return { cx:pcx+dx, cz:pcz+dz };
+  }
+  return null;
+}
+// Liegt (x,z) an der Huelle eines U-Boots, das mit (sx,sz) und Kurs rot liegt? Der Rumpf ist 95 m
+// lang und 24 m breit — ein reiner Mittelpunktsabstand waere an Bug und Heck 47 m daneben, deshalb
+// wird in das Bootssystem gedreht (lz laengs, lx quer), genau wie in hitsSeaShip.
+function subHullNear(x, z, sx, sz, rot){
+  const rx = x - sx, rz = z - sz;
+  const cs = Math.cos(rot), sn = Math.sin(rot);
+  const lx = rx*cs - rz*sn, lz = rx*sn + rz*cs;
+  return Math.abs(lz) < SUB_LOOK + SUB_TOUCH_PAD && Math.abs(lx) < SUB_HALF_W + SUB_TOUCH_PAD;
+}
+// Vom Schlauchboot ins U-Boot umsteigen. Das Schlauchboot verschwindet dabei — ein leeres Boot neben
+// dem U-Boot liegen zu lassen sieht aus wie ein Fehler, und beim naechsten Ausstieg gibt es sowieso
+// ein neues. Dieselbe Begruendung, mit der evaLeaveDinghy es an Land entfernt.
+function dinghyBoardSub(treffer){
+  if(!eva || !eva.boat) return;
+  scene.remove(eva.boat);
+  eva.boat = null; eva.boatVel = null; eva.boatThr = 0;
+  if(treffer.eigen){
+    // Das EIGENE U-Boot: es steht schon da, mit seiner Lage und seinem Kurs. Also nur den
+    // Astronauten entfernen — genau was evaBoard beim Flieger tut. Ein evaBoardHarborSub wuerde es
+    // an einen Strandplatz VERSETZEN, und das waere ein Sprung.
+    scene.remove(eva.group);
+    eva = null;
+    state.throttle = 0; state.vel.set(0, 0, 0);
+    snapCamera();
+    showBig('\u{1F6E5}\u{FE0F}'); bigTimer = 1.2;
+    return;
+  }
+  evaBoardHarborSub(treffer.cx, treffer.cz);
+}
+// Aus dem U-Boot ins SCHLAUCHBOOT aussteigen — ueberall auf dem Wasser, ohne Strand.
+// Warum nicht an Land: das U-Boot haelt 85 m vor der Sandkante (95 m Rumpf, Liegeplatz weiter
+// draussen als das Feuerwehrboot), und ein Astronaut, den man dort absetzt, steht im Wasser statt
+// im Sand — im laufenden Spiel gemessen. Das Schlauchboot ist die Antwort, die das Spiel an jeder
+// anderen Wasserkante schon gibt: es faengt den Schritt auf, statt ihn zu verbieten.
+// Das U-Boot bleibt liegen, wo es ist (eva.planeAt zeigt darauf) — man faehrt mit dem Schlauchboot
+// heran und steigt bei Beruehrung wieder um, siehe dinghyTouchesHarborSub.
+function evaExitToDinghy(){
+  if(eva) return;
+  const g = makeAstronaut();
+  const eul = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  // Seitlich neben dem U-Boot ins Wasser, nicht mittendrin: sonst sitzt das Schlauchboot IM Rumpf
+  // und dinghyTouchesHarborSub liesse einen sofort wieder einsteigen — ein Aussteigen, das nichts
+  // tut. Quer versetzt um die halbe Rumpfbreite plus Puffer, dieselbe Huelle, die die Beruehrung
+  // prueft (SUB_HALF_W + SUB_TOUCH_PAD).
+  const seit = SUB_HALF_W + SUB_TOUCH_PAD + 4;
+  const rx = Math.cos(eul.y), rz = -Math.sin(eul.y);      // quer zur Nasenrichtung
+  const x = state.pos.x + rx*seit, z = state.pos.z + rz*seit;
+  g.position.set(x, seaYAt(x, z), z);
+  g.rotation.y = eul.y;
+  scene.add(g);
+  eva = { group:g, vy:0, onGround:true, yaw:eul.y,
+          planeAt:new THREE.Vector3(state.pos.x, state.pos.y, state.pos.z) };
+  state.throttle = 0;
+  // Und gleich ins Schlauchboot setzen. Nicht ueber evaEnterDinghy: das prueft nearHarborBoat und
+  // wuerde am Kai gar nichts tun — hier ist das Boot ausdruecklich gewollt.
+  const b = makeDinghy();
+  b.position.set(x, seaYAt(x, z) - DINGHY_DRAFT, z);
+  b.rotation.y = eul.y;
+  scene.add(b);
+  eva.boat = b;
+  eva.boatVel = new THREE.Vector3(0, 0, 0);
+  eva.boatThr = 0;
+  eva.group.position.set(x, b.position.y + (b.userData.floorY || 0), z);
+  // Solange gesetzt, zaehlt eine Beruehrung des U-Boots NICHT als Einsteigen (siehe updateDinghy):
+  // das Schlauchboot liegt hier noch an seinem Rumpf, und ohne die Sperre saesse man sofort wieder
+  // drin. Sie loest sich, sobald man ein Stueck weggefahren ist.
+  eva.subLatch = true;
+  jetSnapCam();      // Kamera auf den ASTRONAUTEN, nicht auf das U-Boot
+  showBig('\u{1F6DF}'); bigTimer = 1.2;
+}
+function evaBoardHarborSub(cx, cz){
+  const idx = MODEL_NAMES.indexOf('Sub');
+  if(idx < 0) return;
+  const info = islandInfo(cx, cz);
+  const bl = harborSubLocal(cx, cz);
+  if(!info || !bl) return;
+  // Den Platz des eigenen Fliegers merken, BEVOR das Modell wechselt — wie beim Feuerwehrboot.
+  // Es ist DASSELBE Merkfeld (harborBoatFrom): man sitzt immer nur in einem der beiden, und Y
+  // fuehrt aus beiden auf denselben Weg zurueck.
+  harborBoatFrom = { model: MODEL_NAMES[currentModel],
+                     x: eva.planeAt.x, y: eva.planeAt.y, z: eva.planeAt.z,
+                     yaw: new THREE.Euler().setFromQuaternion(state.quat, 'YXZ').y };
+  clearEva();
+  currentModel = idx;
+  document.getElementById('mdl').textContent = MODEL_NAMES[idx];
+  buildModel(MODEL_NAMES[idx]);
+  spec = PLANE_SPECS[MODEL_NAMES[idx]] || DEFAULT_SPEC;
+  placeAtStart('Sub');
+  // Aufgetaucht an seinem Strandplatz: y = 0 ist die Wasserlinie des Modells (siehe SUB_SURF_Y).
+  state.pos.set(info.wx + bl.x, 0, info.wz + bl.z);
+  state.quat.setFromEuler(new THREE.Euler(0, bl.rot, 0, 'YXZ'));
+  state.vel.set(0,0,0); state.throttle = 0; state.onGround = true;
+  planeGroup.position.copy(state.pos); planeGroup.quaternion.copy(state.quat);
+  snapCamera();      // Kamera mitnehmen, sonst kriecht sie ueber die halbe Insel hinterher
+  refreshIslands();  // das Kulissen-U-Boot verschwindet: man sitzt jetzt darin
+  showBig('\u{1F6E5}\u{FE0F}'); bigTimer = 1.2;
+}
+// Ein evaExitFromSub (zu Fuss an Land) gab es hier und ist ENTFALLEN: der Ausstieg aus dem U-Boot
+// geht ins Schlauchboot (evaExitToDinghy). Grund war ein gemessener Fehler — das Boot haelt 85 m vor
+// der Sandkante, ein dort abgesetzter Astronaut stand im Wasser.
+
 function evaBoardHarborBoat(cx, cz){
   const idx = MODEL_NAMES.indexOf('Boat');
   if(idx < 0) return;
@@ -5627,13 +6396,42 @@ function leaveHarborBoat(){
   const idx = MODEL_NAMES.indexOf(f.model);
   if(idx < 0){ harborBoatFrom = null; return; }
   harborBoatFrom = null;
-  // Wo der Astronaut hinsoll: an Land vor dem Bug. Das Boot selbst liegt im Wasser, also ein Stueck
-  // voraus suchen, bis fester Grund kommt (dieselbe Idee wie beim Schlauchboot-Ausstieg).
+  // Wo der Astronaut hinsoll: AN LAND vor dem Bug — er soll im Sand stehen, nicht im Wasser. Das
+  // Fahrzeug liegt ja selbst im Wasser, also ein Stueck voraus suchen, bis fester Grund kommt
+  // (dieselbe Idee wie beim Schlauchboot-Ausstieg).
+  //
+  // Die REICHWEITE haengt am Fahrzeug, und das war ein Fehler: mit den festen BOAT_LOOK*3 = 24 m
+  // stand man nach dem Ausstieg aus dem U-Boot IM WASSER (im laufenden Spiel gemessen: evaSolid
+  // false, Fusshoehe 0,00 statt 0,30). 24 m passen fuers 16-m-Feuerwehrboot, das mit dem Heck im
+  // Sand liegt — das U-Boot haelt 85 m vor der Sandkante (Liegeplatz weiter draussen, 95 m Rumpf).
+  // Gefunden wurde nie etwas, und der Rueckfall ist die Bootsposition selbst.
   const bf = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
-  let ex = state.pos.x, ez = state.pos.z;
-  for(let s = BOAT_LOOK; s <= BOAT_LOOK*3; s += 2){
+  const reich = isSub() ? SUB_UFER_R + 60 : BOAT_LOOK*3;
+  const ab    = isSub() ? SUB_LOOK*0.6 : BOAT_LOOK;
+  let ex = state.pos.x, ez = state.pos.z, gefunden = false;
+  for(let s = ab; s <= reich; s += 2){
     const px = state.pos.x + bf.x*s, pz = state.pos.z + bf.z*s;
-    if(evaSolid(px, pz)){ ex = px; ez = pz; break; }
+    if(evaSolid(px, pz)){ ex = px; ez = pz; gefunden = true; break; }
+  }
+  // Nichts voraus? Dann zur naechsten Insel hin suchen. Der Bug muss nicht genau auf den Strand
+  // zeigen — man kann auch schraeg ankommen, und dann ist "vor dem Bug" die falsche Richtung.
+  // Ohne diesen zweiten Weg stuende der Astronaut wieder im Wasser, nur seltener.
+  if(!gefunden){
+    const pcx = Math.round(state.pos.x / CELL), pcz = Math.round(state.pos.z / CELL);
+    let best = null, bd = 1e9;
+    for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+      const info = islandInfo(pcx+dx, pcz+dz); if(!info) continue;
+      const d = Math.hypot(state.pos.x-info.wx, state.pos.z-info.wz);
+      if(d < bd){ bd = d; best = info; }
+    }
+    if(best){
+      const dx = best.wx - state.pos.x, dz = best.wz - state.pos.z;
+      const L = Math.hypot(dx, dz) || 1;
+      for(let s = 4; s <= L; s += 3){
+        const px = state.pos.x + dx/L*s, pz = state.pos.z + dz/L*s;
+        if(evaSolid(px, pz)){ ex = px; ez = pz; gefunden = true; break; }
+      }
+    }
   }
   // Zurueck auf das Modell, in dem man vorher sass — es steht ja an seinem gemerkten Platz.
   currentModel = idx;
@@ -6427,6 +7225,7 @@ function earthWorldVisible(on){
     clearRescue();
     clearSeaShips();                     // Handelsschiffe gibt es nur auf der Erde
     clearOrcas();                        // die Killerwale ebenso (updateOrcas raeumt sonst erst im naechsten Frame)
+    clearUwCells();                      // und die Unterwasserwelt (Wracks, Seegras, Korallen)
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -6533,8 +7332,9 @@ function snapCamera(){
   camera.position.set(state.pos.x - f.x*d,
                       state.pos.y + cfg.height*cc.hgt,
                       state.pos.z - f.z*d);
-  // wie in updateCamera: nur in der Inselwelt gibt es unten einen Boden
-  if(locale === 'earth' && camera.position.y < 2) camera.position.y = 2;
+  // wie in updateCamera: nur in der Inselwelt gibt es unten einen Boden — ausser man TAUCHT.
+  // Diese Klemme war genau die Sperre, die eine Unterwasserwelt unsichtbar gemacht haette.
+  if(locale === 'earth' && !subTaucht() && camera.position.y < 2) camera.position.y = 2;
   camera.up.set(0,1,0);
   camera.lookAt(state.pos);
 }
@@ -6913,6 +7713,57 @@ function updateSpaceBlend(dt){
     earthBall.visible = true;
     earthBall.position.set(state.pos.x + 90000, 45000, state.pos.z - 60000);
   }
+  // UNTER WASSER zaehlt nichts von dem oben: dort ist der Himmel gruen-blau und die Sicht endet
+  // nach wenigen Dutzend Metern. Das laeuft NACH dem Weltall-Blend, damit es dessen Werte
+  // ueberschreibt statt mit ihnen zu ringen — im Wasser ist man nie im Weltall, die beiden
+  // Zustaende schliessen sich aus.
+  updateUnderwater(dt);
+}
+// ---------- Unterwasser-Sicht -----------------------------------------------------------------
+// Drei Dinge machen den Unterschied zwischen "die Kamera ist unter Null" und "ich bin im Meer":
+//   1. NEBEL. An Luft steht er auf 900/3000 m. Im Wasser sieht man 20-40 m weit, nicht 3 km.
+//      Das ist der wichtigste Punkt — ohne ihn sieht Unterwasser aus wie Ueberwasser mit
+//      blauem Anstrich.
+//   2. FARBE. Sie wird MIT DER TIEFE dunkler: an der Oberflaeche tuerkis, auf 200 m fast schwarz.
+//      Rot verschwindet im Wasser zuerst, deshalb laeuft die Tiefenfarbe nach Blaugruen und nicht
+//      nach Grau.
+//   3. LICHT. Die Sonne kommt nicht mit: auf Tiefe bleibt Streulicht von oben.
+// Geblendet wird ueber uwBlend, damit das Durchtauchen der Oberflaeche kein Schnitt ist. Der Wert
+// laeuft in UW_RATE pro Sekunde nach — bei 2,5 ist der Wechsel in 0,4 s durch, also sichtbar als
+// Uebergang, aber ohne Wartezeit.
+const UW_FOG_NEAR = 3;      // m: direkt vor der Linse ist es noch klar
+const UW_FOG_FAR  = 42;     // m Sichtweite an der Oberflaeche (Meerwasser: 20-40 m)
+const UW_FOG_DEEP = 16;     // m Sichtweite ganz unten — es wird eng und dunkel
+const UW_SURF = new THREE.Color(0x2c7d86);   // Wasserfarbe knapp unter der Oberflaeche
+const UW_DEEP = new THREE.Color(0x02141c);   // Wasserfarbe auf SEA_DEPTH
+const UW_RATE = 2.5;
+let uwBlend = 0;            // 0 = an Luft, 1 = unter Wasser
+const _uwC = new THREE.Color();
+// Ist die KAMERA unter Wasser? Nicht das Fahrzeug: gefragt ist, was man SIEHT. Beim getauchten
+// U-Boot haengt die Kamera hinter dem Turm und kann noch heraussehen, wenn das Boot knapp unter
+// der Oberflaeche fährt — dann soll das Bild auch nicht gruen sein.
+function cameraUnderwater(){
+  if(locale !== 'earth') return false;
+  return camera.position.y < seaYAt(camera.position.x, camera.position.z);
+}
+function updateUnderwater(dt){
+  const drin = cameraUnderwater();
+  uwBlend += ((drin ? 1 : 0) - uwBlend) * Math.min(1, UW_RATE*dt);
+  if(uwBlend < 0.002){ uwBlend = 0; return; }   // an Luft: die Werte von updateSpaceBlend gelten
+  // Tiefenanteil: 0 an der Oberflaeche, 1 auf SEA_DEPTH.
+  const tief = Math.min(1, Math.max(0, -camera.position.y / SEA_DEPTH));
+  _uwC.copy(UW_SURF).lerp(UW_DEEP, tief);
+  const b = uwBlend;
+  scene.background.lerp(_uwC, b);
+  scene.fog.color.lerp(_uwC, b);
+  const far = UW_FOG_FAR + (UW_FOG_DEEP - UW_FOG_FAR)*tief;
+  scene.fog.near = scene.fog.near + (UW_FOG_NEAR - scene.fog.near)*b;
+  scene.fog.far  = scene.fog.far  + (far          - scene.fog.far )*b;
+  // Licht: die Sonne dringt nicht ein, das Streulicht von oben bleibt. Auf Tiefe wird auch das
+  // wenig — ohne diese Daempfung stehen die Wracks unten im hellen Sonnenlicht.
+  const dunkel = 1 - 0.75*tief;
+  hemiLight.intensity = hemiLight.intensity + (1.05*dunkel - hemiLight.intensity)*b;
+  sun.intensity       = sun.intensity       + (0.28*dunkel - sun.intensity      )*b;
 }
 
 // ---------- Weltraum-Anzeige über dem Flieger ----------
@@ -7642,6 +8493,16 @@ function buildModel(name) {
     modelHolder.add(makeFireBoat());
     return { span: 16, scale: 1 };
   }
+  // Das U-Boot ist dasselbe Modell wie das KI-Boot auf dem Meer: shipTemplates['sub'] ist beim
+  // Laden auf 95 m normiert UND auf seine Wasserlinie gesetzt (siehe preloadSeaShips, wl 0,1537).
+  // Genau das braucht man hier — dann liegt es aufgetaucht richtig im Wasser, ohne ein einziges
+  // eigenes Mass. Fehlt es noch, bleibt der Halter leer; preloadSeaShips ruft nach dem Laden von
+  // 'sub' refreshIslands, und cycleModel/buildModel greifen dann auf die fertige Vorlage zu —
+  // dasselbe Muster wie preloadBoat beim Feuerwehrboot.
+  if(name === 'Sub'){
+    if(shipTemplates['sub']) modelHolder.add(shipTemplates['sub'].clone(true));
+    return { span: 24, scale: 1 };     // 24 m: groesste Breite des Modells (Druckkoerper 23,2 m)
+  }
   // Alle Flugzeuge sind externe GLB-Modelle. Ausrichtung (rotation.y) pro Modell.
   const GLB_ROT = { Canadair: Math.PI, AlphaJet: Math.PI/2, Airbus: Math.PI,
                     Mustang: -Math.PI, Transall: 0, XWing: Math.PI };
@@ -7680,6 +8541,14 @@ const PLANE_SPECS = {
   // lang. vTO/pitch/roll/aero sind hier bedeutungslos, weil stepBoat die Flugphysik gar nicht
   // erreicht; turn ist die Wendigkeit am Ruder.
   Boat:       { vTO: 0, vMax: 24, accel: 9, pitch: 0, roll: 0, turn: 1.0, boat:true },
+  // U-Boot: fährt auf UND unter dem Meer (sub:true -> eigener Physikzweig stepSub).
+  // 14 m/s = 50 km/h. Das KI-U-Boot fährt 14,4 km/h, aber das ist Kulisse, die man betrachtet —
+  // hier legt man Strecke zurück, und der Weg zum nächsten Wrack soll keine Geduldsprobe werden.
+  // Weniger als das Feuerwehrboot (86 km/h): unter Wasser gibt es keine Bugwelle als Bezug, bei
+  // hohem Tempo sähe man nur den Nebel vorbeiziehen.
+  // pitch ist hier NICHT bedeutungslos wie beim Boot: die Nase steuert die Tiefe (siehe stepSub),
+  // 0,55 rad/s sind sanft — ein U-Boot legt sich nicht wie ein Jagdflugzeug auf die Nase.
+  Sub:        { vTO: 0, vMax: 14, accel: 5, pitch: 0.55, roll: 0, turn: 0.8, sub:true },
 };
 
 // ---------- X-Wing: Senkrechtstart und -landung (VTOL) ----------
@@ -7792,6 +8661,13 @@ function findStart(name){
     probe=(cx,cz)=>{ const info=carrierInfo(cx,cz); if(!info) return null;
       const dz=FORD_LEN*0.5-30;
       return { y:fordDeckY, yaw:info.rot, _deck:{info,dz} }; };
+  } else if(name === 'Sub'){
+    // Genau der Platz, an dem auch das Kulissen-U-Boot liegt (harborSubLocal) — dritte Seite des
+    // Hafens, rueckwaerts, Bug aufs Wasser. Damit findet man es beim Start ueber die Modellauswahl
+    // an derselben Stelle wie zu Fuss, und die Kulisse verschwindet dort (buildIsland fragt isSub).
+    probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
+      const bl = harborSubLocal(cx, cz); if(!bl) return null;
+      return { x:info.wx + bl.x, y:0, z:info.wz + bl.z, yaw:bl.rot }; };
   } else if(name==='Canadair' || name==='Boat'){
     probe=(cx,cz)=>{ const info=islandInfo(cx,cz); if(!info) return null;
       // AM STRAND, ruecklings: die Nase zeigt aufs Wasser, das Heck steht im Sand. So laeuft man von
@@ -7831,7 +8707,26 @@ function findStart(name){
 }
 function placeAtStart(name){
   const s = findStart(name);
-  if(!s && name === 'Boat'){
+  // Das U-Boot braucht denselben Rueckfall wie das Boot: die Start-Landebahn waere Land, dort kaeme
+  // es nicht weg. Es braucht aber MEHR Wasser (95 m Rumpf gegen 16 m), deshalb ein eigener Zweig
+  // mit weiterem Suchradius statt einer gemeinsamen Bedingung.
+  if(!s && name === 'Sub'){
+    let px = 0, pz = 0, found = false;
+    for(let r = CELL*1.2; r < CELL*8 && !found; r += CELL*0.5){
+      for(let a = 0; a < 16 && !found; a++){
+        const tx = Math.cos(a/16*Math.PI*2)*r, tz = Math.sin(a/16*Math.PI*2)*r;
+        // Der ganze Rumpf muss frei sein, nicht nur die Mitte: an drei Stellen laengs pruefen.
+        let ok = true;
+        for(const d of [-47, 0, 47]){
+          const qx = tx, qz = tz + d;
+          if(isOnLand(qx,qz) || isOnBeach(qx,qz) || isOnCarrier(qx,qz)
+             || hitsBuilding(qx, ISLAND_Y+2, qz, false)){ ok = false; break; }
+        }
+        if(ok){ px = tx; pz = tz; found = true; }
+      }
+    }
+    state.pos.set(px, 0, pz); state.quat.identity();
+  } else if(!s && name === 'Boat'){
     // Boot-Fallback: offenes Meer suchen (die Start-Bahn waere Land -> es kaeme nicht weg).
     let px = 0, pz = 0, found = false;
     for(let r = CELL*0.7; r < CELL*6 && !found; r += CELL*0.5){
@@ -7982,7 +8877,8 @@ function updateEngineSound() {
   const running = audioCtx.state === 'running';
   // Im Schlauchboot laeuft derselbe synthetische Aussenborder wie beim Feuerwehrboot — es ist ja
   // auch einer. Das schlaegt das Modell des abgestellten Fliegers, denn zu hoeren ist das Boot.
-  const model = (eva && eva.boat) ? 'Boat' : MODEL_NAMES[currentModel];
+  // Im Schlauchboot UND im U-Boot laeuft derselbe synthetische Bootsmotor.
+  const model = (eva && eva.boat) ? 'Boat' : (isSub() ? 'Boat' : MODEL_NAMES[currentModel]);
   // Boot: eigener, synthetisch erzeugter Motorloop (kein Sample zum Dekodieren).
   if (model === 'Boat') {
     if (!boatEngineBuf) boatEngineBuf = makeBoatEngineBuffer();
@@ -8008,7 +8904,8 @@ function updateEngineSound() {
   if (!soundOn || state.crashed || (eva && !eva.boat)) { engineGain.gain.value = 0; return; }
   // Im Schlauchboot bestimmt sein Gas die Drehzahl, nicht der Schub des abgestellten Fliegers.
   const t = (eva && eva.boat) ? (eva.boatThr || 0) : state.throttle;
-  if (isBoat() || (eva && eva.boat)) {
+  // Das U-Boot bekommt denselben synthetischen Motor: es ist ein Schiffsdiesel, kein Flugzeug.
+  if (isWaterCraft() || (eva && eva.boat)) {
     // Boot: der Motor bollert auch im Leerlauf deutlich hörbar (ein Außenborder läuft ja weiter),
     // und die Drehzahl steigt weniger steil als bei einem Flugzeug. Umkehrschub (negativer Wert)
     // klingt genauso wie Vorwärtsfahrt — die Schraube dreht ja nur andersherum.
@@ -8358,6 +9255,10 @@ const CAM_CFG = {
   // der Fahrtrichtung. Mit diesen Faktoren sind es rund 55 m Abstand und 14 m Höhe — Blickwinkel
   // etwa 15° von oben, man sieht Wellen, Kurs und das Ufer voraus.
   Boat:     { dist: 2.3,  hgt: 1.75 },
+  // U-Boot: 95 m lang, also viermal so lang wie das Feuerwehrboot — es braucht Abstand, sonst
+  // füllt der Turm das Bild. Aber FLACHER (hgt 0,9): unter Wasser will man nach VORNE sehen, wohin
+  // man fährt, nicht von oben auf das eigene Deck. Von schräg oben sähe man beim Tauchen nur Rumpf.
+  Sub:      { dist: 2.6,  hgt: 0.9 },
 };
 function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
 
@@ -8570,6 +9471,134 @@ function stepBoat(dt, inp){
   // (bigTimer wird im Loop abgebaut — siehe dort, damit es auch während der EVA läuft.)
 }
 
+// ---------- U-BOOT: fahren und tauchen -----------------------------------------------------
+// Gebaut nach stepBoat, um eine TIEFENACHSE erweitert. Der Unterschied zu allem anderen im Spiel:
+// hier ist y frei steuerbar und zwischen zwei Grenzen eingespannt, die BEIDE wandern — oben die
+// Duenung, unten der Meeresboden.
+//
+// STEUERUNG (so gewuenscht: "Nase steuert die Tiefe"): Pfeil hoch/runter bzw. linker Stick legt die
+// Nase an, und die FAHRT traegt es dann hinunter oder hinauf — wie ein Flugzeug, nur im Wasser.
+// Steht es still, bringt die schoenste Nasenlage nichts: ohne Fahrt kein Anstroemen der
+// Tiefenruder. Das ist physikalisch richtig und spielt sich gut, weil man dadurch von selbst Gas
+// gibt, statt sich senkrecht auf den Grund zu setzen.
+//
+// Eine Eigenheit noch, die man im Spiel sofort merkt: das Boot taucht NICHT von allein wieder auf.
+// Es haelt die Tiefe, die man ihm gegeben hat, so wie ein austariertes U-Boot es tut. Ohne das
+// muesste man dauernd gegen einen Auftrieb ansteuern — fuer ein Kind anstrengend statt schoen.
+const SUB_YAW      = 0.55;   // rad/s Ruderwirkung bei voller Fahrt (traeger als das Boot: 0,9)
+const SUB_ROLL     = 0.18;   // wie stark es sich in die Kurve legt (rein optisch)
+const SUB_PMAX     = 0.52;   // rad (~30 Grad): so steil legt es die Nase hoechstens an
+const SUB_LOOK     = 47;     // m Vorausschau = halbe Rumpflaenge (95 m), wie BOAT_LOOK beim Boot
+const SUB_HALF_W   = 12;     // m halbe Breite fuer die Umrisspruefung (Druckkoerper 23,2 m)
+// Wie weit vor dem Bug nach Ufer gesucht wird, wenn man mit Y aussteigen will (siehe buttonY).
+// 130 m: halbe Rumpflaenge (47) plus der Abstand, den das Boot vor dem Strand haelt. Beim Liegeplatz
+// der Startinsel sind es gemessen 85 m bis zur Sandkante, auf grossen Inseln etwas mehr.
+const SUB_UFER_R   = 130;
+// Aufgetaucht liegt das Modell auf y = 0: shipTemplates['sub'] ist auf seine Wasserlinie normiert
+// (preloadSeaShips, wl 0,1537). 0 heisst hier also "aufgetaucht wie das KI-Boot".
+const SUB_SURF_Y   = 0;
+// Wie weit ueber dem Meeresboden es spaetestens aufhoert. Der Rumpf ist 13 m dick und der Ursprung
+// liegt auf der Wasserlinie, also 3 m ueber der Rumpfmitte — 12 m lassen den Kiel frei.
+const SUB_FLOOR_CLR = 12;
+// Sinkrate = Fahrt * sin(Nickwinkel), mit diesem Faktor. 1,0 waere "es folgt der Nase exakt";
+// 0,75 laesst es flacher laufen als es zeigt, und genau so wirkt ein traeges Boot im Wasser.
+const SUB_DIVE_EFF = 0.75;
+// Wie schnell die Nase in die Waagerechte zurueckgeht, wenn man nichts drueckt. Nicht null: sonst
+// bliebe sie steil stehen und das Boot tauchte bis zum Grund weiter, obwohl man nur angetippt hat.
+const SUB_PITCH_BACK = 1.4;
+function stepSub(dt, inp){
+  const eB = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
+  const spd = Math.hypot(state.vel.x, state.vel.z);
+  // Ruderwirkung wie beim Boot: die Schraube drueckt auch im Stand Wasser aufs Ruder.
+  const thrHelp = Math.abs(state.throttle) * 0.5;
+  const authority = Math.min(1, 0.25 + thrHelp + spd / spec.vMax);
+  const yaw = eB.y - inp.yaw * SUB_YAW * authority * dt;
+  const roll = eB.z + (-inp.yaw * SUB_ROLL * authority - eB.z) * Math.min(1, 3*dt);
+  // NASENLAGE. inp.pitch ist +1 bei Pfeil runter und -1 bei Pfeil hoch (siehe readInput) —
+  // dieselbe Belegung wie im Flieger, wo hoch die Nase senkt. Hier heisst das ABTAUCHEN, und das
+  // passt zusammen: Nase runter = tiefer. inp.pitch greift also mit demselben Vorzeichen an.
+  let pitch = eB.x;
+  if(Math.abs(inp.pitch) > 0.01){
+    pitch += inp.pitch * spec.pitch * dt;
+  } else {
+    // Nichts gedrueckt: Nase glatt ziehen. Die TIEFE bleibt trotzdem stehen (die Rechnung unten
+    // setzt y nur weiter, solange die Nase liegt) — es richtet sich waagerecht aus, statt zu sinken.
+    pitch += (0 - pitch) * Math.min(1, SUB_PITCH_BACK*dt);
+  }
+  pitch = Math.max(-SUB_PMAX, Math.min(SUB_PMAX, pitch));
+  state.quat.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+
+  // Fahrt, genau wie beim Boot: Schub setzt die Zielgeschwindigkeit, sanft angeregelt.
+  // Gerechnet wird mit der WAAGERECHTEN Nasenrichtung — die Tiefe kommt getrennt aus der
+  // Nasenlage. Nimmt man den vollen Vorwaertsvektor, verliert man beim Tauchen an Fahrt, und das
+  // Boot bliebe in steiler Lage fast stehen.
+  const fwd3 = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  const fl = Math.hypot(fwd3.x, fwd3.z) || 1;
+  const fwd = new THREE.Vector3(fwd3.x/fl, 0, fwd3.z/fl);
+  const targetV = spec.vMax * state.throttle;
+  const fwdSpeed = state.vel.x*fwd.x + state.vel.z*fwd.z;
+  const dv = targetV - fwdSpeed;
+  const push = Math.sign(dv) * Math.min(Math.abs(dv)/Math.max(dt,1e-4), spec.accel);
+  state.vel.x += fwd.x * push * dt;
+  state.vel.z += fwd.z * push * dt;
+  // Querwiderstand: es rutscht nicht seitlich weg (wie bei beiden Booten).
+  const side = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const sideSpd = state.vel.x*side.x + state.vel.z*side.z;
+  const damp = 1 - Math.min(1, 4*dt);
+  state.vel.x -= side.x * sideSpd * (1-damp);
+  state.vel.z -= side.z * sideSpd * (1-damp);
+  state.vel.y = 0;                      // die Tiefe wird gesetzt, nicht integriert (siehe unten)
+
+  // Waagerecht bewegen. GETAUCHT gelten andere Hindernisse als an der Oberflaeche, und das ist der
+  // interessante Teil: eine Insel ist unter Wasser kein Land mehr, sondern ein Hang, der zum
+  // Strand hinauffuehrt — dagegen schuetzt schon die Bodenfreiheit weiter unten. Was weiterhin
+  // sperrt, sind die SCHIFFSRUEMPFE: die haengen im Wasser, und durch einen 300-m-Frachter faehrt
+  // man nicht hindurch.
+  const nx = state.pos.x + state.vel.x*dt, nz = state.pos.z + state.vel.z*dt;
+  const tief = state.pos.y < -6;        // sicher unter der Duenung und unter dem Kiel der Schiffe
+  const frei = tief ? !subHullBlocked(nx, nz, fwd.x, fwd.z)
+                    : boatWaterFree(nx, nz, fwd.x, fwd.z);
+  if(frei){ state.pos.x = nx; state.pos.z = nz; }
+  else coastSlide(state.pos, state.vel, fwd, dt, SUB_LOOK);
+  if(!tief) pushOutOfSeaShip(state.pos, state.vel, dt);
+
+  // ---- TIEFE. Zwei Grenzen, die beide wandern:
+  //   oben  die sichtbare Wasseroberflaeche an dieser Stelle (seaSurfaceY — das U-Boot IST der
+  //         Flieger, sitzt also in der Gittermitte, siehe dort),
+  //   unten der Meeresboden (seabedY) plus Bodenfreiheit.
+  // Dazwischen traegt die Fahrt es entlang der Nasenlage.
+  const surf = seaSurfaceY(0, 0, dt) + SUB_SURF_Y;
+  const grund = seabedY(state.pos.x, state.pos.z) + SUB_FLOOR_CLR;
+  // Positiver pitch heisst Nase nach OBEN (Nase auf -Z), also steigt es dann — daher +sin.
+  const vy = fwdSpeed * Math.sin(pitch) * SUB_DIVE_EFF;
+  state.pos.y += vy * dt;
+  // Auftauchen endet an der Oberflaeche: dort liegt es auf seiner Wasserlinie und faehrt wie ein
+  // Boot weiter. Nach unten ist der Grund die Grenze — es setzt sich nicht hinein.
+  if(state.pos.y > surf) state.pos.y = surf;
+  // grund kann UEBER surf liegen (Flachwasser am Strand). Dann gewinnt die Oberflaeche, sonst
+  // wuerde das Boot aus dem Wasser gehoben.
+  const unten = Math.min(grund, surf);
+  if(state.pos.y < unten) state.pos.y = unten;
+  // onGround/stalling: fuers HUD und den Sound gilt dasselbe wie beim Boot — es faehrt, es fliegt
+  // nicht, einen Stroemungsabriss gibt es hier nicht.
+  state.onGround = (state.pos.y >= surf - 0.05);
+  state.stalling = false;
+  planeGroup.position.copy(state.pos);
+  planeGroup.quaternion.copy(state.quat);
+}
+// Getaucht sperren nur die Schiffsruempfe (siehe stepSub). Aufgebaut wie boatWaterFree, aber OHNE
+// isOpenWater: unter Wasser ist eine Insel kein Land, sondern ein Hang.
+function subHullBlocked(cx, cz, fx, fz){
+  if(typeof seaShips === 'undefined' || !seaShips.length) return false;
+  const sx = -fz, sz = fx;
+  for(let i = -1; i <= 1; i++){
+    const lx = cx + fx*SUB_LOOK*i, lz = cz + fz*SUB_LOOK*i;
+    for(let j = -1; j <= 1; j++){
+      if(hitsSeaShip(lx + sx*SUB_HALF_W*j, ISLAND_Y + 2, lz + sz*SUB_HALF_W*j)) return true;
+    }
+  }
+  return false;
+}
 function stepPhysics(dt, inp){
   // Wenn abgestürzt: Feuerwehr löscht, dann Reset (Reset erst wenn Pilot gelandet)
   if(state.crashed){
@@ -8610,6 +9639,8 @@ function stepPhysics(dt, inp){
 
   // Das Boot fährt, es fliegt nicht: eigener Zweig, der die komplette Flugphysik überspringt.
   if(spec.boat){ stepBoat(dt, inp); return; }
+  // Das U-Boot fährt und taucht: eigener Zweig, der die Flugphysik ebenso überspringt.
+  if(spec.sub){ stepSub(dt, inp); return; }
 
   // Steuerraten aus dem aktiven Modell (Airbus träge, SuperCup wendig)
   const pitchRate=spec.pitch, rollRate=spec.roll, yawRate=0.7;
@@ -9211,7 +10242,7 @@ function updateCamera(){
     const side = 24 * cc.dist * sideView;         // links (-) / rechts (+)
     const desired = state.pos.clone().addScaledVector(right, side);
     desired.y += 6;
-    if(locale === 'earth' && desired.y < 2) desired.y = 2;
+    if(locale === 'earth' && !subTaucht() && desired.y < 2) desired.y = 2;
     camera.position.lerp(desired, 0.18);
     camera.lookAt(state.pos);
     return;
@@ -9235,7 +10266,7 @@ function updateCamera(){
   // Nur in der Inselwelt ist y = 0 der Meeresboden. Im Weltall liegt die Erdkugel UNTER dem Spieler
   // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
   // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
-  if(locale === 'earth' && desired.y < 2) desired.y = 2;
+  if(locale === 'earth' && !subTaucht() && desired.y < 2) desired.y = 2;
   // Die Kamera darf nicht IN einem Schiffsrumpf sitzen. Sie hatte bisher gar keine Kollision, und
   // weil sie rund 30 m hinter dem Fahrzeug haengt, steckte sie beim Vorbeifahren an einem 300-m-
   // Frachter regelmaessig darin: gemessen bei bis zu 50 % der Kurse, wenn das Boot laengsseits
@@ -9296,7 +10327,8 @@ function recycleWorld(){
 const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd'),
       elThr=document.getElementById('thr'), elStat=document.getElementById('status'),
       elAltRow=document.getElementById('altrow'), elSpdU=document.getElementById('spdu'),
-      elThrLbl=document.getElementById('thrlbl'), elThrU=document.getElementById('thru');
+      elThrLbl=document.getElementById('thrlbl'), elThrU=document.getElementById('thru'),
+      elAltLbl=document.getElementById('altlbl');
 // Symbolreihe fuer die Ladeanzeige. repeat() wirft bei negativer Anzahl, und ein Wurf in updateHUD
 // haelt den ganzen Frame an — deshalb wird hier immer auf 0..max geklemmt (NaN wird zu 0). Eine
 // Anzeige darf das Spiel nicht anhalten, egal was der Zaehler gerade sagt.
@@ -9312,13 +10344,27 @@ function updateHUD(){
   // Beim Astronauten bleibt sie AN: beim Hüpfen sieht man dort, wie hoch er kommt — auf dem Mond
   // sechsmal so hoch wie auf der Erde, und genau das ist der Reiz daran.
   // Im Schlauchboot faehrt er wie das Feuerwehrboot immer auf der Wasserlinie -> Zeile aus.
+  // Im U-BOOT bleibt die Zeile AN — dort ist sie das wichtigste Instrument, nur zeigt sie die
+  // TIEFE statt der Hoehe (siehe unten). Beim Feuerwehrboot und im Schlauchboot bleibt sie aus:
+  // die fahren immer auf der Wasserlinie.
   if(elAltRow) elAltRow.style.display =
       (locale === 'space' || (isBoat() && !eva) || (eva && eva.boat)) ? 'none' : '';
+  // Beschriftung der Zeile mitfuehren: "Tiefe" im U-Boot, sonst "Hoehe". Ohne das stand dort
+  // "Hoehe: 80 m", waehrend man 80 m unter Wasser war.
+  if(elAltLbl) elAltLbl.textContent = isSub() ? 'Tiefe' : 'Höhe';
   // Bezugsobjekt: draußen der Astronaut, sonst der Flieger. Vorher stand hier immer state.* — das
   // gehört aber dem STEHENDEN Flieger, das HUD zeigte also dessen Höhe und Tempo 0, während man lief.
   const hp = eva ? eva.group.position : state.pos;
   const altRef = (GROUNDS[locale] || locale === 'death') ? surfaceY(hp.x, hp.z) : 0.3;
-  elAlt.textContent = Math.max(0, Math.round(hp.y - altRef));
+  // Im U-Boot die TIEFE unter der Wasseroberflaeche, also der Wert nach unten statt nach oben.
+  // Bezug ist die sichtbare Flaeche an SEINER Stelle (seaSurfaceY, Gittermitte = Fahrzeug), nicht
+  // die Null-Ebene: bei 1,6 m Duenung waere die Anzeige sonst dauernd um bis zu 1,6 m daneben und
+  // zeigte aufgetaucht abwechselnd 0 und 2 m.
+  if(isSub() && !eva){
+    elAlt.textContent = Math.max(0, Math.round(seaSurfaceY(0, 0, 0) - state.pos.y));
+  } else {
+    elAlt.textContent = Math.max(0, Math.round(hp.y - altRef));
+  }
   // Im Weltall wird in Warp gerechnet (Warp 1 = 100 % Schub), sonst in km/h.
   if(eva){
     // Zu Fuß: das eigene Lauftempo. Statt des Schubs (der Motor ist draußen aus) steht dort die
@@ -9407,6 +10453,11 @@ function updateHUD(){
         : (locale === 'space' ? '🚀'
         : (tq <= 0.001 ? '⏬'
         : (tq <= VTOL_LAND ? '⬇️' : (tq < VTOL_FWD ? '⬆️' : '🚀'))))));
+    } else if(isSub()){
+      // Aufgetaucht oder getaucht — das ist im U-Boot die Information, die man braucht, und man
+      // sieht sie nicht immer am Bild (getaucht dicht unter der Oberflaeche sieht aus wie
+      // aufgetaucht). state.onGround setzt stepSub genau darauf: es liegt auf der Wasserlinie.
+      s = '\u{1F6E5}\u{FE0F}' + (state.onGround ? '' : ' \u{1F30A}');
     } else if(isBoat()){
       // Das Boot schöpft aus dem Meer, unter dem es fährt -> kein Tank, keine Tropfen-Anzeige.
       s = (boatSpray_ ? '💦' : '🚤');
@@ -9577,7 +10628,8 @@ function updateGyro(){
   const W=gyroCv.width, H=gyroCv.height, cx=W/2, cy=H/2, R=W/2-6;
   const g=gyroCtx; g.clearRect(0,0,W,H);
   // Beim Boot gibt es keine Fluglage und nichts zu landen -> Instrument bleibt leer.
-  if(isBoat()){ gyroCv.style.display='none'; return; }
+  // Auch im U-Boot: es gibt keine Fluglage und nichts zu landen. Die Tiefe steht im HUD.
+  if(isWaterCraft()){ gyroCv.style.display='none'; return; }
   gyroCv.style.display='';
   // Fluglage aus der Orientierung (Nicken/Rollen).
   //
@@ -10525,6 +11577,10 @@ function loop(now){
   if(locale === 'earth') updateTrafficAll(dt);   // KI-Flugverkehr (Bahnen, Choreografie, Vorbeiflug)
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
   updateHarborBoats(dt);     // die Feuerwehrboote am Kai schwimmen mit der Duenung
+  updateHarborSubs(dt);      // die U-Boote am Strand ebenso
+  if(locale === 'earth') updateSeabed();   // Meeresboden (rastert, rechnet nur bei Bedarf neu)
+  if(locale === 'earth') updateUwCells();  // Wracks, Seegras und Korallen in Sichtweite
+  updateFish(dt);            // Fischschwaerme (raeumen sich selbst ab, wenn man die Erde verlaesst)
   updateOrcas(dt);           // Killerwale: Springer (45 Grad, 10 m hoch) und tauchende Schule
   updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
@@ -10555,6 +11611,10 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 updateIslands();
+// Den Meeresboden EINMAL komplett rechnen, bevor das erste Bild steht. Danach uebernimmt
+// updateSeabed und rechnet nur haeppchenweise nach (siehe dort). Muss hier stehen und nicht im
+// Meeres-Block: seabedY braucht CELL und islandInfo, die erst mit dem Insel-System kommen.
+seabedInit();
 preloadAllGLB();       // echte GLB-Modelle laden (ersetzen Fallback, sobald fertig)
 preloadBoat();         // Feuerwehrboot-GLB laden
 preloadTruck();        // Feuerwehrauto-GLB laden

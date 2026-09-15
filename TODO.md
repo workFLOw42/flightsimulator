@@ -2242,45 +2242,124 @@ Zwei Dinge geprüft, bevor ich den Wert gesetzt habe:
 
 ---
 
-# OFFEN — Nächste Runde: Unterwasserwelt für ein fahrbares U-Boot
+# Unterwasserwelt und fahrbares U-Boot
 
-Gewünscht: „ich brauche noch ein meer für das ubbot zum fahren."
+Gewünscht: „ich brauche noch ein meer für das ubbot zum fahren", dazu „wir brauchen noch eine
+unterwasserwelt" und „das uboot müsste neben dem feuerwehrboot rückwärts am strand stehen zum begehen
+oder verlassen, aber auch, als letztes in der reihe, beim start zu wählen … also quasi einen
+fuerwehrboot modelkopie". Und der Hinweis, der zwei Modelle gespart hat: „als wrackmodelle könnte man
+ja das eh schon vorhandene segelboot und die liberty nehmen."
 
-Bezug: Die Idee, das U-Boot selbst zu fahren, stand schon beim Einbau — damals zurückgestellt mit „die idee
-das schiff zu fahren zu können, hatte ich auch, aber gerne später, weil wir auch noch keine unterwasserwelt
-haben". Das ist jetzt der Auftrag: **erst das Meer, dann das Fahren.**
+Die vier Fragen aus der letzten Runde vorher gestellt und beantwortet bekommen: **volle Welt mit
+Wracks**, Tiefe **~200 m**, **Nase steuert die Tiefe**, Welt und Fahren **in einem Zug**.
 
-## Was es dafür heute noch nicht gibt
+## Was gebaut wurde
 
-Nachgesehen, damit morgen niemand sucht:
+Ausführlich im README („Die Unterwasserwelt und das fahrbare U-Boot"). Kurz:
 
-- **Keinen Meeresboden.** `seabed`, `seaFloor`, `underwater` — null Treffer in `Flugspiel.html`. Unter der
-  Wasserfläche ist nichts, man sieht ins Leere.
-- **Das Meer ist eine einseitige Fläche.** `seaGeo` ist eine `PlaneGeometry` (Zeile 213, 6000 m bei 96
-  Segmenten), das Material hat kein `side: THREE.DoubleSide` — von unten ist die Wasseroberfläche also
-  unsichtbar.
-- **Die Kamera darf nicht unter y = 2.** `if(locale === 'earth' && camera.position.y < 2) camera.position.y = 2;`
-  steht in `snapCamera` (Zeile 6537) und sinngemäß in `updateCamera`. Das ist genau die Sperre, die ein
-  Tauchboot aufheben müsste.
-- **Der Nebel ist Luftnebel.** `scene.fog = new THREE.Fog(0x87b8e8, 900, 3000)` (Zeile 177), tageszeitlich
-  nachgeführt in `updateSky` (ab 6899). Unterwasser braucht andere Farbe *und* viel kürzere Reichweite —
-  Sichtweite im Meer sind eher 20–40 m als 3000.
+- **Meeresboden** (`seabedY`, `updateSeabed`) mit Schelf am Ufer, Abbruchkante und Relief, Farbe nach
+  Tiefe. Bis 200 m auf offener See.
+- **Unterwasser-Sicht** (`updateUnderwater`): Nebel 3–42 m statt 900–3000 m, Farbe von Türkis nach
+  Schwarz mit der Tiefe, gedämpftes Licht, geblendeter Übergang.
+- **U-Boot als achtes Modell** (`Sub`, `stepSub`) — Strandplatz auf der dritten Hafenseite, Einsteigen
+  mit Y, Kulisse verschwindet beim Fahren, Aussteigen nur aufgetaucht am Ufer.
+- **Wracks aus Liberty und Großsegler**, Seegras, Korallen, Fischschwärme (`uwCells`, `updateFish`).
+- Wasserfläche jetzt `DoubleSide`, Kamerasperre `y = 2` weicht bei `subTaucht()`.
 
-## Wo das Fahren anknüpfen würde
+## Fünf Fehler, die dabei aufgefallen sind — und wie sie gefunden wurden
 
-Das Muster steht schon dreimal im Code: `eva.boat` (Feuerwehrboot, ab 3861), `eva.rover` und `eva.jet`.
-Ein `eva.sub` wäre der vierte Sub-Modus — mit `stepBoat` (8503) als Vorbild für die Fahrphysik, aber um
-eine Tiefenachse erweitert.
+Alle fünf hätte man beim Lesen des Codes nicht gesehen. Gefunden wurden sie, weil das Spiel in einem
+**headless Chrome über das DevTools-Protokoll** geladen und tatsächlich gefahren wurde (`C:/tmp/uw/`:
+`devtest.js` lädt und sammelt Konsolenfehler, `drive.js` fährt und taucht, `board.js` steigt ein und
+aus, `perf.js` misst Kosten). Reine Syntaxprüfung findet nichts davon.
 
-Beim U-Boot selbst sind die Maße jetzt belastbar (siehe „Das U-Boot lag zu hoch"): Deck bei 17,6 m
-Modellhöhe, `wl` 0,1537, Rumpfdurchmesser 13,0 m. Für ein fahrbares Boot müsste die Wasserlinie vom festen
-`wl` auf eine steuerbare Tiefe umgestellt werden.
+1. **`SEABED_SHORE_Y = ISLAND_Y - 1.5` warf beim Laden.** Der Meeres-Block steht **vor** dem
+   Insel-System, `const` wird nicht gehoistet — ReferenceError, schwarzes Bild. Jetzt eine Zahl mit
+   Kommentar. *Derselbe Stolperstein wie bei `ORCA_DIVE_J`, wo der Kommentar es festhält.*
+2. **`seabedInit()` warf aus demselben Grund**, nur eine Ebene tiefer (im Funktionsaufruf, deshalb fand
+   es der Scanner der top-level-Zeilen nicht): es braucht `CELL` und `islandInfo`. Der Aufruf steht
+   jetzt beim Spielstart neben `updateIslands()`.
+3. **Die Strand-U-Boote fehlten alle** (`strandUboote: 0` im laufenden Spiel gemessen, während
+   `shipTemplates` alle fünf Modelle hatte): `buildIsland` läuft, bevor das GLB da ist, und niemand
+   baute danach neu. `preloadSeaShips` ruft jetzt `refreshIslands()` — genau was `preloadBoat` fürs
+   Kai-Feuerwehrboot tut. Für `liberty`/`sail` ebenso ein `clearUwCells()`, sonst bleiben die Wracks weg.
+4. **Der Auftauch-Guard sperrte im Wellenberg.** Er verglich `state.pos.y` mit `seaSurfaceY - 1.0`,
+   aufgetaucht liegt das Boot aber **auf der Welle** (bis 2,1 m) — Y meldete „erst auftauchen", obwohl
+   es oben lag. Jetzt zählt `state.onGround`, das `stepSub` selbst setzt: eine Wahrheit statt zweier.
+5. **Der Ausstieg am Strand war unmöglich.** Ein fester Punkt 61 m vor dem Bug erreichte den Sand
+   nicht: das U-Boot liegt weiter draußen als das Feuerwehrboot (Faktor 1,30 gegen 1,12), gemessen
+   fehlten 24 m. Jetzt wird der Weg bis 130 m **abgesucht** — robust gegen Liegeplatz und Inselgröße.
 
-## Vorher zu klären
+## Zwei Werte, die die Messung korrigiert hat
 
-- Wie tief soll es gehen, und was ist da unten zu sehen? Ein Boden mit Relief? Fische, Wracks, Pflanzen?
-- Sind die Orcas und die Handelsschiffe von unten sichtbar (die Rümpfe hängen ja bereits im Wasser)?
-- Bleibt das Tauchen wie beim KI-Boot (Automatik) oder wird es gesteuert — und mit welchen Tasten?
+- **Wracks: 0,22 → 0,07.** Mit 0,22 lag in 43×43 km alle **2,5 km** eines, dichter als die
+  Flugzeugträger — und jede Kopie ist ein volles Schiffsmodell. Jetzt alle 4,7 km, im Schnitt 0,7
+  gleichzeitig geladen.
+- **Vegetation: 5,8 → 33 von 40 Objekten.** Erst über die ganze Zelle gestreut und 34 wieder
+  verworfen, dann gezielt im Schelfring — und dessen Breite nachgerechnet: bei 0,55·`SHELF_W` lag die
+  Hälfte hinter der 40-m-Lichtgrenze, richtig sind 0,30 (40 m Tiefe = 107 m vom Ufer).
 
-Diese Fragen zuerst stellen, nicht raten: der Umfang hängt daran, und eine Unterwasserwelt ist deutlich
-mehr Arbeit als ein weiteres Modell.
+## Und die Bildrate
+
+`updateSeabed` kostete als Ganzes **9,3 ms** — bei 16,7 ms Budget und 6,8 ms für das bestehende Meer
+zu viel, und im X-Wing (686 m/s) fiele es alle 0,18 s an. Zwei Maßnahmen: der Boden **rastert** auf
+125 m ein (nur bei Zellenwechsel neu), und die Neuberechnung läuft in **Häppchen** von 6 Gitterzeilen
+pro Frame — wie `stepGroundFields` das Höhenraster von Mond und Mars ausmisst. Nachgemessen **0,8 ms**.
+Die ganze Unterwasserwelt kostet jetzt rund **1,05 ms** pro Frame.
+
+## Nachtrag am selben Abend: der Ausstieg ging ins Wasser
+
+Gemeldet: „der astronaut muss beim aussteigen aber am strand sein" — und nachgemessen war das genau
+der Fall, den ich verpasst hatte. `leaveHarborBoat` sucht festen Grund bis `BOAT_LOOK*3` = **24 m**
+vor dem Bug. Das passt fürs 16-m-Feuerwehrboot, das mit dem Heck im Sand liegt; das U-Boot hält
+**85 m** vor der Sandkante (95 m Rumpf, Liegeplatz bei Faktor 1,30 statt 1,12). Die Suche fand nie
+etwas, der Rückfall ist die Bootsposition — der Astronaut stand im Wasser (`evaSolid` false,
+Fußhöhe 0,00 statt 0,30). Betroffen war nur **Weg A** (über den Strand eingestiegen); Weg B über die
+Modellauswahl setzte ihn korrekt in den Sand, weil dort ein eigener Suchlauf lief.
+
+Erst als Reichweiten-Fix gebaut (fahrzeugabhängig, plus Suche zur nächsten Insel, wenn der Bug
+schräg steht). Dann kam der bessere Vorschlag: **„aussteigen = astronaut im schlauchboot und wenn
+mit schlauchboot uboot berührt = im uboot. dann gibts keine wasser probleme."**
+
+Genau so gebaut, und es ist die richtige Lösung — nicht bloß die bequemere. Das Spiel behandelt
+**jede** Wasserkante so: der Schritt vom Trägerdeck, der Schritt über die Kaikante, der Fallschirm
+aufs Meer. Überall fängt das Schlauchboot auf, statt zu verbieten. Der Ausstieg an Land war der
+Fremdkörper, und die Ufersuche wäre nur die Verwaltung dieses Fremdkörpers gewesen.
+
+- `evaExitToDinghy` setzt den Astronauten quer neben den Rumpf und gleich ins Schlauchboot.
+- `dinghyTouchesHarborSub` prüft die **Rumpfhülle** (106 × 18 m, in Bootskoordinaten gedreht wie
+  `hitsSeaShip`) — ein Mittelpunktsabstand wäre an Bug und Heck 47 m daneben.
+- Entfallen sind dabei `nearHarborSub`, `HARBOR_SUB_NODINGHY` und `evaExitFromSub`: die Sperrzone
+  gegen das Schlauchboot war das Gegenteil von dem, was jetzt gewollt ist.
+
+### Drei Fehler, die dieser Umbau selbst hatte
+
+Alle drei im laufenden Browser gefunden, keiner beim Lesen sichtbar:
+
+1. **Man kam nie zurück.** `dinghyTouchesHarborSub` brach bei `isSub()` ab („man fährt es selbst,
+   dann liegt keine Kulisse da"). Nach dem Ausstieg steht `MODEL_NAMES` aber weiter auf `Sub` — das
+   U-Boot ist ja das Fahrzeug, zu dem man zurückkehrt. Gemessen: nach 30 s Heranfahren kein Umstieg.
+   Jetzt zählt zuerst `eva.planeAt`, der gemerkte Platz (dieselbe Größe, mit der `evaCanBoard` den
+   Flieger wiederfindet).
+2. **Absturz beim Umsteigen.** `updateDinghy` löst `eva` auf, und `updateEva` liest die Zeile danach
+   `eva.planeAt` — TypeError, Bild steht. Dasselbe Sicherheitsnetz, das `updateJet` schon hat (dort
+   steht ausdrücklich, dass das Jetpack innerhalb eines Frames ausgehen kann).
+3. **Aussteigen war unmöglich.** Das Schlauchboot entsteht neben dem Rumpf, also noch in der
+   Berührungszone — man saß im selben Moment wieder drin (gemessen: Umstieg nach **0 Frames**). Ein
+   größerer Abstand wäre Flickwerk (er müsste die halbe Rumpflänge abdecken). Stattdessen eine
+   Sperre, die erst löst, wenn man die Zone einmal verlassen hat: im Spiel nach **0,9 s**.
+
+Der Ablauf im Ganzen, so gemessen: Y → im Schlauchboot 22 m neben dem Rumpf · wegfahren, Sperre löst
+nach 0,9 s · 123 m weg gedreht · zurück → nach 12,1 s wieder im U-Boot. Kein Trockenstehen, kein
+Sofort-Umstieg, kein Absturz.
+
+## Offen geblieben
+
+- **Die Orcas tauchen nur 7 m.** Von unten sieht man sie jetzt, aber sie bleiben knapp unter der
+  Oberfläche — ihr Modell ist nur 3,19 m hoch, ein tieferes Tauchen bräuchte die Begründung von
+  `ORCA_DIVE` neu. Wäre schön, wenn eine Schule mal am U-Boot vorbeizieht.
+- **Wracks sind reine Kulisse.** Man kann hineinfahren (der Rumpf sperrt nicht, weil `hitsSeaShip` nur
+  die fahrenden Schiffe kennt). Ob das ein Fehler ist, muss man im Spiel entscheiden — durch ein
+  offenes Wrack zu tauchen wäre auch schön.
+- **Kein Licht am Boot.** Auf 200 m ist es dunkel; ein Scheinwerfer wäre der nächste Schritt, wenn die
+  Tiefsee interessanter werden soll.
