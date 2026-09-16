@@ -412,7 +412,84 @@ function seabedY(x, z, islands){
 }
 const seabedGeo = new THREE.PlaneGeometry(SEABED_SIZE, SEABED_SIZE, SEABED_SEG, SEABED_SEG);
 seabedGeo.rotateX(-Math.PI/2);
-const seabedMesh = new THREE.Mesh(seabedGeo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+// ---- SANDTEXTUR fuer den Meeresboden -----------------------------------------------------------
+// "der meeresboden ist quasi immer noch so wie auf dem screenshot" — nachgerechnet ist klar, warum
+// er nicht als Flaeche zu erkennen war: das Bodengitter hat 48 Segmente auf 6 km, also 125 m
+// Punktabstand. Bei 165 m Sichtweite sieht man EIN bis ZWEI Gitterzellen weit, und eine
+// gleichmaessig gefaerbte Flaeche aus zwei Dreiecken ist von einem Farbverlauf nicht zu
+// unterscheiden. Die Vertexfarben nach Tiefe helfen nicht: sie wechseln erst ueber Hunderte Meter.
+//
+// Ein feineres Gitter ist zu teuer (seabedY sucht pro Punkt die naechste Insel), also derselbe Weg
+// wie bei der Wiese: eine kachelnde Textur, zur Laufzeit gemalt. Sie gibt Struktur auf JEDER Skala
+// und kostet einmal 512x512 Pixel fuer den ganzen Meeresboden.
+//
+// Die Vertexfarben bleiben und wirken WEITER: das Material multipliziert Textur mal Vertexfarbe,
+// also faerbt die Tiefe den Sand ein, waehrend die Textur die Koernung liefert. Deshalb ist die
+// Textur grau-neutral gemalt — jede Eigenfarbe waere ein zweites Mal eingefaerbt worden.
+const SAND_TILE_PX = 512;
+const SAND_TILE_M  = 22;      // Meter je Kachel. Kleiner als bei der Wiese (30 m), weil man hier
+                              // naeher am Boden ist: das U-Boot faehrt 12 m darueber.
+let sandTex = null;
+function makeSandTexture(){
+  if(sandTex) return sandTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = SAND_TILE_PX;
+  const g = cv.getContext('2d');
+  let seed = 771771;
+  const rnd = ()=>{ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; };
+  // Neutrales Mittelgrau als Basis: die eigentliche Farbe kommt aus den Vertexfarben (Sand am Ufer,
+  // Schlick in der Tiefe). Ein farbiger Grund waere doppelt eingefaerbt.
+  g.fillStyle = '#b4b4b4';
+  g.fillRect(0, 0, SAND_TILE_PX, SAND_TILE_PX);
+  // RIPPEL: der Sandboden im Flachwasser ist gewellt, und diese Streifen sind das Merkmal, an dem
+  // man Bewegung ablesen kann. Zwei Richtungen ueberlagert, damit kein Wellblech entsteht.
+  for(const [winkel, wellen, staerke] of [[0.4, 9, 0.16], [1.9, 14, 0.10]]){
+    g.save();
+    g.translate(SAND_TILE_PX/2, SAND_TILE_PX/2);
+    g.rotate(winkel);
+    for(let i=-40;i<40;i++){
+      const y = i*(SAND_TILE_PX/wellen) + (rnd()-0.5)*6;
+      const dick = 3 + rnd()*5;
+      g.fillStyle = 'rgba(255,255,255,'+staerke.toFixed(2)+')';
+      g.fillRect(-SAND_TILE_PX, y, SAND_TILE_PX*2, dick);
+      g.fillStyle = 'rgba(60,60,60,'+(staerke*0.8).toFixed(2)+')';
+      g.fillRect(-SAND_TILE_PX, y+dick, SAND_TILE_PX*2, dick*0.7);
+    }
+    g.restore();
+  }
+  // KOERNUNG: einzelne helle und dunkle Punkte. Sie sind es, die aus der Naehe Struktur geben —
+  // ohne sie bliebe der Boden auch mit Rippeln glatt.
+  for(let i=0;i<2600;i++){
+    const x = rnd()*SAND_TILE_PX, y = rnd()*SAND_TILE_PX, r = 0.6 + rnd()*1.8;
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.20)' : 'rgba(50,50,50,0.18)';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
+  }
+  // Dunkle Flecken: Seegrasreste, Steine, Vertiefungen. Sie brechen die Regelmaessigkeit der
+  // Rippel, damit das Muster beim Fahren nicht als Kachel auffaellt.
+  for(let i=0;i<45;i++){
+    const x = rnd()*SAND_TILE_PX, y = rnd()*SAND_TILE_PX, r = 8 + rnd()*26;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(70,74,66,0.30)');
+    grad.addColorStop(1, 'rgba(70,74,66,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
+  }
+  sandTex = new THREE.CanvasTexture(cv);
+  sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+  // Der Boden wird sehr flach gesehen (die Kamera schaut fast waagerecht darueber), und ohne
+  // anisotrope Filterung verschmiert die Kachel in der Tiefe zu einem grauen Band — genau der
+  // Effekt, der behoben werden soll.
+  sandTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  // Die UVs der PlaneGeometry laufen von 0 bis 1 ueber die ganzen 6 km. Die Kachel muss sich also
+  // oft wiederholen: 6000 / 22 = 273 mal.
+  sandTex.repeat.set(SEABED_SIZE/SAND_TILE_M, SEABED_SIZE/SAND_TILE_M);
+  return sandTex;
+}
+// Die Textur kommt ZUSAETZLICH zu den Vertexfarben: Three.js multipliziert beides, also faerbt die
+// Tiefe (Sand am Ufer, Schlick unten) die Koernung der Textur ein. Deshalb ist die Textur neutral
+// grau gemalt — mit eigener Farbe waere sie doppelt eingefaerbt.
+const seabedMesh = new THREE.Mesh(seabedGeo, new THREE.MeshLambertMaterial({ vertexColors:true,
+                                                                            map: makeSandTexture() }));
 seabedMesh.position.y = 0;
 scene.add(seabedMesh);
 const seabedPos = seabedGeo.attributes.position;
@@ -2321,21 +2398,10 @@ function makeWeed(rnd, rnd2){
   }
   return g;
 }
-// Eine Koralle: ein gedrungener Stock mit zwei Auswuechsen. Zwei Farben im Wechsel, damit ein
-// Korallenfeld nicht einfarbig wirkt.
-function makeCoral(rnd, rnd2){
-  const g = new THREE.Group();
-  const mat = rnd < 0.5 ? coralMat : coral2Mat;
-  const r = 1.2 + rnd2*1.6, h = 1.6 + rnd*2.2;
-  const st = new THREE.Mesh(new THREE.CylinderGeometry(r*0.5, r, h, 7), mat);
-  st.position.y = h/2; g.add(st);
-  for(let i=0;i<2;i++){
-    const a = new THREE.Mesh(new THREE.SphereGeometry(r*0.7, 7, 5), mat);
-    a.position.set((i?1:-1)*r*0.8, h*0.8, (rnd2-0.5)*r);
-    a.scale.y = 0.6; g.add(a);
-  }
-  return g;
-}
+// Hier stand einmal makeCoral: ein gedrungener Zylinder mit zwei Kugeln obendrauf. Die Form war
+// als Koralle nicht zu erkennen — gemeldet als "das orangene sollen das poller sein?". Ersetzt
+// durch makeCoralBush (siehe weiter unten), der an deep_water_coral abgeschaut ist: mehrere
+// verzweigte Stoecke unterschiedlicher Hoehe mit verdickten Spitzen.
 // ---- Zellenverwaltung fuer alles unter Wasser ---------------------------------------------------
 // Ein Pool wie islandCells: pro Zelle EINE Group mit Wrack, Seegras und Korallen. Sie entsteht,
 // wenn die Zelle in Sichtweite kommt, und verschwindet, wenn sie hinausfaellt.
@@ -2382,6 +2448,79 @@ const UW_PLANT_BAND0 = 0.172;   // Beginn: die 9-m-Linie
 // sind es 59 m Breite (108.000 m2) und ein Abstand von 34 m, und die Pflanzen bleiben im hellen
 // Bereich, wo man sie auch sieht.
 const UW_PLANT_BANDW = 0.153;
+// ---- BODENBEWUCHS AUF OFFENER SEE --------------------------------------------------------------
+// Gemeldet als "ich sehe auch keine pflanzen oder ähnliches unter wasser. keine wracks etc." — und
+// nachgerechnet stimmt das fuer den Ort, an dem man faehrt: Pflanzen standen NUR in einem 61 m
+// breiten Ring um Inseln, das sind 11 % der Weltflaeche. Auf offenem Meer war der Grund leer.
+//
+// Das war als "die Tiefsee DARF leer sein" begruendet und ist als Physik richtig, im Spiel aber
+// falsch: der Meeresboden ist die einzige Referenz, an der man unter Wasser Fahrt und Richtung
+// ablesen kann. Also bekommt er ueberall Struktur — in der Tiefe andere Formen als am Riff.
+//
+// Die Formen sind an den mitgelieferten Modellen abgeschaut (deep_water_coral: verzweigte Stoecke
+// unterschiedlicher Groesse in einem Buschel; underwater_scene: Felsbrocken und Schwaemme auf Sand)
+// und dann als einfache Geometrie nachgebaut. Die Modelle selbst waeren nicht tragbar gewesen: die
+// Koralle allein hat 151.616 Dreiecke, und im Riff stehen 850 Stueck gleichzeitig — das waeren
+// 129 Mio. Dreiecke. Nachgebaut kostet ein Busch 20 bis 40.
+const DEEP_PER_CELL = 26;     // Objekte je Zelle auf offener See
+// Farben fuer die Tiefe: dort ist alles blaustichig und blass, weil Rot als erstes verschwindet.
+// Das ist derselbe Grund, aus dem die Wracks braungruen sind.
+const spongeMat = new THREE.MeshLambertMaterial({ color:0x8f7f9c });   // Schwamm, violettgrau
+const sponge2Mat= new THREE.MeshLambertMaterial({ color:0xa8886f });   // Schwamm, sandbraun
+// uwRockMat und nicht rockMat: den Namen gibt es schon fuer die braunen Gipfel der Inselberge
+// (siehe dort). Unter Wasser ist Gestein blaugrau, nicht braun — Rot verschwindet im Wasser zuerst.
+const uwRockMat = new THREE.MeshLambertMaterial({ color:0x6b7480 });   // Felsbrocken am Grund
+// Ein Tiefenschwamm: ein bis drei Roehren unterschiedlicher Hoehe aus einem Fuss. Abgeschaut an den
+// Roehrenschwaemmen im underwater_scene-Modell, gebaut aus offenen Zylindern.
+function makeSponge(rnd, rnd2){
+  const g = new THREE.Group();
+  const mat = rnd < 0.5 ? spongeMat : sponge2Mat;
+  const n = 1 + Math.floor(rnd2*3);
+  for(let i=0;i<n;i++){
+    const h = 1.8 + rnd*3.2 * (1 - i*0.25);
+    const r = 0.45 + rnd2*0.5;
+    // openEnded: eine Roehre ist innen hohl, und von der Seite sieht man das an der Kante.
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(r*0.85, r, h, 7, 1, true), mat);
+    tube.position.set((i-1)*r*1.6*rnd2, h/2, (rnd-0.5)*r*2);
+    tube.rotation.z = (rnd2-0.5)*0.35;
+    g.add(tube);
+  }
+  return g;
+}
+// Ein Felsbrocken: eine gestauchte Kugel mit wenigen Segmenten, damit sie kantig wirkt. Kantig ist
+// hier richtig — ein runder Stein sieht nach Ball aus, ein facettierter nach Gestein.
+function makeRock(rnd, rnd2){
+  const r = 1.4 + rnd*3.0;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), uwRockMat);
+  m.scale.set(1, 0.55 + rnd2*0.4, 0.8 + rnd*0.4);
+  m.position.y = r*0.3;
+  m.rotation.set(rnd*0.4, rnd2*Math.PI*2, rnd2*0.4);
+  return m;
+}
+// Ein verzweigter Korallenbusch, abgeschaut an deep_water_coral: mehrere Stoecke unterschiedlicher
+// Hoehe aus einem Punkt, oben leicht verdickt. Deutlich besser als die alte Form (ein Zylinder mit
+// zwei Kugeln), und mit 3 bis 5 Zylindern nicht teurer.
+function makeCoralBush(rnd, rnd2){
+  const g = new THREE.Group();
+  const mat = rnd < 0.5 ? coralMat : coral2Mat;
+  const n = 3 + Math.floor(rnd2*3);
+  for(let i=0;i<n;i++){
+    const h = 1.4 + rnd*2.4 * (0.6 + (i%3)*0.2);
+    const r = 0.22 + rnd2*0.25;
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(r*0.6, r, h, 5), mat);
+    const a = (i/n)*Math.PI*2 + rnd*2;
+    const neig = 0.15 + rnd2*0.35;
+    // Schraeg nach aussen: die Zweige spreizen sich, statt parallel zu stehen.
+    br.position.set(Math.cos(a)*h*0.28, h/2*Math.cos(neig), Math.sin(a)*h*0.28);
+    br.rotation.set(Math.sin(a)*neig, 0, -Math.cos(a)*neig);
+    g.add(br);
+    // Verdickte Spitze, wie bei einer Steinkoralle.
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(r*1.5, 5, 3), mat);
+    tip.position.set(Math.cos(a)*h*0.55, h*Math.cos(neig), Math.sin(a)*h*0.55);
+    g.add(tip);
+  }
+  return g;
+}
 function buildUwCell(cx, cz){
   const g = new THREE.Group();
   let leer = true;
@@ -2422,12 +2561,41 @@ function buildUwCell(cx, cz){
       // 4,2 m hoch, ein Seegrasbueschel bis 5,6 m — die Spitzen ragten aus dem Wasser, und weil
       // die Wellenflaeche um +-2,4 m wandert, sah es aus, als schwaemmen sie mit ihr mit.
       if(y < -WEED_MAX_DEPTH || y > -UW_PLANT_MIN_DEPTH) continue;
-      const o = coral ? makeCoral(r3, r1) : makeWeed(r3, r2);
+      // makeCoralBush statt der alten makeCoral: die war ein Zylinder mit zwei Kugeln obendrauf und
+      // sah nach Poller aus (genau so gemeldet). Der Busch ist an deep_water_coral abgeschaut —
+      // mehrere verzweigte Stoecke unterschiedlicher Hoehe — und kostet kaum mehr.
+      const o = coral ? makeCoralBush(r3, r1) : makeWeed(r3, r2);
       o.position.set(x, y, z);
       o.rotation.y = r3*Math.PI*2;
       g.add(o);
       leer = false;
     }
+  }
+  // ---- OFFENE SEE: Bewuchs auch OHNE Insel in der Zelle. Vorher gab es hier nichts, und das war
+  // der Grund fuer "ich sehe auch keine pflanzen oder ähnliches unter wasser": die Vegetation stand
+  // nur in einem 61 m breiten Ring um Inseln, nachgerechnet 11 % der Weltflaeche. Wer auf offenem
+  // Meer taucht, sah einen leeren Grund — und damit keine Referenz fuer die eigene Bewegung.
+  //
+  // Verteilt wird ueber die ganze Zelle, deterministisch wie alles hier. Die Objekte stehen auf dem
+  // Grund (seabedY), also auch auf den Duenen und Haengen.
+  for(let i=0;i<DEEP_PER_CELL;i++){
+    const r1 = cellRnd(cx, cz, 1400+i*4), r2 = cellRnd(cx, cz, 1401+i*4);
+    const r3 = cellRnd(cx, cz, 1402+i*4), r4 = cellRnd(cx, cz, 1403+i*4);
+    const x = cx*CELL + (r1-0.5)*CELL*0.92, z = cz*CELL + (r2-0.5)*CELL*0.92;
+    if(isOnLand(x, z) || isOnBeach(x, z)) continue;
+    const y = seabedY(x, z);
+    // Nicht im Flachwasser: dort steht schon die Riff-Vegetation, und ein Felsbrocken duerfte nicht
+    // aus dem Wasser ragen. Dieselbe Grenze wie fuer die Pflanzen.
+    if(y > -UW_PLANT_MIN_DEPTH) continue;
+    // Was waechst hier? Felsen ueberall, Schwaemme und Korallenbuesche eher im mittleren Wasser.
+    // Kein Dogma, sondern Abwechslung: drei Formen, damit der Grund nicht gestempelt wirkt.
+    const o = r4 < 0.40 ? makeRock(r3, r4)
+            : r4 < 0.75 ? makeSponge(r3, r4)
+                        : makeCoralBush(r3, r4);
+    o.position.set(x, y, z);
+    o.rotation.y = r3*Math.PI*2;
+    g.add(o);
+    leer = false;
   }
   return leer ? null : g;
 }
@@ -6952,10 +7120,13 @@ function preloadSphereGLB(dataUrl, radius, cb){
 // also weiche Flecken. Die Kuppel liefert die scharfen Punkte, das Panorama den Schleier dahinter.
 // Zusammen ergibt das erst den Himmel.
 let mwDome = null, mwMat = null;
-// Radius knapp INNERHALB der Sternenkuppel (STAR_R), damit beide zusammen einen Himmel bilden und
-// die Kuppelsterne vor dem Band liegen. Weiter als der fernste Himmelskoerper (Sonne bei 1.020.000 m)
-// und naeher als die Far-Plane (1.600.000 m).
-const MW_R = 0.98;
+// Radius als Anteil von STAR_R. 0,96 legt das Band INNERHALB der Sternenkuppel — das ist Absicht
+// und war beim ersten Versuch mit 0,98 zu knapp: bei zwei transparenten Kugelschalen entscheidet
+// der Abstand die Zeichenreihenfolge, und 2 % von 1,2 Mio. Metern sind bei den Rundungen des
+// logarithmischen Tiefenpuffers kein sicherer Abstand.
+// Es muss ausserdem weiter weg sein als der fernste Himmelskoerper (Sonne bei 1.020.000 m) und
+// naeher als die Far-Plane (1.600.000 m): 0,96 mal 1.200.000 sind 1.152.000 m, beides erfuellt.
+const MW_R = 0.96;
 function buildMilkyWay(){
   if(mwDome || !window.MILKYWAY_GLB) return;
   // Dieselbe Hilfsfunktion, mit der auch Erde, Mond und Sterne geladen werden: sie skaliert das
@@ -6969,16 +7140,21 @@ function buildMilkyWay(){
       // und garantiert lichtunabhaengig.
       const src = Array.isArray(o.material) ? o.material[0] : o.material;
       const tex = src && (src.emissiveMap || src.map);
-      mwMat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.BackSide,
-                                            transparent:true, opacity:0, depthWrite:false,
-                                            // Additiv: das Band ADDIERT Licht zum schwarzen Himmel,
-                                            // statt ihn zu ueberdecken. Damit bleiben die Sterne der
-                                            // Kuppel sichtbar, auch wo das Band darueber liegt.
-                                            blending:THREE.AdditiveBlending });
+      // GENAU DIE FLAGS DER STERNENKUPPEL, nur mit Textur. Mein erster Versuch hatte BackSide,
+      // AdditiveBlending und renderOrder -2 — und war unsichtbar. Am verdaechtigsten ist das
+      // additive Blending zusammen mit einer Zeichenreihenfolge VOR dem Hintergrund: additiv
+      // rechnet Ziel + Quelle, und was vor scene.background liegt, wird davon ueberschrieben.
+      // Die Kuppel blendet normal und ist sichtbar — also derselbe Weg.
+      //
+      // DoubleSide statt BackSide aus demselben Grund: die Kuppel macht es so, und bei einer
+      // 1,2-Mio-Meter-Kugel, in der man immer drinsteckt, kostet es nichts.
+      mwMat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.DoubleSide,
+                                            transparent:true, opacity:0, depthWrite:false });
       o.material = mwMat;
-      // BackSide, weil man von INNEN in die Kugel schaut. Und ganz nach hinten in die
-      // Zeichenreihenfolge, damit alles andere davor liegt.
-      o.renderOrder = -2;
+      // -1 wie die Kuppel, aber das Band liegt raeumlich dahinter (MW_R 0,98 gegen 1,0), also
+      // zeichnet Three.js es innerhalb derselben Ordnung zuerst — transparente Objekte werden
+      // nach Abstand sortiert, das Fernere kommt zuerst.
+      o.renderOrder = -1;
       o.frustumCulled = false;
     });
     g.visible = false;
@@ -6986,11 +7162,12 @@ function buildMilkyWay(){
     scene.add(g);
   });
 }
-// Wie kraeftig das Band im Weltall steht. 0,55 ist ein bewusster Kompromiss: das Panorama ist ein
-// FOTO mit langer Belichtung, in voller Staerke waere es heller als der Himmel eines Kinderspiels
-// sein sollte und wuerde die Sterne der Kuppel erschlagen. Bei 0,55 ist das Band klar zu erkennen
-// und die Einzelsterne bleiben die Hauptsache.
-const MW_OPACITY = 0.55;
+// Wie kraeftig das Band im Weltall steht. Ohne additives Blending (siehe buildMilkyWay) muss der
+// Wert hoeher sein als die 0,55 des ersten Versuchs: normal geblendet ERSETZT das Band den Himmel
+// anteilig, statt Licht dazuzugeben. 0,85 zeigt das Foto fast unverfaelscht und laesst dort, wo es
+// schwarz ist, den Himmel durch — das Panorama ist selbst grossflaechig dunkel, also verdeckt es
+// die Sterne der Kuppel nur im Band.
+const MW_OPACITY = 0.85;
 function updateMilkyWay(f){
   if(!mwDome) return;
   mwDome.visible = f > 0.02;
@@ -8310,16 +8487,17 @@ function updateUnderwater(dt){
   // Wasserlinie schwebt.
   const roh = Math.min(1, Math.max(0, (cameraDepth() - 0.5) / UW_BAND));
   const kamZiel = roh*roh*(3 - 2*roh);
-  // Das MAXIMUM aus Kamera und Fahrzeug (siehe uwCamBlend), und das ist der Kern der Sache:
-  // die Kamera allein gab ein flackerndes Bild, weil sie im Wellenhub von 4,8 m pendelt — bei
-  // 5 m Bootstiefe sass sie auf -1,98 m und war abwechselnd drin und draussen, die Sichtweite
-  // sprang zwischen 74 und 2.334 m. Wer im U-Boot auf 5 m Tiefe faehrt, ist aber unter Wasser,
-  // auch wenn die Verfolgerkamera kurz Luft schnappt. Das Fahrzeug haelt den Wert also fest.
+  // IM U-BOOT entscheidet ALLEIN das Boot, die Kamera zaehlt dort gar nicht. Der Grund ist
+  // nachgerechnet: die Verfolgerkamera kippt mit der Nase mit, und weil sie 76,8 m hinter dem Boot
+  // sitzt, hebt dieser Abstand sie bei Tauchlage weit an — 31,5 m ueber dem Boot bei 15 Grad,
+  // 48,8 m bei den 30 Grad, die SUB_PMAX erlaubt. Die Linse war damit erst ab rund 50 m Bootstiefe
+  // nass, und weil der Nickwinkel beim Steuern dauernd wechselt, wanderte sie um Dutzende Meter
+  // auf und ab: "wechselt erst ab einer tiefe von ca 50 m komplett unter wasser. vorher schwingt
+  // sie, je nach neigungswinkel des uboots immer hin und her".
   //
-  // Die Kamera bleibt trotzdem drin und wird nicht einfach ersetzt: sie deckt den umgekehrten
-  // Fall ab, dass das FAHRZEUG oben schwimmt und die LINSE eintaucht — mit dem Schlauchboot in
-  // einem Wellenberg, oder zu Fuss in der Brandung. Beides soll Unterwassersicht geben.
-  const ziel = Math.max(kamZiel, uwCamBlend);
+  // Die Kamera bleibt nur fuer den Fall, fuer den sie gedacht war: Fahrzeuge, die NICHT tauchen,
+  // deren Linse aber in eine Welle geraet — Schlauchboot im Wellenberg, zu Fuss in der Brandung.
+  const ziel = isSub() ? uwCamBlend : Math.max(kamZiel, uwCamBlend);
   uwBlend += (ziel - uwBlend) * Math.min(1, UW_RATE*dt);
   if(uwBlend < 0.002){
     uwBlend = 0;
@@ -8331,10 +8509,10 @@ function updateUnderwater(dt){
   // Tiefenanteil: 0 an der Oberflaeche, 1 auf SEA_DEPTH. Gerechnet wird mit der TIEFEREN von
   // Kamera und Fahrzeug — bei getauchtem Boot haengt die Kamera bis zu 5 m hoeher, und mit ihrem
   // Wert allein waere die Farbe eine Spur zu hell fuer die Tiefe, in der man wirklich faehrt.
-  // Nur beim U-Boot zaehlt die Fahrzeugtiefe mit (dieselbe Begruendung wie in updateUwCamBlend:
-  // andere Boote liegen konstruktiv unter y = 0, ohne getaucht zu sein).
-  const tiefRef = (locale === 'earth' && isSub() && !eva)
-                ? Math.min(camera.position.y, state.pos.y) : camera.position.y;
+  // Farbtiefe: im U-Boot zaehlt DAS BOOT, nicht die Kamera. Sonst wandert die Wasserfarbe mit dem
+  // Nickwinkel, weil die mitkippende Kamera bis 49 m ueber oder unter dem Boot haengt (siehe oben).
+  // Ausserhalb des U-Boots die Kamera, denn dort gibt es kein Tauchen und die Linse entscheidet.
+  const tiefRef = (locale === 'earth' && isSub() && !eva) ? state.pos.y : camera.position.y;
   const tief = Math.min(1, Math.max(0, -tiefRef / SEA_DEPTH));
   _uwC.copy(UW_SURF).lerp(UW_DEEP, tief);
   const b = uwBlend;
@@ -11225,7 +11403,93 @@ function activeTarget(){
   if(isAirbus() && paxTarget) return {x:paxTarget.x, z:paxTarget.z, col:(paxLoad>=PAX_MAX?'#e8c020':'#cc4444')};
   return null;
 }
+// ---- PERISKOP-ANSICHT statt Radar, solange man getaucht ist ------------------------------------
+// Gewuenscht: "wäre es nett wenn unter wasser das radar aus ist, aber man an der stelle vielleicht
+// wie bei einem periskop klein sieht was oben ist. man weiß nicht, ist man im offenen meer, steuert
+// man auf eine insel zu. unter wasser sind die vielen inseln eher schwierig."
+//
+// Das ist ein echtes Orientierungsproblem: unter Wasser sieht man 165 m weit, eine Insel ist aber
+// erst ab dem Schelf zu erkennen, und der beginnt Hunderte Meter vom Ufer. Man faehrt also blind.
+// Das normale Radar hilft nicht — es zeigt Feuer-Ziele und Fahrzeuge, keine Kueste.
+//
+// Die Periskop-Scheibe zeigt dafuer genau das, was fehlt: wo Land ist. Sie tastet die Umgebung in
+// einem Raster ab (isOnLand/isOnBeach) und malt Inseln als gruene Flecken auf blaues Wasser, mit
+// dem eigenen Kurs nach oben — dieselbe Konvention wie beim Radar, damit man nicht umdenken muss.
+const PERI_R      = 1400;   // m Reichweite. Bewusst weit: eine Insel soll auftauchen, BEVOR man am
+                            // Schelf ist, sonst kommt die Warnung zu spaet. 1.400 m sind knapp zwei
+                            // Zellen, also immer mindestens eine Nachbarinsel im Bild.
+const PERI_RASTER = 26;     // Abtastpunkte je Achse. 26x26 = 676 isOnLand-Abfragen — deshalb wird
+                            // die Scheibe nicht jeden Frame neu gerechnet (siehe periT).
+const PERI_RATE   = 0.4;    // s zwischen zwei Neuberechnungen. Bei 50 km/h faehrt man in dieser Zeit
+                            // 5,6 m, das Bild ist also praktisch aktuell.
+let periT = 0, periDaten = null, periKurs = 0;
+function updatePeriscope(dt){
+  const drin = isSub() && !eva && locale === 'earth' && uwCamBlend > 0.5;
+  // Umschalten: getaucht das Periskop, sonst das normale Radar. Beide teilen dieselbe Canvas —
+  // zwei Instrumente an derselben Stelle waeren doppelter Platzbedarf fuer denselben Zweck.
+  if(!drin){ periDaten = null; return false; }
+  periT -= dt;
+  if(periT <= 0 || !periDaten){
+    periT = PERI_RATE;
+    // Kurs merken: die Karte wird gedreht gezeichnet, damit "oben" die Fahrtrichtung ist.
+    const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+    periKurs = Math.atan2(fwd.x, fwd.z);
+    // Umgebung abtasten. In WELTkoordinaten, achsenparallel — die Drehung passiert erst beim Malen.
+    const N = PERI_RASTER;
+    if(!periDaten) periDaten = new Uint8Array(N*N);
+    for(let iz=0; iz<N; iz++) for(let ix=0; ix<N; ix++){
+      const wx = state.pos.x + ((ix/(N-1))*2-1)*PERI_R;
+      const wz = state.pos.z + ((iz/(N-1))*2-1)*PERI_R;
+      // 2 = Land, 1 = Strand (Flachwasser, hier wird es eng), 0 = Wasser.
+      periDaten[iz*N+ix] = isOnLand(wx, wz) ? 2 : (isOnBeach(wx, wz) ? 1 : 0);
+    }
+  }
+  // ---- Malen. Dieselbe Scheibe wie das Radar, damit die Anzeige an ihrem Platz bleibt.
+  const W=radarCv.width, H=radarCv.height, cx=W/2, cy=H/2, R=W/2-6;
+  const g = radarCtx;
+  g.clearRect(0,0,W,H);
+  // Wasser als Grund, in der Farbe, die man auch draussen sieht.
+  g.fillStyle='rgba(20,70,90,0.85)';
+  g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.fill();
+  // Auf die Scheibe beschneiden, sonst malt das Raster ueber den Rand hinaus.
+  g.save();
+  g.beginPath(); g.arc(cx,cy,R-1,0,Math.PI*2); g.clip();
+  const N = PERI_RASTER;
+  // Ein Rasterpunkt deckt so viele Pixel ab. Mit +1 gemalt, damit keine Luecken zwischen den
+  // Kaestchen bleiben — sonst sieht die Kueste aus wie ein Gitter.
+  const px = (R*2)/N + 1;
+  const cosK = Math.cos(-periKurs), sinK = Math.sin(-periKurs);
+  for(let iz=0; iz<N; iz++) for(let ix=0; ix<N; ix++){
+    const v = periDaten[iz*N+ix];
+    if(!v) continue;
+    // Rasterpunkt -> Meter relativ zum Boot -> Bildpunkt, dabei um den Kurs gedreht.
+    const rx = ((ix/(N-1))*2-1)*PERI_R, rz = ((iz/(N-1))*2-1)*PERI_R;
+    const dx = rx*cosK - rz*sinK, dz = rx*sinK + rz*cosK;
+    const bx = cx + (dx/PERI_R)*(R-2);
+    const by = cy - (dz/PERI_R)*(R-2);      // minus, weil "oben" im Bild vorne ist
+    g.fillStyle = v===2 ? '#5aa845' : '#d8cf9a';   // Land gruen, Strand sandfarben
+    g.fillRect(bx-px/2, by-px/2, px, px);
+  }
+  g.restore();
+  // Rand und eigenes Boot in der Mitte, wie beim Radar.
+  g.strokeStyle='rgba(255,255,255,0.6)'; g.lineWidth=2;
+  g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.stroke();
+  g.fillStyle='#ffffff';
+  g.beginPath();
+  g.moveTo(cx,cy-7); g.lineTo(cx-5,cy+6); g.lineTo(cx+5,cy+6);
+  g.closePath(); g.fill();
+  // Periskop-Symbol, damit klar ist, dass hier etwas anderes steht als sonst.
+  g.font='11px system-ui,sans-serif';
+  g.fillStyle='rgba(255,255,255,0.85)';
+  g.textAlign='center';
+  g.fillText('\u{1F52D}', cx, H-6);
+  return true;
+}
 function updateRadar(){
+  // GETAUCHT zeigt die Scheibe eine Periskop-Karte statt der Ziel-Blips (siehe updatePeriscope):
+  // unter Wasser sind Feuer und Fahrzeuge belanglos, gebraucht wird die Kueste. Uebernimmt das
+  // Periskop, ist hier nichts mehr zu tun.
+  if(updatePeriscope(dtCam)) return;
   const W=radarCv.width, H=radarCv.height, cx=W/2, cy=H/2, R=W/2-6;
   radarCtx.clearRect(0,0,W,H);
   // Scheibe
