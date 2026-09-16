@@ -1198,19 +1198,55 @@ const HARBOR_SUB_SIDE = HARBOR_BOAT_SIDE + 110;
 // der Grund, warum hier KEINE Sperrzone gegen das Schlauchboot steht: am Kai-Feuerwehrboot gibt es
 // eine, hier waere sie das Gegenteil von dem, was man will.
 const HARBOR_SUB_FAC = 1.30;
+// Liegt der ganze 95-m-Rumpf im Wasser? Geprueft wird an fuenf Stellen laengs, weil ein Boot dieser
+// Laenge mit der Mitte im Wasser und dem Bug im Sand stecken kann. Weltkoordinaten, also faellt
+// automatisch JEDE Insel auf (isOnLand/isOnBeach fragen das Zellenraster ab) — genau das fehlte
+// vorher, wo nur mit der eigenen Insel gerechnet wurde.
+function subBerthFree(wx, wz, rot){
+  const fx = -Math.sin(rot), fz = -Math.cos(rot);      // Bugrichtung (-Z bei rot = 0)
+  for(const d of [-47, -24, 0, 24, 47]){
+    const qx = wx + fx*d, qz = wz + fz*d;
+    if(isOnLand(qx, qz) || isOnBeach(qx, qz) || isOnCarrier(qx, qz)) return false;
+  }
+  return true;
+}
+// Gerechnete Liegeplaetze, Zelle -> {x,z,rot} oder null. Siehe harborSubLocal: die Suche kostet im
+// schlechtesten Fall 125 Gelaendeabfragen, und sie laeuft aus dinghyTouchesHarborSub jeden Frame
+// ueber 9 Nachbarzellen. Das Ergebnis haengt nur am Zellenraster, ist also fuer immer gueltig.
+const _subBerthCache = new Map();
 function harborSubLocal(cx, cz){
+  const key = cx + ',' + cz;
+  const hit = _subBerthCache.get(key);
+  if(hit !== undefined) return hit;
+  const res = _harborSubLocalCalc(cx, cz);
+  _subBerthCache.set(key, res);
+  return res;
+}
+function _harborSubLocalCalc(cx, cz){
   const info = islandInfo(cx, cz);
   if(!info) return null;
-  const ang = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;   // GLEICHER Winkel wie der Hafen
+  const ang0 = -Math.PI/2 + (cellRnd(cx,cz,46)-0.5)*1.2;  // GLEICHER Winkel wie der Hafen
   const rr = info.radius * HARBOR_SUB_FAC;
-  const rx = Math.cos(ang), rz = Math.sin(ang);            // radial nach aussen
-  const tx = -rz,           tz = rx;                       // tangential (90 Grad dazu)
-  return { x: rx*rr + tx*HARBOR_SUB_SIDE,
-           z: rz*rr + tz*HARBOR_SUB_SIDE,
-           // RUECKWAERTS am Strand, wie das Feuerwehrboot (so gewuenscht): der Bug zeigt radial
-           // nach AUSSEN aufs Wasser, das Heck zur Insel. Man laeuft also von hinten heran und
-           // faehrt vorwaerts los. Dieselbe Rechnung wie in harborBoatLocal.
-           rot: Math.atan2(-rx, -rz) };
+  // Den Hafenwinkel bevorzugen und bei Bedarf ringsum ausweichen: erst der Sollplatz, dann in
+  // wachsenden Schritten nach beiden Seiten. So bleibt das Boot so nah am Hafen wie moeglich und
+  // liegt trotzdem im Wasser. Bis zu +-180 Grad, also wird notfalls die ganze Insel abgesucht.
+  for(let s = 0; s <= 12; s++){
+    for(const vz of (s === 0 ? [0] : [1, -1])){
+      const ang = ang0 + vz * s * (Math.PI/12);
+      const rx = Math.cos(ang), rz = Math.sin(ang);        // radial nach aussen
+      const tx = -rz,           tz = rx;                   // tangential (90 Grad dazu)
+      const lx = rx*rr + tx*HARBOR_SUB_SIDE;
+      const lz = rz*rr + tz*HARBOR_SUB_SIDE;
+      // RUECKWAERTS am Strand, wie das Feuerwehrboot (so gewuenscht): der Bug zeigt radial
+      // nach AUSSEN aufs Wasser, das Heck zur Insel. Man laeuft also von hinten heran und
+      // faehrt vorwaerts los. Dieselbe Rechnung wie in harborBoatLocal.
+      const rot = Math.atan2(-rx, -rz);
+      if(subBerthFree(info.wx + lx, info.wz + lz, rot)) return { x:lx, z:lz, rot };
+    }
+  }
+  // Kein freier Platz rings um die Insel: dann liegt hier keines. Lieber gar kein U-Boot als eines
+  // im Rasen — und die Nachbarinsel hat mit hoher Wahrscheinlichkeit einen freien Liegeplatz.
+  return null;
 }
 // Die frueher hier stehende Sperrzone (nearHarborSub / HARBOR_SUB_NODINGHY) ist ENTFALLEN. Sie hielt
 // das Schlauchboot vom U-Boot fern, damit man einsteigt statt hineinzufallen — wie am Kai-Feuerwehr-
@@ -2264,7 +2300,14 @@ const FISH_PER     = 34;        // Fische pro Schwarm
 const FISH_R       = 9;         // Radius der Wolke (m)
 const FISH_SPD     = 1.8;       // m/s Wanderung des Schwarms
 const FISH_SPAWN_MIN = 40, FISH_SPAWN_MAX = 260, FISH_DESPAWN = 420;
-const fishMat = new THREE.MeshLambertMaterial({ color:0xb9c46a });
+// In welcher TIEFE die Schwaerme schwimmen. 8 m als Mindesttiefe hat zwei Gruende: der Wellenhub
+// reicht bis 2,33 m herab und die Fischwolke schwingt selbst um 1,6 m — darunter ragten Fische aus
+// dem Wasser (gemeldet als gelbe Punkte auf dem Meer). 35 m als Grenze nach unten haelt sie im
+// Tauchbereich und im Licht; am Grund (80 bis 120 m) waere niemand, um sie zu sehen.
+const FISH_MIN_Y = 8, FISH_MAX_Y = 35;
+// Farbe: war 0xb9c46a, ein Gelbgruen — genau das, was als "das gelbe, was noch so rumschwimmt"
+// aufgefallen ist. Ein silbriges Blaugruen sieht im Wasser nach Fisch aus statt nach Fremdkoerper.
+const fishMat = new THREE.MeshLambertMaterial({ color:0x9fd6cf });
 let fishGeo = null;
 const fishSchools = [];
 const _fishM = new THREE.Matrix4(), _fishQ = new THREE.Quaternion();
@@ -2285,10 +2328,14 @@ function placeFishSchool(f, fx, fz){
     const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
     if(isOnLand(x, z) || isOnBeach(x, z)) continue;
     const grund = seabedY(x, z);
-    if(grund > SEABED_SHORE_Y - 3) continue;         // zu flach
+    if(grund > -FISH_MIN_Y - 2) continue;            // zu flach fuer einen Schwarm
     f.x = x; f.z = z;
-    // Sie stehen ueber dem Grund, nicht an der Oberflaeche: 4 bis 14 m darueber.
-    f.y = Math.min(-3, grund + 4 + Math.random()*10);
+    // TIEFE: im Tauchbereich, nicht am Grund. Vorher war es grund+4..+14 — auf offener See also
+    // 66 bis 106 m tief, wo man mit dem U-Boot nie vorbeikommt. Jetzt 8 bis 35 m: das ist die
+    // Zone, die man wirklich durchfaehrt, und dort ist noch Licht.
+    f.y = -(FISH_MIN_Y + Math.random()*(FISH_MAX_Y - FISH_MIN_Y));
+    // Ueber flachem Grund ausweichen: der Grund gewinnt immer.
+    if(f.y < grund + 3) f.y = grund + 3;
     f.heading = Math.random()*Math.PI*2;
     f.t = Math.random()*100;
     return true;
@@ -2326,7 +2373,11 @@ function updateFish(dt){
       f.heading += 1.5*dt*(1+Math.random());
     const grund = seabedY(f.x, f.z);
     if(f.y < grund + 3) f.y = grund + 3;
-    if(f.y > -2.5) f.y = -2.5;                      // nicht aus dem Wasser springen
+    // Deckel nach oben: FISH_MIN_Y (8 m) und nicht 2,5 m. Der alte Wert lag INNERHALB des
+    // Wellenhubs (die Duenung reicht bis -2,33 m), ein Schwarm am Deckel ragte also heraus und
+    // schwamm als gelber Fleck auf dem Meer. Dazu kommt die Fischwolke selbst, die um +-1,6 m
+    // schwingt: mit 8 m bleibt auch ihr hoechster Punkt gut 4 m unter Wasser.
+    if(f.y > -FISH_MIN_Y) f.y = -FISH_MIN_Y;
     if(Math.hypot(f.x-F.x, f.z-F.z) > FISH_DESPAWN){ placeFishSchool(f, F.x, F.z); continue; }
     // Nur rechnen, was man sehen kann: bei 16-42 m Sichtweite ist alles Weitere im Nebel.
     const nah = Math.hypot(f.x-camera.position.x, f.z-camera.position.z) < 200;
@@ -7766,7 +7817,15 @@ function updateSpaceBlend(dt){
 // Geblendet wird ueber uwBlend, damit das Durchtauchen der Oberflaeche kein Schnitt ist. Der Wert
 // laeuft in UW_RATE pro Sekunde nach — bei 2,5 ist der Wechsel in 0,4 s durch, also sichtbar als
 // Uebergang, aber ohne Wartezeit.
-const UW_FOG_NEAR = 3;      // m: direkt vor der Linse ist es noch klar
+// Wo der Nebel ANFAENGT. 3 m war der Hauptgrund fuer den milchigen Eindruck: schon direkt vor der
+// Linse lag Schleier, also auch ueber dem eigenen Boot. Mit Abstand bleibt der Nahbereich klar und
+// erst die Ferne faerbt sich ein — das ist der Unterschied zwischen durchsichtigem Wasser und
+// Suppe, und er wirkt staerker als jede Erhoehung der Sichtweite.
+//
+// 12 m und nicht 25: die Kamera steht 62,4 m hinter der Bootsmitte, das Heck ist also 15,4 m weg.
+// Mit 25 m begann der Nebel HINTER dem Heck, das ganze Boot stand voellig klar im Bild und wirkte
+// aufgeklebt. 12 m legt einen leichten Schleier ueber den Rumpf und laesst die Linse frei.
+const UW_FOG_NEAR = 12;
 // Sichtweiten deutlich hochgesetzt (42 -> 75 an der Oberflaeche, 16 -> 38 unten). Gewuenscht war
 // "etwas mehr licht", und die Sichtweite gehoert dazu: 42 m sind fuer ein 95 m langes U-Boot
 // weniger als eine halbe Bootslaenge, man sah nie mehr als einen Ausschnitt des eigenen Rumpfes.
@@ -7774,20 +7833,18 @@ const UW_FOG_NEAR = 3;      // m: direkt vor der Linse ist es noch klar
 // die aus dem Nichts kommt. Klares tropisches Wasser gibt real 30 bis 50 m Sicht — 75 m sind
 // grosszuegig, aber das ist eine Kinderwelt mit Korallen und Fischschwaermen, und die soll man
 // sehen. Der Nebel BLEIBT deutlich (75 m gegen 3.000 m an Luft), es ist also weiter Unterwasser.
-const UW_FOG_FAR  = 75;     // m Sichtweite an der Oberflaeche
-const UW_FOG_DEEP = 38;     // m Sichtweite am Grund — enger, aber nicht mehr blind
+const UW_FOG_FAR  = 150;    // m Sichtweite knapp unter der Oberflaeche
+// Am Grund 120 m und nicht 85: der Bug liegt 109,4 m von der Kamera entfernt (62,4 m Abstand plus
+// 47 m halber Rumpf), bei 85 m waere die eigene Bootsnase unten im Nebel verschwunden. 120 m deckt
+// sie mit Rand. Der Unterschied zu 150 m oben bleibt als Tiefeneindruck erhalten.
+const UW_FOG_DEEP = 120;
 // Farben heller und klarer: das alte UW_DEEP (0x02141c) war praktisch schwarz, und mit SEA_DEPTH
 // auf 100 m erreicht man diese Tiefe jetzt auch wirklich — vorher lag sie unter dem, was man beim
 // Spielen sah. Das neue Tief ist ein tiefes Blaugruen: dunkel genug, dass Tiefe sich nach Tiefe
 // anfuehlt, hell genug, dass man Wrack, Grund und Fische darin erkennt.
-const UW_SURF = new THREE.Color(0x3f9fa8);   // Wasserfarbe knapp unter der Oberflaeche (heller)
-const UW_DEEP = new THREE.Color(0x0d3742);   // Wasserfarbe am Grund (war fast schwarz)
+const UW_SURF = new THREE.Color(0x62c3cc);   // Wasserfarbe knapp unter der Oberflaeche (Lagune)
+const UW_DEEP = new THREE.Color(0x1c5f6e);   // Wasserfarbe am Grund — dunkler, aber kein Schwarz
 const UW_RATE = 2.5;
-// Wie nah die Kamera unter Wasser herangeht (siehe updateCamera). 0,42 holt sie beim U-Boot von
-// 62,8 m auf 26,2 m hinter der Bootsmitte — innerhalb der 30 bis 42 m Sichtweite, also ist das
-// eigene Fahrzeug zu sehen. Sie gilt fuer JEDES Fahrzeug unter Wasser, nicht nur fuer das U-Boot:
-// wer mit dem Schlauchboot in einen Wellenberg gerät, bekommt denselben Blick.
-const UW_CAM_PULL = 0.42;
 // Ueber welche Fahrzeugtiefe der Unterwasser-Eindruck einblendet. 3 m ist bewusst MEHR als der
 // Wellenhub nach oben (gemessen 2,4 m): so kann kein einzelner Wellenberg den Wert durchreissen.
 const UW_DIVE_BAND = 3;
@@ -7885,9 +7942,13 @@ function updateUnderwater(dt){
   // 1,05 auf 1,35. Am Grund sind das 1,35*0,5 = 0,68 statt 0,26 — also gut das Zweieinhalbfache.
   // Die Sonne zieht mit (0,28 -> 0,40): sie gibt die Richtung, aus der das Licht einfaellt, und
   // ohne sie wirkt alles flach ausgeleuchtet statt "von oben".
-  const dunkel = 1 - 0.5*tief;
-  hemiLight.intensity = hemiLight.intensity + (1.35*dunkel - hemiLight.intensity)*b;
-  sun.intensity       = sun.intensity       + (0.40*dunkel - sun.intensity      )*b;
+  // Zweite Aufhellung, gewuenscht als "die ganze optik kann gerne etwas heller sein". Am Grund
+  // bleiben jetzt 70 % des Lichts statt 50 %, und der Grundwert steigt auf 1,6 — dort also 1,12
+  // gegen zuvor 0,68 und gegen 0,26 im Ursprungszustand. Die Sonne zieht mit (0,55): sie gibt die
+  // Richtung, aus der das Licht einfaellt, und ohne sie wirkt alles flach.
+  const dunkel = 1 - 0.3*tief;
+  hemiLight.intensity = hemiLight.intensity + (1.60*dunkel - hemiLight.intensity)*b;
+  sun.intensity       = sun.intensity       + (0.55*dunkel - sun.intensity      )*b;
 }
 
 // ---------- Weltraum-Anzeige über dem Flieger ----------
@@ -9382,7 +9443,16 @@ const CAM_CFG = {
   // U-Boot: 95 m lang, also viermal so lang wie das Feuerwehrboot — es braucht Abstand, sonst
   // füllt der Turm das Bild. Aber FLACHER (hgt 0,9): unter Wasser will man nach VORNE sehen, wohin
   // man fährt, nicht von oben auf das eigene Deck. Von schräg oben sähe man beim Tauchen nur Rumpf.
-  Sub:      { dist: 2.6,  hgt: 0.9 },
+  // U-Boot: 95 m lang, viermal so lang wie das Feuerwehrboot — es braucht Abstand, sonst sitzt die
+  // Kamera IM Rumpf. Genau das war der Fehler eines Versuchs, sie unter Wasser heranzuholen: bei
+  // 26,2 m Abstand und 47 m halber Rumpflaenge stand sie 20,6 m innerhalb des Bootes ("die kamera
+  // folgt ins innere des uboots"). 2,6 ergibt 62,4 m, also 15,4 m hinter dem Heck.
+  //
+  // hgt von 0,9 auf 1,5: 0,9 war fuer "nach vorne sehen statt aufs eigene Deck" gedacht, ergab
+  // aber nur 7,2 m Hoehe ueber einem 13 m dicken Rumpf — man sah ihn von der SEITE, und beim
+  // Tauchen schob sich das Heck ins Bild. 12 m gibt den Blick schraeg von hinten oben: Turm, Deck
+  // und der Weg voraus sind zusammen zu sehen.
+  Sub:      { dist: 2.6,  hgt: 1.5 },
 };
 function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
 
@@ -10400,10 +10470,13 @@ function updateCamera(){
   const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, camE.z*camRoll, 'YXZ'));
   const back = new THREE.Vector3(0,0,1).applyQuaternion(camQ);   // hinter dem Flieger (mit Nicken)
   const upV  = new THREE.Vector3(0,1,0).applyQuaternion(camQ);   // Kamera-Oben (rollt nie mit)
-  const uwPull = 1 - (1 - UW_CAM_PULL) * uwCamBlend;
+  // Hier zog die Kamera unter Wasser einmal naeher heran (UW_CAM_PULL), damit das eigene Boot im
+  // 42-m-Nebel ueberhaupt zu sehen war. Das ist RUECKGEBAUT: bei 95 m Rumpflaenge sass sie damit
+  // im Boot. Geloest ist es jetzt ueber die Sichtweite (UW_FOG_FAR 150 m) — der richtige Hebel,
+  // denn zu sehen war das Problem, nicht der Abstand.
   const desired = planeCamRef().clone()
-    .addScaledVector(back, (cfg.dist*cc.dist + camBackExtra()) * uwPull)
-    .addScaledVector(upV,  cfg.height*cc.hgt * uwPull);
+    .addScaledVector(back, cfg.dist*cc.dist + camBackExtra())
+    .addScaledVector(upV,  cfg.height*cc.hgt);
   // Nur in der Inselwelt ist y = 0 der Meeresboden. Im Weltall liegt die Erdkugel UNTER dem Spieler
   // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
   // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
