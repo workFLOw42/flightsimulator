@@ -2317,14 +2317,15 @@ const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln 
 // ein Fund sein, kein Schrottplatz. Und jede Kopie ist ein volles Schiffsmodell (die Liberty hat
 // zehn UV-Saetze, siehe die Notizen zur GLB-Verkleinerung): drei gleichzeitig geladen kosten
 // sichtbar Bildrate. Mit 0,07 findet man rund alle 4,5 km eines und selten mehr als eines zugleich.
-// Von 7 auf 14 % — eine Verdopplung, bewusst nicht mehr. Ich hatte zuerst 30 % gesetzt und damit
-// genau den Fehler wiederholt, den der Absatz darueber beschreibt: jede Kopie ist ein volles
-// Schiffsmodell, drei gleichzeitig kosten sichtbar Bildrate.
+// 55 % der Wasserzellen. Diese Zahl war vorher unmoeglich und ist es jetzt nicht mehr: der Absatz
+// darueber warnt zu Recht davor, viele VOLLE Schiffsmodelle zu laden — aber seit vier von fuenf
+// Wracks Nachbauten aus Grundformen sind (rund 400 Dreiecke statt 12.263, siehe makeSimpleWreck),
+// kostet ein Wrack etwa so viel wie eine Handvoll Korallen.
 //
-// Der Hauptgrund fuer "ich finde keine wracks" war ohnehin nicht die Haeufigkeit, sondern die
-// TIEFE: mit 45 m Mindesttiefe lagen alle Wracks draussen in der strukturlosen Tiefsee, wo man
-// gar nicht entlangfaehrt. Das behebt WRECK_MIN_DEPTH (siehe unten) und kostet nichts.
-const WRECK_CHANCE = 0.14;
+// Nachgerechnet: 55 % der Wasserzellen sind 24,8 % ALLER Zellen, also im Mittel alle 1,7 km eines.
+// Bei 50 km/h stoesst man damit etwa alle zwei Minuten auf ein Wrack — vorher waren es bei 14 %
+// gut vier Minuten, und deshalb "hab immer noch kein wrack gesehen".
+const WRECK_CHANCE = 0.55;
 // Nur wo es tief genug ist: ein Wrack im 8-m-Flachwasser ragte aus dem Meer heraus. Der Frachter
 // ist 135 m lang und liegt auf der Seite, das sind gut 20 m Aufbauhoehe.
 // Von 45 auf 25 m: Wracks duerfen naeher an den Schelf. Der Schelfsaum ist der Ort, an dem man mit
@@ -2332,6 +2333,71 @@ const WRECK_CHANCE = 0.14;
 // die Wracks alle draussen in der strukturlosen Tiefsee, wo niemand sucht. Ein Frachter braucht
 // 25 m Wasser, das reicht auch fuer den Rumpf.
 const WRECK_MIN_DEPTH = 25;
+// ---- EINFACHE WRACKS ---------------------------------------------------------------------------
+// "hab immer noch kein wrack gesehen. wie werden die aufgebaut? dargestellt? vielleicht, weiter
+// vereinfacht mehrere wracks"
+//
+// Bisher war ein Wrack eine Kopie des GANZEN Schiffsmodells (shipTemplates['liberty'], 12.263
+// Dreiecke, 4 Texturen), umgefaerbt und gekippt. Das sieht gut aus, ist aber so teuer, dass die
+// Haeufigkeit klein bleiben musste — bei 14 % Chance liegt im Mittel alle 3,4 km eines, also bei
+// 50 km/h etwa alle vier Minuten. Kein Wunder, dass man keines findet.
+//
+// Deshalb ein NACHGEBAUTES Wrack aus Grundformen: Rumpf, Aufbau, Schornstein, Masten, dazu eine
+// Bruchkante. Das kostet rund 400 Dreiecke statt 12.263 — Faktor 30 — und erlaubt damit eine Dichte,
+// bei der man tatsaechlich auf Wracks stoesst. Die Vorbilder sind dieselben wie fuer die Korallen:
+// die mitgelieferten Unterwasser-Szenen, in denen Wracks als kantige Silhouetten auf dem Sand liegen.
+//
+// Das GLB-Wrack bleibt als SELTENER Grossfund erhalten (siehe wreckInfo): ein echter Frachter ist
+// eindrucksvoller als jeder Nachbau, und einer davon pro Gegend kostet nichts.
+const wreckHullMat = new THREE.MeshLambertMaterial({ color:0x54544a });   // Rumpf, rostig-grau
+const wreckDeckMat = new THREE.MeshLambertMaterial({ color:0x6a6a5c });   // Aufbau, etwas heller
+const wreckRustMat = new THREE.MeshLambertMaterial({ color:0x6b4a34 });   // Rostflaechen
+// Ein einfaches Frachterwrack. laenge bestimmt alles Weitere, damit die Proportionen stimmen.
+function makeSimpleWreck(laenge, rnd, rnd2){
+  const g = new THREE.Group();
+  const br = laenge*0.16;          // Breite: ein Frachter ist etwa 1:6
+  const hoehe = laenge*0.11;
+  // RUMPF als flacher Zylinder, laengs gelegt: ein Schiffsrumpf ist im Querschnitt rund, und ein
+  // Zylinder mit 8 Segmenten liest sich als Rumpf, waehrend ein Kasten nach Kiste aussieht.
+  const hull = new THREE.Mesh(new THREE.CylinderGeometry(br*0.5, br*0.42, laenge, 8), wreckHullMat);
+  hull.rotation.z = Math.PI/2;     // Zylinderachse laengs
+  hull.scale.y = 1;                // (die Achse steht nach der Drehung auf x)
+  hull.scale.z = 0.72;             // flacher als rund: ein Rumpf ist breiter als hoch
+  g.add(hull);
+  // BUG als Kegel: gibt dem Rumpf eine Richtung, ohne die man nicht sieht, wie das Schiff lag.
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(br*0.48, laenge*0.22, 8), wreckHullMat);
+  bow.rotation.z = -Math.PI/2;
+  bow.position.x = laenge*0.6;
+  bow.scale.z = 0.72;
+  g.add(bow);
+  // AUFBAU: zwei Kaesten unterschiedlicher Groesse im hinteren Drittel.
+  const auf = new THREE.Mesh(new THREE.BoxGeometry(laenge*0.16, hoehe*1.4, br*0.7), wreckDeckMat);
+  auf.position.set(-laenge*0.22, hoehe*0.9, 0);
+  g.add(auf);
+  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(laenge*0.09, hoehe*0.9, br*0.5), wreckDeckMat);
+  bruecke.position.set(-laenge*0.22, hoehe*2.1, 0);
+  g.add(bruecke);
+  // SCHORNSTEIN: das Merkmal, an dem man ein Wrack als Schiff erkennt.
+  const kamin = new THREE.Mesh(new THREE.CylinderGeometry(br*0.14, br*0.16, hoehe*1.3, 7), wreckRustMat);
+  kamin.position.set(-laenge*0.3, hoehe*2.4, 0);
+  g.add(kamin);
+  // MASTEN: zwei duenne Stangen, eine davon abgebrochen und schief — das macht aus einem Schiff
+  // ein WRACK. Ein aufrechtes, vollstaendiges Schiff auf dem Meeresgrund wirkt wie ein Fehler.
+  for(const [px, len, kipp] of [[laenge*0.28, hoehe*2.6, 0.12], [-laenge*0.05, hoehe*1.8, 0.5+rnd*0.6]]){
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(br*0.05, br*0.06, len, 5), wreckRustMat);
+    mast.position.set(px, len*0.45*Math.cos(kipp), Math.sin(kipp)*len*0.4);
+    mast.rotation.x = kipp;
+    g.add(mast);
+  }
+  // BRUCHKANTE: ein Stueck Rumpf, das abseits liegt. Erst damit sieht es nach Untergang aus und
+  // nicht nach einem geparkten Schiff — und es gibt dem Fund eine zweite Silhouette.
+  const bruch = new THREE.Mesh(new THREE.CylinderGeometry(br*0.44, br*0.3, laenge*0.18, 7), wreckHullMat);
+  bruch.rotation.set(rnd2*0.6, rnd*Math.PI, Math.PI/2 + rnd2*0.5);
+  bruch.position.set(laenge*(0.75 + rnd*0.25), br*0.2, br*(0.8 + rnd2*1.2));
+  bruch.scale.z = 0.72;
+  g.add(bruch);
+  return g;
+}
 function wreckInfo(cx, cz){
   if(cx===0 && cz===0) return null;             // Startzelle frei halten
   if(islandInfo(cx, cz)) return null;           // die Zelle selbst muss Wasser sein
@@ -2340,9 +2406,14 @@ function wreckInfo(cx, cz){
   const wz = cz*CELL + (cellRnd(cx,cz,WRECK_SALT+2)-0.5)*CELL*0.6;
   const y = seabedY(wx, wz);
   if(y > -WRECK_MIN_DEPTH) return null;          // zu flach (siehe oben)
-  // Welches der beiden: der Frachter haeufiger, weil er der eindrucksvollere Fund ist.
-  const key = cellRnd(cx,cz,WRECK_SALT+3) < 0.6 ? 'liberty' : 'sail';
-  return { wx, wz, y, key,
+  // GLB-Grossfund oder einfaches Wrack? Nur jedes fuenfte ist das volle Schiffsmodell (12.263
+  // Dreiecke), der Rest ein Nachbau aus Grundformen (rund 400). So bleibt der eindrucksvolle
+  // Frachter ein Fund, waehrend die Dichte insgesamt hoch genug ist, um ueberhaupt Wracks zu sehen.
+  const gross = cellRnd(cx,cz,WRECK_SALT+8) < 0.2;
+  const key = gross ? (cellRnd(cx,cz,WRECK_SALT+3) < 0.6 ? 'liberty' : 'sail') : null;
+  return { wx, wz, y, key, gross,
+           // Laenge des Nachbaus: 70 bis 150 m, also von Kuestenfrachter bis Stueckgutschiff.
+           len: 70 + cellRnd(cx,cz,WRECK_SALT+9)*80,
            rot:  cellRnd(cx,cz,WRECK_SALT+4)*Math.PI*2,      // Kurs, in dem es gesunken ist
            // Krängung: auf welche Seite es gekippt liegt. Zwischen 35 und 80 Grad — aufrecht sähe
            // aus wie ein fahrendes Schiff, ganz auf dem Kopf wie ein Fehler.
@@ -2354,6 +2425,19 @@ function wreckInfo(cx, cz){
 // aufliegt statt zu schweben: bei Krängung sinkt die Bordwand um sin(roll) mal halbe Rumpfbreite.
 // Ausgemessen wird das nicht — shipHalf kennt hw schon aus dem Wasserlinienband (preloadSeaShips).
 function makeWreck(info){
+  // EINFACHES Wrack (der Normalfall): Nachbau aus Grundformen, rund 400 Dreiecke statt 12.263.
+  // Es braucht kein geladenes Modell, ist also auch sofort da — beim GLB-Wrack musste man warten,
+  // bis shipTemplates gefuellt war.
+  if(!info.gross){
+    const g0 = new THREE.Group();
+    g0.add(makeSimpleWreck(info.len, cellRnd(Math.round(info.wx), Math.round(info.wz), 31),
+                                     cellRnd(Math.round(info.wx), Math.round(info.wz), 32)));
+    // Auf den Grund legen: bei Kraengung sinkt die Bordwand um sin(roll) mal halbe Breite.
+    const hw0 = info.len*0.08;
+    g0.position.set(info.wx, info.y + Math.abs(Math.sin(info.roll))*hw0, info.wz);
+    g0.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
+    return g0;
+  }
   const tpl = shipTemplates[info.key];
   if(!tpl) return null;
   const g = new THREE.Group();
@@ -2521,13 +2605,86 @@ function makeCoralBush(rnd, rnd2){
   }
   return g;
 }
+// ---- STANDORTTREUE FISCHSCHWAERME an Wracks und Riffen -----------------------------------------
+// "gerne auch fest um die wracks und korallen drum rum dann sieht das meer lebendig aus" — und das
+// ist auch biologisch das Richtige: Rifffische bleiben an ihrem Riff, nur Schwarmfische im Freiwasser
+// wandern. Die wandernden Schwaerme (fishSchools) bleiben also und bekommen hier Gesellschaft.
+//
+// Der Unterschied im Aufbau ist wesentlich: diese Schwaerme haengen in der ZELLEN-GROUP, werden also
+// mit ihr geladen und weggeraeumt und brauchen keine eigene Verwaltung. Sie bewegen sich auch nicht
+// von der Stelle — sie kreisen um ihren Punkt. Deshalb genuegt EINE Matrixberechnung beim Aufbau,
+// und die Animation laeuft ueber die Rotation der ganzen Group: ein Draw-Call, kein Rechenaufwand
+// pro Fisch und Frame.
+const REEF_FISH_N   = 22;     // Fische je Schwarm. Kleiner als die wandernden (34): ein Riffschwarm
+                              // steht dichter zusammen, und es gibt viel mehr davon.
+const REEF_FISH_R   = 6;      // m Radius der Wolke
+const reefFishMats = [
+  // Drei Farben, damit nicht jedes Riff gleich aussieht. Riffische sind bunt, aber im blauen Licht
+  // bleibt davon wenig — deshalb gedeckte Toene mit einem Farbstich statt Signalfarben.
+  new THREE.MeshLambertMaterial({ color:0x9fd6cf }),   // silbrig-blaugruen, wie die wandernden
+  new THREE.MeshLambertMaterial({ color:0xe8c98a }),   // sandgelb
+  new THREE.MeshLambertMaterial({ color:0xc79ad6 }),   // violett
+];
+let reefFishGeo = null;
+// Einen standorttreuen Schwarm bauen. mx/my/mz ist sein Mittelpunkt, rnd steuert Farbe und Form.
+function makeReefFish(mx, my, mz, rnd, rnd2){
+  if(!reefFishGeo){
+    reefFishGeo = new THREE.SphereGeometry(0.28, 6, 4);
+    reefFishGeo.scale(1, 0.55, 2.4);      // flach und lang: ein Fischkoerper, wie bei den wandernden
+  }
+  const mat = reefFishMats[Math.floor(rnd*reefFishMats.length) % reefFishMats.length];
+  const im = new THREE.InstancedMesh(reefFishGeo, mat, REEF_FISH_N);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const p = new THREE.Vector3(), s = new THREE.Vector3(1,1,1);
+  for(let i=0;i<REEF_FISH_N;i++){
+    // Auf einer flachen Wolke verteilt: Riffische stehen breit ueber dem Riff, nicht als Kugel.
+    // Der goldene Winkel streut sie gleichmaessig, ohne Zufall pro Fisch — dieselbe Technik wie bei
+    // den wandernden Schwaermen.
+    const a = i*2.399 + rnd*6.283;
+    const rr = REEF_FISH_R * Math.sqrt((i+0.5)/REEF_FISH_N);
+    p.set(Math.cos(a)*rr, (rnd2-0.5)*2.5 + Math.sin(a*1.7)*1.2, Math.sin(a)*rr*0.8);
+    // Nase tangential zur Kreisbahn: so sieht es aus, als schwimme der Schwarm im Kreis.
+    q.setFromEuler(new THREE.Euler(0, a + Math.PI/2, 0, 'YXZ'));
+    m.compose(p, q, s);
+    im.setMatrixAt(i, m);
+  }
+  // Der Halter traegt die Position; die Animation dreht IHN, nicht die einzelnen Fische.
+  const halter = new THREE.Group();
+  halter.add(im);
+  halter.position.set(mx, my, mz);
+  // Eigene Drehgeschwindigkeit und -richtung, damit nicht alle Schwaerme im Gleichschritt kreisen.
+  halter.userData.spin = (0.10 + rnd2*0.22) * (rnd < 0.5 ? 1 : -1);
+  return halter;
+}
+// Alle standorttreuen Schwaerme drehen. Sie stehen in den uwCells, also wird ueber die gelaufen —
+// eine eigene Liste waere doppelte Buchhaltung und muesste beim Zellenwechsel mitgepflegt werden.
+function updateReefFish(dt){
+  if(locale !== 'earth') return;
+  for(const [, grp] of uwCells){
+    if(!grp || !grp.userData.reefFish) continue;
+    for(const h of grp.userData.reefFish) h.rotation.y += h.userData.spin * dt;
+  }
+}
 function buildUwCell(cx, cz){
   const g = new THREE.Group();
   let leer = true;
+  // Liste der standorttreuen Schwaerme dieser Zelle. updateReefFish dreht sie; sie haengen in
+  // dieser Group, werden also mit der Zelle geladen und weggeraeumt.
+  const reefFish = [];
   const wi = wreckInfo(cx, cz);
   if(wi){
     const w = makeWreck(wi);
-    if(w){ g.add(w); leer = false; g.userData.wreck = wi; }
+    if(w){
+      g.add(w); leer = false; g.userData.wreck = wi;
+      // ZWEI Schwaerme ueber dem Wrack, versetzt. Ein Wrack ist ein kuenstliches Riff und zieht
+      // Fische an — und genau das macht den Fund lebendig statt zu einem stillen Haufen Stahl.
+      for(let k=0;k<2;k++){
+        const rk = cellRnd(cx, cz, 1600+k*3), rk2 = cellRnd(cx, cz, 1601+k*3);
+        const fh = makeReefFish(wi.wx + (rk-0.5)*40, wi.y + 12 + rk2*14, wi.wz + (rk2-0.5)*40,
+                                rk, rk2);
+        g.add(fh); reefFish.push(fh);
+      }
+    }
   }
   // Vegetation GEZIELT auf dem Schelf, nicht ueber die Zelle gestreut. Der erste Versuch verwarf
   // 34 von 40 Objekten (nachgemessen), weil eine 850-m-Zelle fast nur Tiefwasser ist und nur der
@@ -2569,6 +2726,13 @@ function buildUwCell(cx, cz){
       o.rotation.y = r3*Math.PI*2;
       g.add(o);
       leer = false;
+      // Ueber jedem achten Korallenbusch ein Schwarm. Nicht ueber jedem: dann waere das Riff eine
+      // Fischwand. Achtel heisst bei 34 Buescheln rund vier Schwaerme je Insel — genug, dass
+      // ueberall Leben ist, wenig genug, dass man die Korallen noch sieht.
+      if(coral && r1 < 0.125){
+        const fh = makeReefFish(x, y + 4 + r2*6, z, r1*8, r2);
+        g.add(fh); reefFish.push(fh);
+      }
     }
   }
   // ---- OFFENE SEE: Bewuchs auch OHNE Insel in der Zelle. Vorher gab es hier nichts, und das war
@@ -2597,6 +2761,7 @@ function buildUwCell(cx, cz){
     g.add(o);
     leer = false;
   }
+  if(reefFish.length) g.userData.reefFish = reefFish;
   return leer ? null : g;
 }
 function updateUwCells(){
@@ -2632,11 +2797,13 @@ function clearUwCells(){
 // Sie schwimmen als Wolke um einen Mittelpunkt, der selbst langsam wandert, jeder Fisch mit eigener
 // Phase. Das reicht: aus 10 m sieht man Silhouetten, die sich bewegen, und mehr ist im Nebel gar
 // nicht zu erkennen.
-// Von 5 auf 9 Schwaerme, auf Wunsch ("mehr fische?"). Mit 34 Tieren pro Schwarm sind das 306
-// Fische auf 9 InstancedMeshes, also 9 Draw-Calls. Sie stehen 40 bis 260 m um den Spieler
-// (FISH_SPAWN_MIN/MAX); bei 180 m Sichtweite sieht man jetzt meist mehrere gleichzeitig statt
-// mit Glueck einen.
-const FISH_SCHOOLS = 9;         // Schwaerme gleichzeitig um den Spieler
+// Von 9 auf 14 wandernde Schwaerme, auf Wunsch ("und auch ueberall mehr fische"). Mit 34 Tieren
+// pro Schwarm sind das 476 Fische auf 14 InstancedMeshes, also 14 Draw-Calls — vertretbar, weil
+// jeder Schwarm nur EINEN kostet.
+// Dazu kommen die STANDORTTREUEN Schwaerme an Wracks und Riffen (siehe buildUwCell): "gerne auch
+// fest um die wracks und korallen drum rum, dann sieht das meer lebendig aus". Genau so verhalten
+// sich echte Rifffische — sie bleiben an ihrem Riff, statt umherzuziehen.
+const FISH_SCHOOLS = 14;        // wandernde Schwaerme um den Spieler
 const FISH_PER     = 34;        // Fische pro Schwarm
 const FISH_R       = 9;         // Radius der Wolke (m)
 const FISH_SPD     = 1.8;       // m/s Wanderung des Schwarms
@@ -2771,7 +2938,10 @@ const _drP = new THREE.Vector3(), _drS = new THREE.Vector3(1,1,1);
 // Bezug, und Partikel vor der Nase saehen bei 500 km/h wie ein Fehler aus.
 function driftKindNow(){
   if(uwBlend > 0.35) return 'bubble';
-  if(locale === 'space') return 'dust';
+  // IM WELTALL keine Punkte mehr: sie sassen in einem 52-m-Wuerfel um die Kamera und waren dort
+  // bis 55 px gross — "eher auch wie grafikfehler weil immer direkt im vordergrund und nicht in der
+  // szene selbst". 52 m sind im All auch nichts, wo der Todesstern 20 km gross ist.
+  // Ersetzt durch Kometenstreifen in 120 bis 900 m Entfernung (siehe updateComets).
   // Zu Fuss und im Rover auf MOND und MARS: dort ist der Boden ein graues, gleichmaessiges
   // Hoehenraster ohne Textur, da fehlt der Bezug wirklich. Physikalisch ist Staub im Vakuum
   // fragwuerdig, aber ohne ihn laeuft man dort im Nichts.
@@ -2861,6 +3031,118 @@ function updateDrift(dt){
     driftMesh.setMatrixAt(i, _drM);
   }
   driftMesh.instanceMatrix.needsUpdate = true;
+}
+// ---- WELTALL: Mini-Kometen mit Schweif ---------------------------------------------------------
+// Die Staubpunkte im All waren "eher auch wie grafikfehler weil immer direkt im vordergrund und
+// nicht in der szene selbst". Nachgerechnet stimmt das: der Wuerfel war nur 52 m gross und der
+// Mindestabstand 2,5 m — dort ist eine 0,1-m-Kugel 55 px breit und klebt auf der Linse. Und 52 m
+// sind im Weltall nichts, wo der Todesstern 20 km und die ISS 2,4 km gross ist.
+//
+// Vorgeschlagen: "langgezogene streifen entgegen der fahrtrichtung. quasi mini kometen mit schweif
+// tiefer in der szene drinnen". Das loest beides auf einmal — ein Streifen zeigt die Richtung von
+// sich aus, und in der Tiefe der Szene wird er Teil der Umgebung statt eines Flecks davor.
+const COMET_N     = 40;       // Kometen gleichzeitig
+const COMET_NEAR  = 120;      // m: naeher kommt keiner (sonst wieder ein Streifen auf der Linse)
+const COMET_FAR   = 900;      // m: Wuerfelradius. Weit genug, dass sie in der Szene stehen, nah
+                              // genug, dass die Bewegung sichtbar vorbeizieht.
+const COMET_LEN   = 45;       // m Streifenlaenge. Bei 300 m Abstand rund 90 px — deutlich als
+                              // Strich erkennbar, ohne das Bild zu zerschneiden.
+const COMET_W     = 0.9;      // m Streifenbreite
+let cometMesh = null, cometPos = null, cometMat = null;
+const _coM = new THREE.Matrix4(), _coQ = new THREE.Quaternion();
+const _coP = new THREE.Vector3(), _coS = new THREE.Vector3(1,1,1);
+const _coDir = new THREE.Vector3(), _coUp = new THREE.Vector3(0,1,0);
+// Die Streifen-Textur: hell am Kopf, nach hinten auslaufend. Genau das macht aus einem Rechteck
+// einen Kometenschweif, und weil sie zur Laufzeit gemalt wird, kostet sie keinen Download.
+let cometTex = null;
+function makeCometTexture(){
+  if(cometTex) return cometTex;
+  const cv = document.createElement('canvas');
+  cv.width = 64; cv.height = 8;
+  const g = cv.getContext('2d');
+  // Links der Kopf, nach rechts der Schweif. Nicht linear: der Kopf bleibt kompakt hell, der
+  // Schweif verglimmt lang — ein linearer Verlauf saehe wie ein Keil aus, nicht wie ein Komet.
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.12, 'rgba(230,240,255,0.85)');
+  grad.addColorStop(0.40, 'rgba(200,220,255,0.30)');
+  grad.addColorStop(1.00, 'rgba(180,200,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 8);
+  // Quer dazu ebenfalls ausblenden, sonst hat der Streifen harte Laengskanten.
+  const quer = g.createLinearGradient(0, 0, 0, 8);
+  quer.addColorStop(0.0, 'rgba(0,0,0,1)');
+  quer.addColorStop(0.5, 'rgba(0,0,0,0)');
+  quer.addColorStop(1.0, 'rgba(0,0,0,1)');
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = quer;
+  g.fillRect(0, 0, 64, 8);
+  cometTex = new THREE.CanvasTexture(cv);
+  return cometTex;
+}
+function cometEnsure(){
+  if(cometMesh) return;
+  // Die Ebene liegt in der XY-Ebene und zeigt nach +Z. Laengs der X-Achse ist der Schweif.
+  const geo = new THREE.PlaneGeometry(1, 1);
+  cometMat = new THREE.MeshBasicMaterial({ map:makeCometTexture(), transparent:true,
+                                           opacity:0.9, depthWrite:false,
+                                           // Additiv, weil ein Komet LEUCHTET. Auf dem schwarzen
+                                           // Weltraum addiert sich das Licht sauber, und ueberlappende
+                                           // Schweife verstaerken sich statt sich auszustanzen.
+                                           blending:THREE.AdditiveBlending });
+  cometMesh = new THREE.InstancedMesh(geo, cometMat, COMET_N);
+  cometMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  cometMesh.frustumCulled = false;      // das Feld umschliesst die Kamera
+  cometPos = new Float32Array(COMET_N*3);
+  for(let i=0;i<COMET_N;i++) cometPlace(i);
+  scene.add(cometMesh);
+}
+// Einen Kometen neu setzen: irgendwo in der Kugelschale zwischen NEAR und FAR um die Kamera.
+// Kugelschale und nicht Wuerfel, damit keiner in der Ecke doppelt so weit weg ist wie in der Mitte.
+function cometPlace(i){
+  const c = camera.position;
+  const a = Math.random()*Math.PI*2;
+  const b = Math.acos(Math.random()*2-1);        // gleichmaessig auf der Kugel
+  const r = COMET_NEAR + Math.random()*(COMET_FAR-COMET_NEAR);
+  cometPos[i*3]   = c.x + Math.sin(b)*Math.cos(a)*r;
+  cometPos[i*3+1] = c.y + Math.cos(b)*r;
+  cometPos[i*3+2] = c.z + Math.sin(b)*Math.sin(a)*r;
+}
+function updateComets(dt){
+  // Nur im Weltall, und nur wenn man auch FAEHRT: im Stillstand gibt es keine Bewegung zu zeigen,
+  // und ruhende Streifen saehen wieder wie ein Grafikfehler aus.
+  const v = state.vel.length();
+  if(locale !== 'space' || v < 20){
+    if(cometMesh){ scene.remove(cometMesh); cometMesh = null; }
+    return;
+  }
+  cometEnsure();
+  const c = camera.position;
+  // Die Streifen liegen ENTGEGEN der Fahrtrichtung — sie zeigen, woher man kommt, wie die
+  // Sternenstreifen im Hyperraum. Richtung aus der eigenen Geschwindigkeit, nicht aus der Nase:
+  // wer seitlich driftet, soll das auch sehen.
+  _coDir.copy(state.vel).normalize();
+  // Die Ebene ausrichten: ihre lokale X-Achse soll auf die Flugrichtung zeigen. setFromUnitVectors
+  // dreht (1,0,0) dorthin — damit liegt der Kopf vorne und der Schweif hinten.
+  _coQ.setFromUnitVectors(new THREE.Vector3(1,0,0), _coDir);
+  // Laenge mit dem Tempo: bei Warp wird der Streifen lang, im Anflug kurz. Der Faktor ist gedeckelt,
+  // sonst reicht ein Streifen bei Warp 10 durch das ganze Bild.
+  const laenge = COMET_LEN * Math.min(3, 0.6 + v/SPACE_C*1.4);
+  _coS.set(laenge, COMET_W, 1);
+  for(let i=0;i<COMET_N;i++){
+    const dx = cometPos[i*3]-c.x, dy = cometPos[i*3+1]-c.y, dz = cometPos[i*3+2]-c.z;
+    const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
+    // Wer hinausfaellt oder zu nah kommt, wird neu gesetzt. Anders als beim Torus des Drift-Feldes
+    // ist das hier unauffaellig, weil es in 120 bis 900 m Entfernung passiert.
+    if(d > COMET_FAR*1.15 || d < COMET_NEAR*0.7){ cometPlace(i); continue; }
+    _coP.set(cometPos[i*3], cometPos[i*3+1], cometPos[i*3+2]);
+    _coM.compose(_coP, _coQ, _coS);
+    cometMesh.setMatrixAt(i, _coM);
+  }
+  cometMesh.instanceMatrix.needsUpdate = true;
+}
+function clearComets(){
+  if(cometMesh){ scene.remove(cometMesh); cometMesh = null; }
 }
 function clearDrift(){
   if(driftMesh){ scene.remove(driftMesh); driftMesh = null; }
@@ -7192,7 +7474,21 @@ function preloadSpace(){
     starMat = new THREE.MeshBasicMaterial({ color:0xffffff, side:THREE.DoubleSide,
                                             transparent:true, opacity:0, depthWrite:false });
     g.traverse(o=>{ if(o.isMesh){ o.material = starMat; o.renderOrder = -1; } });
-    g.visible = false; starDome = g; scene.add(g);
+    // DREIFACH, jeweils anders gedreht: das GLB hat 780 Sterne, und auf den ganzen Himmel verteilt
+    // ist das wenig (mit dem Auge sieht man rund 3.000). Drei Kopien geben 2.340, und clone(true)
+    // teilt die Geometrie-Buffer — es kommen also nur zwei Draw-Calls hinzu, keine neuen Vertices.
+    //
+    // Die Winkel sind bewusst KEINE glatten Teiler von 360 Grad: bei 120 Grad wuerden sich die
+    // Muster zur Deckung bringen und als Symmetrie auffallen. 0,7 und 2,3 rad sind krumm genug.
+    // Zusaetzlich um zwei Achsen gedreht, damit auch die Pole der Kugel nicht zusammenfallen.
+    const kuppeln = new THREE.Group();
+    kuppeln.add(g);
+    for(const [ry, rx] of [[0.7, 1.1], [2.3, 0.45]]){
+      const k = g.clone(true);
+      k.rotation.set(rx, ry, 0);
+      kuppeln.add(k);
+    }
+    kuppeln.visible = false; starDome = kuppeln; scene.add(kuppeln);
   });
   buildMilkyWay();      // Milchstrassen-Panorama hinter der Sternenkuppel (siehe dort)
   preloadSphereGLB(window.EARTH_GLB, EARTH_R, (g)=>{ g.visible = false; earthBall = g; scene.add(g); });
@@ -7870,6 +8166,7 @@ function earthWorldVisible(on){
     clearFish();                         // und die Fischschwaerme (siehe dort: sonst einen Frame zu spaet)
     clearDrift();                        // und die Bewegungspartikel: sie stehen in WELTkoordinaten
                                          // um die alte Kamera, ein Ortswechsel springt aber ueber km
+    clearComets();                       // dasselbe fuer die Kometenstreifen
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -10307,7 +10604,12 @@ function stepBoat(dt, inp){
 // muesste man dauernd gegen einen Auftrieb ansteuern — fuer ein Kind anstrengend statt schoen.
 const SUB_YAW      = 0.55;   // rad/s Ruderwirkung bei voller Fahrt (traeger als das Boot: 0,9)
 const SUB_ROLL     = 0.18;   // wie stark es sich in die Kurve legt (rein optisch)
-const SUB_PMAX     = 0.52;   // rad (~30 Grad): so steil legt es die Nase hoechstens an
+// rad (~10 Grad): so steil legt es die Nase hoechstens an. Von 0,52 (30 Grad) heruntergesetzt —
+// gewuenscht war ein Boot, das beim Tauchen waagerecht bleibt. Ganz ohne Neigung geht es nicht, denn
+// die Nasenlage IST die Tiefensteuerung (vy = fwdSpeed * sin(pitch), siehe stepSub); bei 0 Grad
+// wuerde das Boot die Tiefe nie aendern. 10 Grad sieht man kaum und steuert sich ruhig.
+// Die Sinkrate bleibt dieselbe, weil SUB_DIVE_EFF entsprechend steigt (siehe dort).
+const SUB_PMAX     = 0.17;
 const SUB_LOOK     = 47;     // m Vorausschau = halbe Rumpflaenge (95 m), wie BOAT_LOOK beim Boot
 const SUB_HALF_W   = 12;     // m halbe Breite fuer die Umrisspruefung (Druckkoerper 23,2 m)
 // Wie weit vor dem Bug nach Ufer gesucht wird, wenn man mit Y aussteigen will (siehe buttonY).
@@ -10320,9 +10622,13 @@ const SUB_SURF_Y   = 0;
 // Wie weit ueber dem Meeresboden es spaetestens aufhoert. Der Rumpf ist 13 m dick und der Ursprung
 // liegt auf der Wasserlinie, also 3 m ueber der Rumpfmitte — 12 m lassen den Kiel frei.
 const SUB_FLOOR_CLR = 12;
-// Sinkrate = Fahrt * sin(Nickwinkel), mit diesem Faktor. 1,0 waere "es folgt der Nase exakt";
-// 0,75 laesst es flacher laufen als es zeigt, und genau so wirkt ein traeges Boot im Wasser.
-const SUB_DIVE_EFF = 0.75;
+// Sinkrate = Fahrt * sin(Nickwinkel) * dieser Faktor. Von 0,75 auf 2,16 erhoeht, weil die maximale
+// Nasenlage von 30 auf 10 Grad gesunken ist (SUB_PMAX) — nachgerechnet gibt das exakt dieselbe
+// Rate wie vorher: sin(30 Grad)*0,75 = 0,375 und sin(10 Grad)*2,16 = 0,375.
+// Der Faktor ist damit groesser als 1, das Boot sinkt also STEILER als seine Nase zeigt. Physikalisch
+// ist das falsch, hier aber genau gewollt: ein U-Boot mit Tiefenrudern UND Tauchzellen sinkt auch
+// waagerecht, und ein Kind soll die Tiefe steuern, ohne dass sich das Bild kippt.
+const SUB_DIVE_EFF = 2.16;
 // Wie schnell die Nase in die Waagerechte zurueckgeht, wenn man nichts drueckt. Nicht null: sonst
 // bliebe sie steil stehen und das Boot tauchte bis zum Grund weiter, obwohl man nur angetippt hat.
 const SUB_PITCH_BACK = 1.4;
@@ -11108,7 +11414,13 @@ function updateCamera(){
   // und der steht bei 26 m mitten im klaren Bereich.
   const camE = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
   const yaw = camE.y;
-  const pitch = Math.max(-0.9, Math.min(0.9, camE.x));   // ~±51° Nicken
+  // IM U-BOOT kippt die Kamera NICHT mit der Nase. Das war die Ursache mehrerer Probleme: sie sitzt
+  // 76,8 m hinter dem Boot, und dieser Abstand hebt sie bei Nicklage weit an — nachgerechnet 48,8 m
+  // ueber dem Boot bei den frueheren 30 Grad. Dadurch tauchte die Linse erst ab rund 50 m Bootstiefe
+  // ein und wanderte beim Steuern staendig auf und ab ("das ist sehr verwirrend").
+  // Beim U-Boot bringt das Mitkippen auch nichts: man will nach vorne sehen, wohin man faehrt, und
+  // nicht in die Tauchrichtung. Im Flugzeug bleibt es, dort gehoert es zum Fluggefuehl.
+  const pitch = isSub() ? 0 : Math.max(-0.9, Math.min(0.9, camE.x));   // ~±51° Nicken
   const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, camE.z*camRoll, 'YXZ'));
   const back = new THREE.Vector3(0,0,1).applyQuaternion(camQ);   // hinter dem Flieger (mit Nicken)
   const upV  = new THREE.Vector3(0,1,0).applyQuaternion(camQ);   // Kamera-Oben (rollt nie mit)
@@ -11473,13 +11785,17 @@ function updatePeriscope(dt){
   // Ein Rasterpunkt deckt so viele Pixel ab. Mit +1 gemalt, damit keine Luecken zwischen den
   // Kaestchen bleiben — sonst sieht die Kueste aus wie ein Gitter.
   const px = (R*2)/N + 1;
-  const cosK = Math.cos(-periKurs), sinK = Math.sin(-periKurs);
+  // Aus der Radar-Formel hergeleitet (siehe der Kommentar am Kopf dieser Funktion), damit beide
+  // Anzeigen garantiert gleich herum sind. Meine erste, frei hingeschriebene Drehmatrix war
+  // links-rechts gespiegelt: die Bildschirm-y-Achse zeigt nach unten, und das kehrt den Drehsinn um.
+  const cosK = Math.cos(periKurs), sinK = Math.sin(periKurs);
   for(let iz=0; iz<N; iz++) for(let ix=0; ix<N; ix++){
     const v = periDaten[iz*N+ix];
     if(!v) continue;
     // Rasterpunkt -> Meter relativ zum Boot -> Bildpunkt, dabei um den Kurs gedreht.
     const rx = ((ix/(N-1))*2-1)*PERI_R, rz = ((iz/(N-1))*2-1)*PERI_R;
-    const dx = rx*cosK - rz*sinK, dz = rx*sinK + rz*cosK;
+    const dx = sinK*rz - cosK*rx;           // wie bx = sin(head - worldAng) im Radar
+    const dz = cosK*rz + sinK*rx;           // wie -by = cos(head - worldAng)
     const bx = cx + (dx/PERI_R)*(R-2);
     const by = cy - (dz/PERI_R)*(R-2);      // minus, weil "oben" im Bild vorne ist
     g.fillStyle = v===2 ? '#5aa845' : '#d8cf9a';   // Land gruen, Strand sandfarben
@@ -12527,8 +12843,10 @@ function loop(now){
   updateHarborSubs(dt);      // die U-Boote am Strand ebenso
   if(locale === 'earth') updateSeabed();   // Meeresboden (rastert, rechnet nur bei Bedarf neu)
   if(locale === 'earth') updateUwCells();  // Wracks, Seegras und Korallen in Sichtweite
-  updateFish(dt);            // Fischschwaerme (raeumen sich selbst ab, wenn man die Erde verlaesst)
-  updateDrift(dt);           // Bewegungsreferenz: Blasen unter Wasser, Staub im All, Pollen an Land
+  updateFish(dt);            // wandernde Fischschwaerme (raeumen sich ab, wenn man die Erde verlaesst)
+  updateReefFish(dt);        // standorttreue Schwaerme an Wracks und Riffen (kreisen an ihrem Platz)
+  updateDrift(dt);           // Bewegungsreferenz unter Wasser (Blasen) und auf Mond/Mars (Staub)
+  updateComets(dt);          // im Weltall: Kometenstreifen entgegen der Fahrtrichtung
   updateOrcas(dt);           // Killerwale: Springer (45 Grad, 10 m hoch) und tauchende Schule
   updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
