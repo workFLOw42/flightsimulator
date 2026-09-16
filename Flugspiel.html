@@ -309,8 +309,32 @@ function collectSeaIslands(ox, oz){
     if(info) _seaIslands.push(info.wx, info.wz, info.radius*info.radius);
   }
 }
+// Wie oft die sichtbare Meeresflaeche neu gerechnet wird, je nach Hoehe. Nachgemessen ist der
+// Wellenhub am Bildschirm 333 px bei 10 m Hoehe, aber nur 6,7 px bei 500 m und 1,7 px bei 2.000 m —
+// die Animation ist dort also unsichtbar, kostete aber weiter 8,3 ms pro Frame.
+//
+// Die Wellenfunktion (waveY, seaMeshY) bleibt davon UNBERUEHRT: Boote, Kollisionen, Schatten und
+// das U-Boot fragen sie direkt ab und bekommen immer den exakten Wert. Gestaffelt wird nur, wie oft
+// das GITTER neu gefuellt wird.
+// Hoehe -> jeder N-te Frame. Die Grenzen sind gerechnet, nicht geschaetzt (siehe oben): unter
+// 2.000 m ist ein uebersprungener Frame als Rutschen der Wellen zu sehen, darueber ist der
+// Wellenhub selbst unter 1,5 px und damit unsichtbar.
+const SEA_LOD = [[2000, 1], [4000, 3], [Infinity, 6]];
+let seaSkip = 0;
+function seaUpdateEvery(){
+  const y = eva ? eva.group.position.y : state.pos.y;
+  for(const [grenze, n] of SEA_LOD) if(y < grenze) return n;
+  return 8;
+}
 function updateSea(dt){
   seaTime += dt;
+  // seaTime laeuft IMMER weiter (die Wellen wandern also korrekt), auch wenn das Gitter diesen
+  // Frame nicht neu gefuellt wird. Sonst blieben die Wellen bei jedem uebersprungenen Frame stehen
+  // und die Boote, die seaMeshY abfragen, saessen ploetzlich neben der sichtbaren Flaeche.
+  const jeder = seaUpdateEvery();
+  if(jeder > 1){
+    if(++seaSkip % jeder !== 0) return;
+  } else seaSkip = 0;
   const ox = ground.position.x, oz = ground.position.z;   // Meer folgt dem Flieger
   collectSeaIslands(ox, oz);                              // Inseln im Gitterbereich (1x pro Frame)
   for(let i=0;i<seaPos.count;i++){
@@ -542,6 +566,20 @@ let seabedRow = -1, seabedPendX = 0, seabedPendZ = 0;
 // stepGroundFields das Hoehenraster von Mond und Mars ausmisst (8 Zeilen pro Frame).
 const SEABED_ROWS_PER_FRAME = 6;
 const _sbC = new THREE.Color();
+// Braucht man den Meeresboden und die Unterwasserwelt ueberhaupt? Das ist der wirksamste Hebel
+// gegen das Ruckeln: der Boden kostet 9,3 ms je Neuberechnung, und die Unterwasserzellen sind
+// 616 Meshes pro Stueck. Beides ist aus der Luft NIE zu sehen — die Meeresflaeche verdeckt es
+// vollstaendig, und unter Wasser sieht man ohnehin nur 165 bis 180 m weit.
+//
+// Gebraucht wird es: im U-Boot (immer, es kann jederzeit tauchen), zu Fuss oder im Schlauchboot
+// (dort ist man auf Wasserhoehe und sieht beim Blick nach unten hinein) und im Flugzeug nur ganz
+// tief — bis 120 m, denn ein Wasserflugzeug kann dort landen und der Blick geht schraeg ins Wasser.
+function seaFloorNeeded(){
+  if(locale !== 'earth') return false;
+  if(isSub()) return true;
+  const y = eva ? eva.group.position.y : state.pos.y;
+  return y < 120;
+}
 function updateSeabed(){
   const F = worldFocus();
   // Auf das feste Weltraster einrasten (siehe oben). Damit sitzen die Gitterpunkte immer auf
@@ -2055,11 +2093,11 @@ function preloadSeaShips(){
       // Kulisse (siehe buildIsland), und die Inselzellen der ersten Sekunden wurden ohne es gebaut.
       // Ohne diesen Aufruf blieb der Platz dauerhaft leer — im laufenden Spiel nachgemessen, genau
       // wie es preloadBoat fuer das Kai-Feuerwehrboot loest.
-      // Auch 'liberty' und 'sail' zaehlen: aus ihnen entstehen die WRACKS am Meeresboden, und
+      // Auch 'liberty' zaehlt: daraus entstehen die GROSSFUND-Wracks am Meeresboden, und
       // updateUwCells merkt eine Zelle absichtlich nicht als leer, solange die Vorlagen fehlen —
       // die Zellen sind dann aber schon gebaut und muessen einmal fallen.
       if(def.key === 'sub') refreshIslands();
-      if(def.key === 'liberty' || def.key === 'sail') clearUwCells();
+      if(def.key === 'liberty') clearUwCells();
     }, (err)=>{ console.warn('Schiff-GLB Ladefehler ('+def.key+'):', err); });
   }
 }
@@ -2319,10 +2357,11 @@ function updateHarborBoats(dt){
 // wer ein Wrack gefunden hat, findet es wieder, und ohne diese Eigenschaft waere eine
 // Unterwasserwelt beim Wegfahren einfach vergessen.
 //
-// WRACKS: die Modelle sind schon da. shipTemplates['liberty'] (135 m Frachter) und ['sail']
-// (90 m Grosssegler) werden fuer die Handelsschiffe geladen — als Wrack werden sie nur gekippt und
-// auf den Grund gesetzt. Kein neues GLB, kein Megabyte mehr, und weil beide auf ihre Wasserlinie
-// normiert sind, kennt man ihre Lage genau.
+// WRACKS: das Modell ist schon da. shipTemplates['liberty'] (135 m Frachter) wird fuer die
+// Handelsschiffe geladen — als Wrack wird es nur gekippt und auf den Grund gesetzt. Kein neues GLB,
+// kein Megabyte mehr, und weil es auf seine Wasserlinie normiert ist, kennt man seine Lage genau.
+// Der Grossegler ('sail') taugt dafuer NICHT: seine 60 m hohen Masten ragen im gekippten Zustand
+// weit zur Seite und fast bis zur Oberflaeche (siehe wreckInfo).
 const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln korrelieren
 // Anteil der WASSERzellen mit einem Wrack. NACHGEMESSEN und deshalb so niedrig: mit 0,22 lag in
 // 43x43 km alle 2,5 km eines, also dichter als die Flugzeugtraeger auf dem Meer — ein Wrack soll
@@ -2430,7 +2469,13 @@ function wreckInfo(cx, cz){
   // Dreiecke), der Rest ein Nachbau aus Grundformen (rund 400). So bleibt der eindrucksvolle
   // Frachter ein Fund, waehrend die Dichte insgesamt hoch genug ist, um ueberhaupt Wracks zu sehen.
   const gross = cellRnd(cx,cz,WRECK_SALT+8) < 0.2;
-  const key = gross ? (cellRnd(cx,cz,WRECK_SALT+3) < 0.6 ? 'liberty' : 'sail') : null;
+  // Grossfunde sind IMMER der Liberty-Frachter, nie der Grossegler. Der Segler ('sail' zeigt auf
+  // empty_glb) hat rund 60 m hohe Masten — sein Bounding reicht in Y von -255 bis +127. Auf die
+  // Seite gekippt (34 bis 80 Grad) ragen die Spitzen 60 m weit zur Seite und fast bis zur
+  // Oberflaeche, und weil die Auflege-Rechnung mit der halben RUMPFBREITE arbeitet, sinkt der
+  // schlanke Rumpf dabei in den Boden. Ergebnis war ein halbes Wrack plus ein Gebilde daneben.
+  // Der Frachter ist kompakt, hat flache Aufbauten und liegt sauber auf der Seite.
+  const key = gross ? 'liberty' : null;
   return { wx, wz, y, key, gross,
            // Laenge des Nachbaus: 70 bis 150 m, also von Kuestenfrachter bis Stueckgutschiff.
            len: 70 + cellRnd(cx,cz,WRECK_SALT+9)*80,
@@ -2490,6 +2535,63 @@ function makeWreck(info){
 const weedMat  = new THREE.MeshLambertMaterial({ color:0x2f6b3a, side:THREE.DoubleSide });
 const coralMat = new THREE.MeshLambertMaterial({ color:0xc4665c });
 const coral2Mat= new THREE.MeshLambertMaterial({ color:0xcf9a3d });
+// ---- GEOMETRIEN VERSCHMELZEN ---------------------------------------------------------------------
+// Der Meeresgrund kostete 5.544 Draw-Calls, weil jede Pflanze aus mehreren Meshes besteht: ein
+// Korallenbusch aus 6 bis 10 (Zylinder plus Kugelspitzen), ein Seegrasbueschel aus 3 bis 5 Flaechen.
+// Bei 9 geladenen Zellen und 120 Objekten je Zelle summiert sich das.
+//
+// Verschmelzen loest das, OHNE die Optik anzutasten: alle Teile eines Objekts wandern in EINE
+// Geometrie, also ein Draw-Call statt zehn. Das geht hier, weil alle Teile einer Pflanze dasselbe
+// Material haben — nur dann darf man zusammenfassen.
+//
+// Three.js bringt BufferGeometryUtils.mergeGeometries mit, aber die Datei ist im Projekt nicht
+// eingebunden (und dafuer eine weitere zu laden waere unverhaeltnismaessig). Die Funktion hier macht
+// genau das Noetige: Positionen und Normalen der Kinder in Weltkoordinaten der Gruppe umrechnen und
+// hintereinander in einen Puffer schreiben.
+function mergeGroup(g, mat){
+  g.updateMatrixWorld(true);
+  // Erst zaehlen, dann einmal allokieren — Arrays wachsen zu lassen kostet bei jedem Umkopieren.
+  let n = 0;
+  g.traverse(o=>{
+    if(!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    const idx = o.geometry.index;
+    n += idx ? idx.count : pos.count;
+  });
+  if(!n) return null;
+  const P = new Float32Array(n*3), N = new Float32Array(n*3);
+  let k = 0;
+  const _v = new THREE.Vector3(), _nv = new THREE.Vector3();
+  const _nm = new THREE.Matrix3();
+  g.traverse(o=>{
+    if(!o.isMesh) return;
+    const geo = o.geometry;
+    const pos = geo.attributes.position, nor = geo.attributes.normal;
+    const idx = geo.index;
+    // Die Weltmatrix der Gruppe herausrechnen: die Kinder sitzen relativ zu ihr, und das Ergebnis
+    // soll wieder relativ zur Gruppe sein (die Gruppe wird spaeter positioniert und gedreht).
+    o.updateMatrixWorld(true);
+    const M = o.matrixWorld.clone().premultiply(new THREE.Matrix4().copy(g.matrixWorld).invert());
+    // Normalen brauchen die inverse Transponierte, sonst kippen sie bei ungleicher Skalierung
+    // (und genau die haben die Pflanzen: scale.y ist oft anders als scale.x).
+    _nm.getNormalMatrix(M);
+    const cnt = idx ? idx.count : pos.count;
+    for(let i=0;i<cnt;i++){
+      const j = idx ? idx.getX(i) : i;
+      _v.fromBufferAttribute(pos, j).applyMatrix4(M);
+      P[k*3] = _v.x; P[k*3+1] = _v.y; P[k*3+2] = _v.z;
+      if(nor){
+        _nv.fromBufferAttribute(nor, j).applyMatrix3(_nm).normalize();
+        N[k*3] = _nv.x; N[k*3+1] = _nv.y; N[k*3+2] = _nv.z;
+      }
+      k++;
+    }
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  return new THREE.Mesh(geo, mat);
+}
 // Ein Büschel Seegras: drei bis fünf schmale, hohe Fächer in leicht verschiedenen Winkeln.
 function makeWeed(rnd, rnd2){
   const g = new THREE.Group();
@@ -2502,7 +2604,10 @@ function makeWeed(rnd, rnd2){
     bl.rotation.z = (rnd2-0.5)*0.5;
     g.add(bl);
   }
-  return g;
+  // Zu EINEM Mesh verschmelzen: alle Faecher haben dasselbe Material, also darf man das — und aus
+  // 3 bis 5 Draw-Calls wird einer. Bei 60 Buescheln je Zelle und 9 Zellen sind das 1.080 Calls
+  // weniger. Fallback auf die Gruppe, falls das Verschmelzen scheitert.
+  return mergeGroup(g, weedMat) || g;
 }
 // Hier stand einmal makeCoral: ein gedrungener Zylinder mit zwei Kugeln obendrauf. Die Form war
 // als Koralle nicht zu erkennen — gemeldet als "das orangene sollen das poller sein?". Ersetzt
@@ -2517,8 +2622,12 @@ function makeWeed(rnd, rnd2){
 // anderen Raster als die Inselgruppen, und mit hineingebaut waeren sie beim refreshIslands jedes
 // Ein- und Aussteigens neu gebaut worden — 40 Objekte pro Zelle, ohne Grund.
 const uwCells = new Map();      // "cx,cz" -> Group (oder null: hier ist nichts)
-const UW_VIEW_CELLS = 2;        // Radius in Zellen. Kleiner als VIEW_CELLS (3): unter Wasser sieht
-                                // man 16-42 m weit, alles Weitere waere Rechnerei fuer den Nebel.
+// Radius in Zellen. Von 2 auf 1 gesenkt: bei 2 wurden 25 Zellen geladen, also ein Bereich von
+// 1.700 m Radius — sichtbar sind unter Wasser aber nur 165 bis 180 m. Nachgerechnet sah man 0,9 %
+// des geladenen Bereichs, der Rest kostete nur Draw-Calls und Culling-Tests (616 Meshes je Zelle).
+// Mit 1 sind es 9 Zellen, und der Rand liegt immer noch 425 m entfernt — mehr als das Doppelte der
+// Sichtweite, es kann also nichts sichtbar fehlen.
+const UW_VIEW_CELLS = 1;
 // Mehr als vorher (26/14), aber mit Maß. Gemeldet als "es gibt auch kein leben oder pflanzen auf
 // dem boden als referenz", und das lag weniger an der Zahl als an der VERTEILUNG: sie stehen in
 // einem Ring um die Insel, und der war 102 m breit — die Objekte verloren sich darin.
@@ -2591,7 +2700,7 @@ function makeSponge(rnd, rnd2){
     tube.rotation.z = (rnd2-0.5)*0.35;
     g.add(tube);
   }
-  return g;
+  return mergeGroup(g, mat) || g;      // ein Draw-Call statt bis zu drei (siehe mergeGroup)
 }
 // Ein Felsbrocken: eine gestauchte Kugel mit wenigen Segmenten, damit sie kantig wirkt. Kantig ist
 // hier richtig — ein runder Stein sieht nach Ball aus, ein facettierter nach Gestein.
@@ -2625,7 +2734,10 @@ function makeCoralBush(rnd, rnd2){
     tip.position.set(Math.cos(a)*h*0.55, h*Math.cos(neig), Math.sin(a)*h*0.55);
     g.add(tip);
   }
-  return g;
+  // Zu EINEM Mesh verschmelzen (siehe mergeGroup): ein Busch besteht aus 6 bis 10 Teilen, die alle
+  // dasselbe Material haben — daraus wird ein einziger Draw-Call. Bei 34 Buschen je Zelle und
+  // 9 Zellen sind das rund 2.100 Calls weniger.
+  return mergeGroup(g, mat) || g;
 }
 // ---- STANDORTTREUE FISCHSCHWAERME an Wracks und Riffen -----------------------------------------
 // "gerne auch fest um die wracks und korallen drum rum dann sieht das meer lebendig aus" — und das
@@ -2790,10 +2902,17 @@ function updateUwCells(){
   const F = worldFocus();
   const pcx = Math.round(F.x / CELL), pcz = Math.round(F.z / CELL);
   const needed = new Set();
+  // EINE Zelle pro Frame, nicht alle fehlenden. Vorher wurden beim ersten Eintauchen 25 Zellen mal
+  // 616 Meshes in einem einzigen Frame erzeugt — 15.400 Objekte, und das ist ein Ruckler, den man
+  // nicht uebersehen kann. Verteilt auf 25 Frames (0,4 s) faellt es nicht auf, weil man nur 165 m
+  // weit sieht und die naechste Zelle 850 m entfernt beginnt.
+  // Dasselbe Verfahren wie updateSeabed mit seinen SEABED_ROWS_PER_FRAME.
+  let gebaut = 0;
   for(let dz=-UW_VIEW_CELLS; dz<=UW_VIEW_CELLS; dz++) for(let dx=-UW_VIEW_CELLS; dx<=UW_VIEW_CELLS; dx++){
     const key = (pcx+dx) + ',' + (pcz+dz);
     needed.add(key);
     if(uwCells.has(key)) continue;
+    if(gebaut >= 1) continue;      // erst im naechsten Frame weiter (siehe oben)
     // Die Vorlagen kommen asynchron (preloadSeaShips). Ist 'liberty' noch nicht da, wird die Zelle
     // NICHT als leer gemerkt — sonst blieben die Wracks fuer immer weg, wenn man schneller in der
     // Naehe ist als das GLB geladen war. Genau die Falle, die beim Kai-Feuerwehrboot schon einmal
@@ -2808,6 +2927,7 @@ function updateUwCells(){
     const grp = buildUwCell(pcx+dx, pcz+dz);
     if(grp) scene.add(grp);
     uwCells.set(key, grp);
+    gebaut++;
   }
   for(const [key, grp] of uwCells){
     if(!needed.has(key)){ if(grp) scene.remove(grp); uwCells.delete(key); }
@@ -11522,6 +11642,12 @@ function recycleWorld(){
   // stünde er beim Weglaufen irgendwann neben dem Meeresgitter, und die Inseln um ihn herum wären
   // nicht geladen.
   const F = worldFocus();
+  // Das Gitter folgt dem Spieler STUFENLOS, und das muss so bleiben: seaSurfaceY(0, 0) liefert die
+  // Hoehe der Gittermitte, und drei Fahrzeuge verlassen sich darauf, dass die Mitte ihre eigene
+  // Position ist (stepBoat, stepSub, floatCanadair).
+  // Ein Einrasten auf SEA_STEP war hier versucht, um bei uebersprungenen updateSea-Frames den
+  // Wellenversatz zu vermeiden — es haette den Spieler aber bis zu 31,25 m neben die Gittermitte
+  // gesetzt, bei 250 m Wellenlaenge also bis zu 1,5 m Hoehenfehler. Die Boote wuerden schweben.
   ground.position.x = F.x;
   ground.position.z = F.z;
   // Inseln in Sichtweite erzeugen/entfernen
@@ -12908,8 +13034,16 @@ function loop(now){
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
   updateHarborBoats(dt);     // die Feuerwehrboote am Kai schwimmen mit der Duenung
   updateHarborSubs(dt);      // die U-Boote am Strand ebenso
-  if(locale === 'earth') updateSeabed();   // Meeresboden (rastert, rechnet nur bei Bedarf neu)
-  if(locale === 'earth') updateUwCells();  // Wracks, Seegras und Korallen in Sichtweite
+  // Der Meeresboden wird nur gerechnet, wenn man ihn sehen KANN: im U-Boot, im Schlauchboot oder
+  // knapp ueber dem Wasser. Aus 8.000 m Hoehe verdeckt ihn die Meeresflaeche vollstaendig, und die
+  // Rechnung kostet 9,3 ms (im Code dokumentiert) bei jedem Rasterwechsel — beim X-Wing alle 0,9 s.
+  // Dass er dabei nie fertig wird (9 Frames je Durchgang, aber alle 0,9 s ein Neustart), war die
+  // Ursache fuer die "alten flachen meeresboden artefakte": eine halb gerechnete Flaeche behaelt
+  // ihre alten Hoehen.
+  if(seaFloorNeeded()) updateSeabed();
+  // Und die Unterwasserwelt (616 Meshes je Zelle!) nur, wenn man tauchen kann. Vorher lief das auch
+  // im Airbus auf Reiseflughoehe mit.
+  if(seaFloorNeeded()) updateUwCells();
   updateFish(dt);            // wandernde Fischschwaerme (raeumen sich ab, wenn man die Erde verlaesst)
   updateReefFish(dt);        // standorttreue Schwaerme an Wracks und Riffen (kreisen an ihrem Platz)
   updateDrift(dt);           // Bewegungsreferenz unter Wasser (Blasen) und auf Mond/Mars (Staub)
