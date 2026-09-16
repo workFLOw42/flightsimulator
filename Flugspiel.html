@@ -2369,44 +2369,52 @@ function makeSimpleWreck(laenge, rnd, rnd2){
   const g = new THREE.Group();
   const br = laenge*0.16;          // Breite: ein Frachter ist etwa 1:6
   const hoehe = laenge*0.11;
-  // RUMPF als flacher Zylinder, laengs gelegt: ein Schiffsrumpf ist im Querschnitt rund, und ein
-  // Zylinder mit 8 Segmenten liest sich als Rumpf, waehrend ein Kasten nach Kiste aussieht.
+  // WICHTIG: der Rumpf liegt entlang der Z-ACHSE, wie die GLB-Schiffsmodelle. Mein erster Aufbau
+  // lag entlang X, und das war der Grund fuer "es steckte senkrecht im sand und lag nicht auf der
+  // seite": makeWreck legt das Wrack mit rotation.set(pitch, rot, roll) hin, und roll dreht um Z.
+  // Bei einem Rumpf entlang Z ist das eine KRAENGUNG (richtig), bei einem entlang X kippt es den
+  // Bug nach oben — mit roll zwischen 34 und 80 Grad stand das Wrack also praktisch aufrecht.
+  //
+  // RUMPF als flacher Zylinder: ein Schiffsrumpf ist im Querschnitt rund, und ein Zylinder mit
+  // 8 Segmenten liest sich als Rumpf, waehrend ein Kasten nach Kiste aussieht.
   const hull = new THREE.Mesh(new THREE.CylinderGeometry(br*0.5, br*0.42, laenge, 8), wreckHullMat);
-  hull.rotation.z = Math.PI/2;     // Zylinderachse laengs
-  hull.scale.y = 1;                // (die Achse steht nach der Drehung auf x)
-  hull.scale.z = 0.72;             // flacher als rund: ein Rumpf ist breiter als hoch
+  hull.rotation.x = Math.PI/2;     // Zylinderachse von Y auf Z drehen
+  // FLACHER, nicht schmaler: ein Rumpf ist breiter als hoch. Nach der X-Drehung ist die lokale
+  // Z-Achse des Zylinders die Welt-Hoehe — die muss gestaucht werden. Mit scale.x kam ein hochkant
+  // stehender Rumpf heraus (bei 110 m Laenge 12,7 m breit und 17,6 m hoch statt umgekehrt).
+  hull.scale.z = 0.72;
   g.add(hull);
   // BUG als Kegel: gibt dem Rumpf eine Richtung, ohne die man nicht sieht, wie das Schiff lag.
   const bow = new THREE.Mesh(new THREE.ConeGeometry(br*0.48, laenge*0.22, 8), wreckHullMat);
-  bow.rotation.z = -Math.PI/2;
-  bow.position.x = laenge*0.6;
-  bow.scale.z = 0.72;
+  bow.rotation.x = -Math.PI/2;     // Spitze nach -Z, also nach vorne
+  bow.position.z = -laenge*0.6;
+  bow.scale.z = 0.72;              // dieselbe Stauchung wie am Rumpf (siehe dort)
   g.add(bow);
-  // AUFBAU: zwei Kaesten unterschiedlicher Groesse im hinteren Drittel.
-  const auf = new THREE.Mesh(new THREE.BoxGeometry(laenge*0.16, hoehe*1.4, br*0.7), wreckDeckMat);
-  auf.position.set(-laenge*0.22, hoehe*0.9, 0);
+  // AUFBAU: zwei Kaesten unterschiedlicher Groesse im hinteren Drittel (+Z ist hinten).
+  const auf = new THREE.Mesh(new THREE.BoxGeometry(br*0.7, hoehe*1.4, laenge*0.16), wreckDeckMat);
+  auf.position.set(0, hoehe*0.9, laenge*0.22);
   g.add(auf);
-  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(laenge*0.09, hoehe*0.9, br*0.5), wreckDeckMat);
-  bruecke.position.set(-laenge*0.22, hoehe*2.1, 0);
+  const bruecke = new THREE.Mesh(new THREE.BoxGeometry(br*0.5, hoehe*0.9, laenge*0.09), wreckDeckMat);
+  bruecke.position.set(0, hoehe*2.1, laenge*0.22);
   g.add(bruecke);
   // SCHORNSTEIN: das Merkmal, an dem man ein Wrack als Schiff erkennt.
   const kamin = new THREE.Mesh(new THREE.CylinderGeometry(br*0.14, br*0.16, hoehe*1.3, 7), wreckRustMat);
-  kamin.position.set(-laenge*0.3, hoehe*2.4, 0);
+  kamin.position.set(0, hoehe*2.4, laenge*0.3);
   g.add(kamin);
   // MASTEN: zwei duenne Stangen, eine davon abgebrochen und schief — das macht aus einem Schiff
   // ein WRACK. Ein aufrechtes, vollstaendiges Schiff auf dem Meeresgrund wirkt wie ein Fehler.
-  for(const [px, len, kipp] of [[laenge*0.28, hoehe*2.6, 0.12], [-laenge*0.05, hoehe*1.8, 0.5+rnd*0.6]]){
+  // Die Kippung geht jetzt um X (nach vorne/hinten), passend zur Z-Laengsachse.
+  for(const [pz, len, kipp] of [[-laenge*0.28, hoehe*2.6, 0.12], [laenge*0.05, hoehe*1.8, 0.5+rnd*0.6]]){
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(br*0.05, br*0.06, len, 5), wreckRustMat);
-    mast.position.set(px, len*0.45*Math.cos(kipp), Math.sin(kipp)*len*0.4);
+    mast.position.set(0, len*0.45*Math.cos(kipp), pz + Math.sin(kipp)*len*0.4);
     mast.rotation.x = kipp;
     g.add(mast);
   }
   // BRUCHKANTE: ein Stueck Rumpf, das abseits liegt. Erst damit sieht es nach Untergang aus und
   // nicht nach einem geparkten Schiff — und es gibt dem Fund eine zweite Silhouette.
   const bruch = new THREE.Mesh(new THREE.CylinderGeometry(br*0.44, br*0.3, laenge*0.18, 7), wreckHullMat);
-  bruch.rotation.set(rnd2*0.6, rnd*Math.PI, Math.PI/2 + rnd2*0.5);
-  bruch.position.set(laenge*(0.75 + rnd*0.25), br*0.2, br*(0.8 + rnd2*1.2));
-  bruch.scale.z = 0.72;
+  bruch.rotation.set(Math.PI/2 + rnd2*0.5, rnd*Math.PI, rnd2*0.6);
+  bruch.position.set(br*(0.8 + rnd2*1.2), br*0.2, -laenge*(0.75 + rnd*0.25));
   g.add(bruch);
   return g;
 }
@@ -2445,6 +2453,8 @@ function makeWreck(info){
     g0.add(makeSimpleWreck(info.len, cellRnd(Math.round(info.wx), Math.round(info.wz), 31),
                                      cellRnd(Math.round(info.wx), Math.round(info.wz), 32)));
     // Auf den Grund legen: bei Kraengung sinkt die Bordwand um sin(roll) mal halbe Breite.
+    // Halbe Breite ist der Rumpfradius br*0,5 = laenge*0,08 (die BREITE wird nicht gestaucht,
+    // nur die Hoehe — siehe makeSimpleWreck).
     const hw0 = info.len*0.08;
     g0.position.set(info.wx, info.y + Math.abs(Math.sin(info.roll))*hw0, info.wz);
     g0.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
@@ -2788,13 +2798,13 @@ function updateUwCells(){
     // NICHT als leer gemerkt — sonst blieben die Wracks fuer immer weg, wenn man schneller in der
     // Naehe ist als das GLB geladen war. Genau die Falle, die beim Kai-Feuerwehrboot schon einmal
     // aufgetreten ist (dort loest refreshIslands es).
-    // Die frueher hier stehende Wartebedingung ist ENTFALLEN: sie hielt die ganze Zelle zurueck,
-    // solange nicht beide Schiffsmodelle geladen waren — also auch Pflanzen, Korallen und Bewuchs,
-    // die davon nichts brauchen. Seit vier von fuenf Wracks Nachbauten aus Grundformen sind
-    // (makeSimpleWreck), braucht auch das Wrack meist kein Modell.
-    // Fehlt das GLB fuer einen Grossfund, liefert makeWreck null und die Zelle wird ohne Wrack
-    // gebaut. Das ist der einzige Rest des alten Problems, und er betrifft ein Fuenftel der
-    // Wracks in den ersten Sekunden nach dem Laden.
+    // GEZIELT warten: nur eine Zelle mit GROSSFUND braucht ein Schiffsmodell. Die alte Bedingung
+    // hielt JEDE Zelle zurueck, bis beide Modelle geladen waren — also auch Pflanzen und Bewuchs,
+    // die davon nichts brauchen. Sie ganz zu entfernen war aber ein Fehler: die Zelle wird unten
+    // mit uwCells.set als FERTIG gemerkt und nie wieder gebaut, ein spaeter geladenes Modell kommt
+    // also nie mehr an. Ergebnis war ein Grossfund, den es nie gab.
+    const wiVor = wreckInfo(pcx+dx, pcz+dz);
+    if(wiVor && wiVor.gross && !shipTemplates[wiVor.key]) continue;
     const grp = buildUwCell(pcx+dx, pcz+dz);
     if(grp) scene.add(grp);
     uwCells.set(key, grp);
