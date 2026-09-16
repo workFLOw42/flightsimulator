@@ -2616,10 +2616,39 @@ function wreckInfos(cx, cz){
   }
   return out;
 }
+// Der TIEFSTE PUNKT eines gedrehten Objekts, aus der Geometrie gelesen.
+//
+// Warum nicht THREE.Box3().setFromObject? Weil die Box NICHT das Wrack ist. setFromObject nimmt je
+// Mesh die vorberechnete geometry.boundingBox, transformiert deren ACHT ECKEN mit der Weltmatrix und
+// umschliesst die — im three.js-Quelltext nachgelesen:
+//   Nt.copy(e.boundingBox); Nt.applyMatrix4(t.matrixWorld); this.union(Nt);
+// Bei einem GEDREHTEN Objekt ist das die Huelle einer gedrehten Huelle, und die ist immer groesser
+// als das Objekt. Ihre Unterkante liegt damit unter dem Rumpf, und um genau diesen Betrag wurde das
+// Wrack zu hoch gehoben: nachgemessen bis 9,4 m beim Frachter und 16,8 m beim Segler
+// (C:/tmp/wbox.js) — deshalb schwebte es weiter, obwohl die Rechnung "gemessen" war.
+//
+// Diese Funktion geht die Punkte selbst durch. Das kostet beim Frachter 7.417 und beim Segler 10.063
+// Transformationen, aber nur EINMAL beim Bauen des Wracks, und es wird ohnehin nur eine Zelle pro
+// Frame gebaut (siehe updateUwCells).
+const _wLow = new THREE.Vector3();
+function lowestPointY(g){
+  g.updateMatrixWorld(true);
+  let min = Infinity;
+  g.traverse(o=>{
+    if(!o.isMesh || !o.geometry) return;
+    const pos = o.geometry.attributes.position;
+    if(!pos) return;
+    for(let i=0;i<pos.count;i++){
+      _wLow.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if(_wLow.y < min) min = _wLow.y;
+    }
+  });
+  return min;
+}
 // Ein Wrack bauen. Es liegt auf dem Grund, also muss der Ursprung so hoch, dass der gekippte Rumpf
 // genau aufliegt statt zu schweben oder im Sand zu stecken.
-// Das wird GEMESSEN: erst die Drehung setzen, dann die Bounding-Box nehmen, dann um ihre Unterkante
-// anheben. Jede Rechnung mit Breite und Aufbauhoehe war eine Schaetzung und lag daneben (siehe unten).
+// Das wird GEMESSEN: erst die Drehung setzen, dann den tiefsten Punkt der Geometrie suchen, dann um
+// ihn anheben. Jede Rechnung mit Breite und Aufbauhoehe war eine Schaetzung und lag daneben.
 function makeWreck(info){
   // EINFACHES Wrack (der Normalfall): Nachbau aus Grundformen, rund 400 Dreiecke statt 12.263.
   // Es braucht kein geladenes Modell, ist also auch sofort da — beim GLB-Wrack musste man warten,
@@ -2628,13 +2657,11 @@ function makeWreck(info){
     const g0 = new THREE.Group();
     g0.add(makeSimpleWreck(info.len, cellRnd(Math.round(info.wx), Math.round(info.wz), 31),
                                      cellRnd(Math.round(info.wx), Math.round(info.wz), 32)));
-    // Auf den Grund legen — GEMESSEN, wie beim Grossfund: erst drehen, dann die Bounding-Box, und
-    // um deren Unterkante anheben. Die alte Rechnung (|sin(roll)| mal Rumpfradius) liess die
-    // Aufbauten, den Schornstein und die Masten aussen vor und setzte damit zu tief oder zu hoch an.
+    // Auf den Grund legen — GEMESSEN, wie beim Grossfund: erst drehen, dann den tiefsten PUNKT der
+    // Geometrie suchen und um ihn anheben. Die alte Rechnung (|sin(roll)| mal Rumpfradius) liess
+    // Aufbauten, Schornstein und Masten aussen vor und setzte damit zu tief oder zu hoch an.
     g0.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
-    g0.updateMatrixWorld(true);
-    const bb0 = new THREE.Box3().setFromObject(g0);
-    g0.position.set(info.wx, info.y - bb0.min.y - 0.4, info.wz);   // 0,4 m im Sand (siehe unten)
+    g0.position.set(info.wx, info.y - lowestPointY(g0) - 0.4, info.wz);   // 0,4 m im Sand
     return g0;
   }
   const tpl = shipTemplates[info.key];
@@ -2664,25 +2691,20 @@ function makeWreck(info){
     o.material = warListe ? neu : neu[0];
   });
   g.add(m);
-  // AUFSETZEN WIRD GEMESSEN, NICHT GERECHNET. Vorher stand hier ein Zuschlag aus halber Breite und
-  // halber Aufbauhoehe, mit |sin(roll)| gewichtet — eine Schaetzung, und sie lag zu hoch: gegen die
-  // echte GLB-Geometrie geprueft schwebte der Frachter im Mittel 8,05 m ueber dem Sand, im
-  // schlimmsten Fall 13,06 m (147 Lagen durchgerechnet, C:/tmp/wfloat.js). Gemeldet als "es
-  // schwebt jetzt in der Luft" — und das war es auch schon vorher, nur unsichtbar.
-  //
-  // Der Weg dahin ist einfach: erst drehen, DANN die Bounding-Box nehmen. Deren Unterkante ist der
-  // tiefste Punkt des gekippten Wracks, und genau um die muss der Ursprung angehoben werden —
-  // fuer jede Lage, jedes Modell und jede Kraengung richtig, ohne Sonderfall.
-  // Deshalb darf jetzt auch der Segler ein Wrack sein (siehe wreckInfo1): seine Masten fallen
-  // hierbei einfach mit in die Box.
+  // AUFSETZEN WIRD GEMESSEN, NICHT GERECHNET — und zwar an der GEOMETRIE, nicht an ihrer Box.
+  // Zwei Anlaeufe waren noetig:
+  //   1. Ein Zuschlag aus halber Breite und halber Aufbauhoehe, mit |sin(roll)| gewichtet. Reine
+  //      Schaetzung; der Frachter schwebte im Mittel 8,05 m, schlimmstenfalls 13,06 m.
+  //   2. THREE.Box3().setFromObject auf das gedrehte Wrack. Klingt nach Messung, ist aber keine:
+  //      die Box umschliesst die gedrehten ECKEN der ungedrehten Box, nicht das Schiff. Damit lag
+  //      sie bis 9,4 m (Frachter) und 16,8 m (Segler) zu tief — das Wrack schwebte weiter.
+  // Jetzt sucht lowestPointY den tiefsten PUNKT der gedrehten Geometrie. Das ist fuer jede Lage,
+  // jedes Modell und jede Kraengung richtig, ohne Sonderfall — und die Masten des Seglers fallen
+  // dabei einfach mit hinein.
   g.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
-  g.updateMatrixWorld(true);
-  // Box in WELTkoordinaten, waehrend die Gruppe noch im Ursprung steht: min.y ist damit direkt der
-  // Abstand des tiefsten Punktes zum Gruppenursprung.
-  const bb = new THREE.Box3().setFromObject(g);
   // 0,4 m Einsinken: ein Wrack liegt seit Jahrzehnten im Sand, es steht nicht darauf. Ohne das
   // beruehrt es den Grund an genau einem Punkt und sieht aus wie hingestellt.
-  g.position.set(info.wx, info.y - bb.min.y - 0.4, info.wz);
+  g.position.set(info.wx, info.y - lowestPointY(g) - 0.4, info.wz);
   return g;
 }
 // ---- VEGETATION: Seegras und Korallen auf dem Schelf -------------------------------------------

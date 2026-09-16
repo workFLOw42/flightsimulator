@@ -2620,3 +2620,60 @@ und eine Zahl, die physikalisch unmoeglich aussieht (102 m hohes Schiff), ist me
 - **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt:
   `stepBoat` setzt `state.pos.y = seaSurfaceY(0,0,dt) - BOAT_DRAFT` ohne Untergrenze, waehrend
   `updateHarborBoats` fuers ruhende Kai-Boot schon eine hat.
+---
+
+## 2026-09-16 (3) — "bondery box <> wrack selber???" — ja, genau das war es
+
+Zwei Meldungen, zwei Ursachen, beide gefunden.
+
+### 1. Die Bounding-Box ist nicht das Wrack
+
+Die Rueckfrage traf den Kern. `THREE.Box3().setFromObject` MISST die Geometrie nicht — es nimmt je
+Mesh die vorberechnete `geometry.boundingBox`, transformiert deren **acht Ecken** und umschliesst
+die. Im three.js-Quelltext (r128) nachgelesen:
+
+```js
+Nt.copy(e.boundingBox); Nt.applyMatrix4(t.matrixWorld); this.union(Nt);
+```
+
+Bei einem **gedrehten** Objekt ist das die Huelle einer gedrehten Huelle, und die ist immer groesser
+als das Objekt selbst. Ihre Unterkante liegt unter dem Rumpf — und um genau diesen Betrag wurde das
+Wrack zu hoch gehoben (`C:/tmp/wbox.js`):
+
+| Modell | Box3 hebt zu hoch um |
+|---|---|
+| Liberty-Frachter | **9,44 m** |
+| Grosssegler | **16,81 m** |
+
+Deshalb schwebte es weiter, obwohl die Rechnung "gemessen" hiess. Jetzt sucht `lowestPointY(g)` den
+tiefsten **Punkt** der gedrehten Geometrie (`fromBufferAttribute` + `applyMatrix4` je Vertex).
+Nachgeprueft: Abweichung **0,000000000 m** fuer alle 6.895 Wracks, hoechster Punkt 14,6 m unter der
+Oberflaeche.
+
+Kosten: 7.417 Transformationen beim Frachter, 10.063 beim Segler — aber nur **einmal beim Bauen**,
+und `updateUwCells` baut ohnehin nur eine Zelle pro Frame.
+
+**Lehre, jetzt zum dritten Mal in derselben Sache:** erst eine geschaetzte Formel, dann eine
+Bounding-Box, die nach Messung aussah, aber keine war. Wer "gemessen" schreibt, muss pruefen, WAS
+die Messfunktion misst. Die uebrigen 45 `setFromObject`-Aufrufe im Projekt sind davon nicht
+betroffen: sie laufen alle auf UNGEDREHTE Objekte, und dort ist die Box exakt.
+
+### 2. Kein Ping — der Service Worker lieferte die alte ambient.js
+
+`ambient.js` stand **nicht** in der CORE-Liste von `sw.js`. Sie wurde beim ersten Besuch nur
+nebenbei gecacht (die fetch-Strategie fuellt nach) und danach nie wieder geholt. Nach dem Einbau
+des Pings lieferte der Cache also weiter die ALTE Datei ohne den Schluessel `sonar`:
+`window.FMS_AMB.sonar` war `undefined`, und `playSonarPing` stieg stumm aus.
+
+Das passt genau zur Beobachtung: *"über wasser kommt aber der hinweis das man unter wasser sein
+muss. die funktion ist also drinnen."* — der Hinweis braucht keinen Sound, deshalb kam er.
+
+Die Datei selbst war in Ordnung (geprueft: parst, `sonar` vorhanden, 215.808 Bytes byte-identisch
+mit dem Original). Jetzt steht sie in CORE und wird bei jeder neuen Cache-Version frisch geladen.
+
+**Merkposten:** wer eine Datei in `ambient.js`/`sounds.js`-Art aendert, muss sie in `sw.js` CORE
+haben — sonst testet man gegen den Cache und sucht den Fehler im Code.
+
+### Offen
+
+- **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt.

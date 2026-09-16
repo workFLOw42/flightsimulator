@@ -1,6 +1,6 @@
 /* Flugspiel Service Worker – Offline-Cache
    Version bei jedem Inhalts-Update hochzaehlen, damit alte Caches ersetzt werden. */
-const CACHE = 'flugspiel-v133';
+const CACHE = 'flugspiel-v134';
 
 /* Kern-Dateien: klein genug, um sie sofort bei der Installation zu cachen. */
 const CORE = [
@@ -10,6 +10,14 @@ const CORE = [
   './three.min.js',
   './GLTFLoader.js',
   './sounds.js',
+  // ambient.js fehlte hier, und das war der Grund, warum der Sonar-Ping stumm blieb: die Datei
+  // wurde beim ersten Besuch NEBENBEI gecacht (die fetch-Strategie fuellt nach), danach aber nie
+  // wieder geholt. Nach dem Einbau des Pings lieferte der Cache also weiter die alte ambient.js
+  // ohne den Schluessel 'sonar' — window.FMS_AMB.sonar war undefined, und playSonarPing stieg
+  // stumm aus. Der Hinweis 'erst abtauchen' kam trotzdem, weil der dem Sound nicht braucht.
+  // In CORE steht sie jetzt mit den anderen Kern-Dateien und wird bei jeder neuen Cache-Version
+  // frisch geladen (1,9 MB, das ist vertretbar).
+  './ambient.js',
   './icon-192.png',
   './icon-512.png',
   './icon-maskable-512.png'
