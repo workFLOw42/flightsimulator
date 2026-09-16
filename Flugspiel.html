@@ -411,9 +411,13 @@ for(let i=0;i<seabedPos.count;i++){ seabedBaseX[i]=seabedPos.getX(i); seabedBase
 seabedGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(seabedPos.count*3), 3));
 const seabedCol = seabedGeo.attributes.color;
 // Farben nach Tiefe: heller Sand am Ufer, Schlick in der Mitte, fast schwarz im Tiefen.
-const sbShallow = new THREE.Color(0xcdbe8a);
-const sbMid     = new THREE.Color(0x6d7a63);
-const sbDeep    = new THREE.Color(0x1d2a33);
+// Deutlich heller als vorher (war cdbe8a / 6d7a63 / 1d2a33), gewuenscht als "den meeresboden bitte
+// heller machen". Der Tiefenwert war mit 1d2a33 fast schwarz und schluckte alles, was darauf steht;
+// jetzt ist auch der tiefste Grund ein helles Graublau, auf dem ein Wrack als Silhouette lesbar
+// bleibt. Der Sand oben geht ins Cremeweiss — so wirkt der Schelf wie eine Lagune.
+const sbShallow = new THREE.Color(0xf0e6c0);
+const sbMid     = new THREE.Color(0xa8b294);
+const sbDeep    = new THREE.Color(0x5f7684);
 const _sbIslands = [];
 function collectSeabedIslands(ox, oz){
   _sbIslands.length = 0;
@@ -2222,6 +2226,17 @@ const CORAL_PER_CELL = 14;
 // Bis zu welcher Tiefe Pflanzen wachsen. Tiefer wird es dunkel, dort steht nichts mehr — das ist
 // auch der Grund, warum die Tiefsee leer aussehen DARF: sie ist es wirklich.
 const WEED_MAX_DEPTH = 40;
+// Und wie FLACH sie hoechstens stehen duerfen. Gerechnet, nicht geschaetzt: das hoechste Objekt ist
+// ein Seegrasbueschel mit 5,6 m (Koralle 4,2 m), und die Wellenflaeche sinkt im Tal auf -2,33 m.
+// 5,6 + 2,33 = 7,9 m waeren die Grenze, bei der eine Spitze die Flaeche gerade beruehrt — 9 m gibt
+// 1,1 m Luft. Vorher stand die Grenze bei 1,4 m, also ragten Pflanzen bis 4,2 m HERAUS.
+const UW_PLANT_MIN_DEPTH = 9;
+// Wo das Pflanzband liegt, als Anteil von SHELF_W. Beide Werte sind die Umkehrung des
+// smoothstep-Schelfs aus seabedY fuer die zwei Tiefengrenzen (9 m und 40 m) bei SEA_DEPTH 100.
+// Wer SEA_DEPTH aendert, muss sie nachrechnen — sonst stehen Pflanzen wieder im Flachen oder
+// die Haelfte faellt durch den Filter.
+const UW_PLANT_BAND0 = 0.172;   // Beginn: die 9-m-Linie
+const UW_PLANT_BANDW = 0.256;   // Breite bis zur 40-m-Linie (0,428 - 0,172)
 function buildUwCell(cx, cz){
   const g = new THREE.Group();
   let leer = true;
@@ -2248,11 +2263,20 @@ function buildUwCell(cx, cz){
       // reichte das Band 220 m hinaus, die 40-m-Tiefengrenze liegt aber schon bei rund 107 m
       // (aus dem smoothstep: 40 m Tiefe entsprechen sm = 0,195, also f = 0,27 von SHELF_W). Die
       // Haelfte aller Objekte fiel damit hinter der Grenze weg — gemessen 20,1 von 40.
-      const rr = isl.radius*BEACH_FACTOR*1.04 + r2*SHELF_W*0.30;
+      // Das Band liegt GENAU zwischen den beiden Tiefengrenzen, statt an der Sandkante anzufangen.
+      // Nachgerechnet fuer SEA_DEPTH 100: die 9-m-Linie (UW_PLANT_MIN_DEPTH) liegt 0,172*SHELF_W
+      // draussen, die 40-m-Linie (WEED_MAX_DEPTH) bei 0,428. Faengt das Band an der Kante an,
+      // faellt alles Innere durch den Tiefenfilter — bei 0,42 Breite waren das 41 % der Wuerfe.
+      // So bleibt praktisch jeder stehen, und die Pflanzen sitzen dort, wo sie hingehoeren.
+      const rr = isl.radius*BEACH_FACTOR + (UW_PLANT_BAND0 + r2*UW_PLANT_BANDW)*SHELF_W;
       const x = isl.wx + Math.cos(ang)*rr, z = isl.wz + Math.sin(ang)*rr;
       if(isOnLand(x, z) || isOnBeach(x, z)) continue;       // andere Insel dazwischen
       const y = seabedY(x, z);
-      if(y < -WEED_MAX_DEPTH || y > SEABED_SHORE_Y - 0.2) continue;
+      // Nach unten die Lichtgrenze, nach oben MIT SICHERHEITSABSTAND unter die Wellen. Vorher
+      // stand hier SEABED_SHORE_Y - 0,2 (also -1,4 m), und das war zu flach: eine Koralle ist bis
+      // 4,2 m hoch, ein Seegrasbueschel bis 5,6 m — die Spitzen ragten aus dem Wasser, und weil
+      // die Wellenflaeche um +-2,4 m wandert, sah es aus, als schwaemmen sie mit ihr mit.
+      if(y < -WEED_MAX_DEPTH || y > -UW_PLANT_MIN_DEPTH) continue;
       const o = coral ? makeCoral(r3, r1) : makeWeed(r3, r2);
       o.position.set(x, y, z);
       o.rotation.y = r3*Math.PI*2;
@@ -2295,7 +2319,11 @@ function clearUwCells(){
 // Sie schwimmen als Wolke um einen Mittelpunkt, der selbst langsam wandert, jeder Fisch mit eigener
 // Phase. Das reicht: aus 10 m sieht man Silhouetten, die sich bewegen, und mehr ist im Nebel gar
 // nicht zu erkennen.
-const FISH_SCHOOLS = 5;         // Schwaerme gleichzeitig um den Spieler
+// Von 5 auf 9 Schwaerme, auf Wunsch ("mehr fische?"). Mit 34 Tieren pro Schwarm sind das 306
+// Fische auf 9 InstancedMeshes, also 9 Draw-Calls. Sie stehen 40 bis 260 m um den Spieler
+// (FISH_SPAWN_MIN/MAX); bei 180 m Sichtweite sieht man jetzt meist mehrere gleichzeitig statt
+// mit Glueck einen.
+const FISH_SCHOOLS = 9;         // Schwaerme gleichzeitig um den Spieler
 const FISH_PER     = 34;        // Fische pro Schwarm
 const FISH_R       = 9;         // Radius der Wolke (m)
 const FISH_SPD     = 1.8;       // m/s Wanderung des Schwarms
@@ -2397,6 +2425,136 @@ function updateFish(dt){
     }
     f.mesh.instanceMatrix.needsUpdate = true;
   }
+}
+// ---- BEWEGUNGSREFERENZ: Blasen, Staub, Pollen ---------------------------------------------------
+// Gemeldet an drei Stellen, und es ist ueberall derselbe Mangel: "wenn man unterwasser ist fehlt
+// eine referenz, die einem merken laesst das man faehrt", und dasselbe "beim astronaut beim laufen
+// oder beim xwing im weltall — das pure schwarz oder die homogene wiese lassen die bewegung nicht
+// spueren, obwohl man mit 22 km/h ja eigentlich schnell unterwegs ist".
+//
+// Der Grund ist Winkelgeschwindigkeit: was NAH ist, zieht sichtbar vorbei; was weit ist, steht.
+// Unter Wasser, im All und ueber einer gleichmaessigen Wiese gibt es nichts Nahes — also fehlt das
+// Tempogefuehl, egal wie schnell man wirklich ist.
+//
+// Ein Feld kleiner Partikel in einem Wuerfel um die Kamera loest das fuer alle drei Faelle. Wer
+// hinausfaellt, kommt auf der Gegenseite wieder herein (Torus): die Dichte bleibt konstant, es
+// wird nie etwas erzeugt oder geloescht, und weil die Partikel im WELTraum stehen, wandern sie
+// relativ zum Spieler — sie zeigen also genau dessen Bewegung.
+//
+// EINE InstancedMesh wie bei den Fischen, also ein Draw-Call. Kein THREE.Points: Punktgroessen sind
+// in WebGL geraetabhaengig und werden auf vielen Tablets auf 1 px geklemmt, winzige Kugeln nicht.
+const DRIFT_N     = 90;     // Partikel. Genug fuer den Eindruck, wenig genug fuers Budget.
+const DRIFT_BOX   = 26;     // halbe Kantenlaenge des Wuerfels um die Kamera (m)
+const DRIFT_MIN   = 2.5;    // naeher als das nicht: sonst klebt einem etwas auf der Linse
+// Eigenbewegung je Ort. Unter Wasser STEIGEN Blasen (das ist ihr halber Reiz), an Land treibt
+// Pollen langsam seitlich, im All steht der Staub still — dort bewegt sich nur der Spieler.
+const DRIFT_RISE  = 1.6;    // m/s Aufstieg der Blasen
+const DRIFT_POLLEN= 0.35;   // m/s seitliches Treiben an Land
+let driftMesh = null, driftPos = null, driftKind = null;
+const _drM = new THREE.Matrix4(), _drQ = new THREE.Quaternion();
+const _drP = new THREE.Vector3(), _drS = new THREE.Vector3(1,1,1);
+// Welche Sorte gehoert hierher? null heisst: hier braucht es keine (es gibt genug Bezug).
+//   'bubble' unter Wasser, 'dust' im Weltall, 'pollen' zu Fuss oder im Rover an Land.
+// Im FLUGZEUG ueber der Insel bewusst NICHT: dort gibt es Wellen, Inseln, Haeuser und Wolken als
+// Bezug, und Partikel vor der Nase saehen bei 500 km/h wie ein Fehler aus.
+function driftKindNow(){
+  if(uwBlend > 0.35) return 'bubble';
+  if(locale === 'space') return 'dust';
+  // Zu Fuss und im Rover: langsame Fortbewegung ueber gleichmaessigen Boden, genau der Fall aus
+  // der Meldung. Im Boot NICHT — dort ist das Wasser selbst bewegt, da fehlt kein Bezug.
+  if(eva && !eva.boat){
+    // Auf der Erde Pollen, auf Mond und Mars STAUB: dort ist Vakuum, in dem nichts schwebt, aber
+    // die Referenz braucht man erst recht — grauer Regolith ist noch gleichmaessiger als eine
+    // Wiese. Im Hangar (locale 'death') gar nichts: der Boden hat Struktur, Waende und Kanten.
+    if(locale === 'earth') return 'pollen';
+    if(GROUNDS[locale]) return 'dust';
+    return null;
+  }
+  return null;
+}
+function driftEnsure(kind){
+  if(driftKind === kind) return;
+  driftKind = kind;
+  if(driftMesh){ scene.remove(driftMesh); driftMesh = null; }
+  if(!kind) return;
+  // Groesse und Farbe je Sorte. Blasen sind die groessten und hellsten (man soll sie sehen),
+  // Staub im All ist fein und grau, Pollen dazwischen und warm.
+  const g = kind === 'bubble' ? new THREE.SphereGeometry(0.16, 6, 4)
+          : kind === 'dust'   ? new THREE.SphereGeometry(0.10, 5, 3)
+                              : new THREE.SphereGeometry(0.12, 5, 3);
+  const c = kind === 'bubble' ? 0xdffbff : kind === 'dust' ? 0xb9c6d8 : 0xfff2c4;
+  // MeshBasic und nicht Lambert: diese Partikel sollen ueberall gleich hell sein, auch im All ohne
+  // Streulicht und unten im dunklen Wasser. Mit Lambert waeren sie genau dort unsichtbar, wo sie
+  // gebraucht werden. depthWrite aus, damit sie sich nicht gegenseitig ausstanzen.
+  const m = new THREE.MeshBasicMaterial({ color:c, transparent:true,
+                                          opacity: kind === 'bubble' ? 0.75 : 0.55,
+                                          depthWrite:false });
+  driftMesh = new THREE.InstancedMesh(g, m, DRIFT_N);
+  driftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  driftMesh.frustumCulled = false;      // der Wuerfel umschliesst die Kamera; Culling wirft ihn sonst weg
+  driftPos = new Float32Array(DRIFT_N*3);
+  // Startverteilung rings um die Kamera, mit Mindestabstand.
+  for(let i=0;i<DRIFT_N;i++) driftPlace(i);
+  scene.add(driftMesh);
+}
+// Ein Partikel im Wuerfel um die Kamera setzen, mit Mindestabstand zur Linse.
+function driftPlace(i){
+  const c = camera.position;
+  let x, y, z, n = 0;
+  do {
+    x = c.x + (Math.random()*2-1)*DRIFT_BOX;
+    y = c.y + (Math.random()*2-1)*DRIFT_BOX;
+    z = c.z + (Math.random()*2-1)*DRIFT_BOX;
+    n++;
+  } while(n < 8 && Math.hypot(x-c.x, y-c.y, z-c.z) < DRIFT_MIN);
+  driftPos[i*3] = x; driftPos[i*3+1] = y; driftPos[i*3+2] = z;
+}
+const _drLast = new THREE.Vector3();
+let _drHas = false;
+function updateDrift(dt){
+  const kind = driftKindNow();
+  driftEnsure(kind);
+  if(!kind || !driftMesh) return;
+  const c = camera.position;
+  // KAMERASPRUNG erkennen und das Feld neu setzen. Die Partikel stehen in Weltkoordinaten um die
+  // Kamera; ein Ortswechsel springt aber ueber Kilometer (ins All 20.000 m), und dann liegt der
+  // ganze Wuerfel dort, wo man war. Der Torus unten holt das nicht ein, er schiebt nur um eine
+  // Kantenlaenge.
+  //
+  // Warum hier und nicht per clearDrift() in jedem Ortswechsel: es gibt acht Stellen, die locale
+  // umsetzen, und zwei davon (leaveHangar, leaveGround) rufen earthWorldVisible nicht auf — dort
+  // haette der Aufruf gefehlt. Ein Sprungtest deckt alle ab, auch kuenftige. Schwelle ist eine
+  // Wuerfelkante: normale Fahrt macht selbst bei 500 km/h nur 2,3 m pro Frame.
+  if(_drHas && _drLast.distanceTo(c) > DRIFT_BOX*2){
+    for(let i=0;i<DRIFT_N;i++) driftPlace(i);
+  }
+  _drLast.copy(c); _drHas = true;
+  // Eigenbewegung der Partikel (nicht die des Spielers — die entsteht automatisch daraus, dass
+  // die Partikel im Weltraum stehen und die Kamera sich bewegt).
+  const vy = kind === 'bubble' ? DRIFT_RISE : 0;
+  const vx = kind === 'pollen' ? DRIFT_POLLEN : 0;
+  const L = DRIFT_BOX*2;
+  for(let i=0;i<DRIFT_N;i++){
+    let x = driftPos[i*3] + vx*dt, y = driftPos[i*3+1] + vy*dt, z = driftPos[i*3+2];
+    // TORUS: pro Achse um die ganze Kantenlaenge zurueckschieben, wenn der Wuerfel verlassen wird.
+    // Nicht neu wuerfeln — das gaebe ein Flackern an den Raendern. So wandert dasselbe Partikel
+    // auf der Gegenseite herein, was man nicht sieht, weil es 26 m entfernt passiert.
+    if(x - c.x >  DRIFT_BOX) x -= L; else if(x - c.x < -DRIFT_BOX) x += L;
+    if(y - c.y >  DRIFT_BOX) y -= L; else if(y - c.y < -DRIFT_BOX) y += L;
+    if(z - c.z >  DRIFT_BOX) z -= L; else if(z - c.z < -DRIFT_BOX) z += L;
+    // Blasen NICHT ueber die Wasserflaeche steigen lassen: dort platzen sie, also unten neu.
+    if(kind === 'bubble' && y > seaYAt(x, z) - 0.5) y = c.y - DRIFT_BOX*0.8;
+    driftPos[i*3] = x; driftPos[i*3+1] = y; driftPos[i*3+2] = z;
+    _drP.set(x, y, z);
+    _drM.compose(_drP, _drQ, _drS);
+    driftMesh.setMatrixAt(i, _drM);
+  }
+  driftMesh.instanceMatrix.needsUpdate = true;
+}
+function clearDrift(){
+  if(driftMesh){ scene.remove(driftMesh); driftMesh = null; }
+  driftKind = null;
+  _drHas = false;        // sonst vergleicht der naechste Frame gegen eine Stelle von vorher
 }
 // Die Strand-U-Boote schwimmen mit der Duenung, wie die Kai-Feuerwehrboote (updateHarborBoats).
 // Ohne das lagen sie fest auf y = 0, waehrend das Wasser um bis zu 1,6 m schwankt — bei einem
@@ -7312,6 +7470,8 @@ function earthWorldVisible(on){
     clearOrcas();                        // die Killerwale ebenso (updateOrcas raeumt sonst erst im naechsten Frame)
     clearUwCells();                      // und die Unterwasserwelt (Wracks, Seegras, Korallen)
     clearFish();                         // und die Fischschwaerme (siehe dort: sonst einen Frame zu spaet)
+    clearDrift();                        // und die Bewegungspartikel: sie stehen in WELTkoordinaten
+                                         // um die alte Kamera, ein Ortswechsel springt aber ueber km
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -7822,10 +7982,10 @@ function updateSpaceBlend(dt){
 // erst die Ferne faerbt sich ein — das ist der Unterschied zwischen durchsichtigem Wasser und
 // Suppe, und er wirkt staerker als jede Erhoehung der Sichtweite.
 //
-// 12 m und nicht 25: die Kamera steht 62,4 m hinter der Bootsmitte, das Heck ist also 15,4 m weg.
-// Mit 25 m begann der Nebel HINTER dem Heck, das ganze Boot stand voellig klar im Bild und wirkte
-// aufgeklebt. 12 m legt einen leichten Schleier ueber den Rumpf und laesst die Linse frei.
-const UW_FOG_NEAR = 12;
+// 22 m: die Kamera steht 76,8 m hinter der Bootsmitte, das Heck ist also 29,8 m weg. Der Nebel
+// soll VOR dem Heck anfangen, damit der Rumpf einen leichten Schleier bekommt und nicht aufgeklebt
+// wirkt — aber nicht direkt an der Linse, sonst ist alles milchig (mit 3 m war genau das der Fall).
+const UW_FOG_NEAR = 22;
 // Sichtweiten deutlich hochgesetzt (42 -> 75 an der Oberflaeche, 16 -> 38 unten). Gewuenscht war
 // "etwas mehr licht", und die Sichtweite gehoert dazu: 42 m sind fuer ein 95 m langes U-Boot
 // weniger als eine halbe Bootslaenge, man sah nie mehr als einen Ausschnitt des eigenen Rumpfes.
@@ -7833,11 +7993,11 @@ const UW_FOG_NEAR = 12;
 // die aus dem Nichts kommt. Klares tropisches Wasser gibt real 30 bis 50 m Sicht — 75 m sind
 // grosszuegig, aber das ist eine Kinderwelt mit Korallen und Fischschwaermen, und die soll man
 // sehen. Der Nebel BLEIBT deutlich (75 m gegen 3.000 m an Luft), es ist also weiter Unterwasser.
-const UW_FOG_FAR  = 150;    // m Sichtweite knapp unter der Oberflaeche
-// Am Grund 120 m und nicht 85: der Bug liegt 109,4 m von der Kamera entfernt (62,4 m Abstand plus
-// 47 m halber Rumpf), bei 85 m waere die eigene Bootsnase unten im Nebel verschwunden. 120 m deckt
-// sie mit Rand. Der Unterschied zu 150 m oben bleibt als Tiefeneindruck erhalten.
-const UW_FOG_DEEP = 120;
+const UW_FOG_FAR  = 180;    // m Sichtweite knapp unter der Oberflaeche
+// Am Grund 135 m und nicht 85: der Bug liegt 123,8 m von der Kamera entfernt (76,8 m Abstand plus
+// 47 m halber Rumpf), bei 85 m waere die eigene Bootsnase unten im Nebel verschwunden. 135 m deckt
+// sie mit Rand. Der Unterschied zu 180 m oben bleibt als Tiefeneindruck erhalten.
+const UW_FOG_DEEP = 135;
 // Farben heller und klarer: das alte UW_DEEP (0x02141c) war praktisch schwarz, und mit SEA_DEPTH
 // auf 100 m erreicht man diese Tiefe jetzt auch wirklich — vorher lag sie unter dem, was man beim
 // Spielen sah. Das neue Tief ist ein tiefes Blaugruen: dunkel genug, dass Tiefe sich nach Tiefe
@@ -7894,6 +8054,14 @@ function cameraDepth(){
 // die Linse ein, ist das Bild nach anderthalb Metern voll unter Wasser. Kuerzer waere wieder ein
 // Schalter, laenger wuerde das Wasser noch in 5 m Tiefe halb durchsichtig wirken.
 const UW_BAND = 1.5;
+// Geometrisch (multiplikativ) blenden statt linear. Fuer Groessen, bei denen das VERHAELTNIS zaehlt
+// und nicht die Differenz — Sichtweiten sind genau so eine: der Schritt von 3.000 auf 1.500 m ist
+// im Bild kaum zu sehen, der von 300 auf 150 m sehr wohl. Beide sind aber derselbe Faktor.
+// Beide Werte muessen positiv sein (Nebelabstaende sind das immer).
+function uwGeoBlend(von, nach, b){
+  if(von <= 0 || nach <= 0) return von + (nach - von)*b;   // Notausgang, sollte nie greifen
+  return Math.exp(Math.log(von) + (Math.log(nach) - Math.log(von))*b);
+}
 function updateUnderwater(dt){
   updateUwCamBlend(dt);          // Kamera-Zug (eigener Wert, siehe dort — nicht uwBlend)
   // GLEITENDER Zielwert statt 0/1. Der harte Boolean liess den Nebel an der Oberflaeche
@@ -7928,8 +8096,16 @@ function updateUnderwater(dt){
   scene.background.lerp(_uwC, b);
   scene.fog.color.lerp(_uwC, b);
   const far = UW_FOG_FAR + (UW_FOG_DEEP - UW_FOG_FAR)*tief;
-  scene.fog.near = scene.fog.near + (UW_FOG_NEAR - scene.fog.near)*b;
-  scene.fog.far  = scene.fog.far  + (far          - scene.fog.far )*b;
+  // GEOMETRISCH blenden, nicht linear — das war der Grund fuer den holprigen Uebergang.
+  // Linear gerechnet (far + (uw-far)*b) blieben bei halbem Blendwert noch 1.575 m Sichtweite von
+  // 3.000: die erste Haelfte des Uebergangs war unsichtbar, und die ganze Aenderung fiel in die
+  // letzten 5 % — also 1,2 s nichts und dann ein Ruck.
+  //
+  // Sichtweite wirkt multiplikativ: von 3.000 auf 1.500 m sieht man kaum, von 300 auf 150 m ist
+  // ein Weltunterschied. Ueber den Logarithmus geblendet ist jeder Schritt gleich stark sichtbar
+  // (b=0,5 gibt 671 m statt 1.575 m), der Wechsel laeuft also gleichmaessig durch.
+  scene.fog.near = uwGeoBlend(scene.fog.near, UW_FOG_NEAR, b);
+  scene.fog.far  = uwGeoBlend(scene.fog.far,  far,         b);
   // Licht: die Sonne dringt gedaempft ein, das Streulicht von oben bleibt. Eine Daempfung mit der
   // Tiefe muss sein — ohne sie stuenden die Wracks unten im hellen Sonnenlicht.
   //
@@ -9452,7 +9628,12 @@ const CAM_CFG = {
   // aber nur 7,2 m Hoehe ueber einem 13 m dicken Rumpf — man sah ihn von der SEITE, und beim
   // Tauchen schob sich das Heck ins Bild. 12 m gibt den Blick schraeg von hinten oben: Turm, Deck
   // und der Weg voraus sind zusammen zu sehen.
-  Sub:      { dist: 2.6,  hgt: 1.5 },
+  //
+  // dist von 2,6 auf 3,2 (62,4 -> 76,8 m): auf Wunsch weiter weg. Damit liegen 29,8 m zwischen
+  // Kamera und Heck statt 15,4 m, das Boot steht also ganz im Bild statt es zu fuellen. Der Bug
+  // ist dann 123,8 m entfernt, knapp mehr als die Sichtweite am Grund (135 m deckt ihn, in der
+  // Tiefe verliert er sich leicht im Blau — das gehoert dazu).
+  Sub:      { dist: 3.2,  hgt: 1.5 },
 };
 function camCfg(){ return CAM_CFG[MODEL_NAMES[currentModel]] || { dist:1, hgt:1 }; }
 
@@ -11800,6 +11981,7 @@ function loop(now){
   if(locale === 'earth') updateSeabed();   // Meeresboden (rastert, rechnet nur bei Bedarf neu)
   if(locale === 'earth') updateUwCells();  // Wracks, Seegras und Korallen in Sichtweite
   updateFish(dt);            // Fischschwaerme (raeumen sich selbst ab, wenn man die Erde verlaesst)
+  updateDrift(dt);           // Bewegungsreferenz: Blasen unter Wasser, Staub im All, Pollen an Land
   updateOrcas(dt);           // Killerwale: Springer (45 Grad, 10 m hoch) und tauchende Schule
   updateRockets(dt);         // Raketenstarts auf den Inseln (starten bei Annäherung, steigen ins All)
   // Erststart: sobald der Hangar geladen IST und danach kurz Ruhe war, beginnt der X-Wing dort.
