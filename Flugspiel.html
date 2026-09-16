@@ -146,6 +146,7 @@
 <script src="harbor_glb.js"></script>
 <script src="xwing_glb.js"></script>
 <script src="stars_glb.js"></script>
+<script src="milkyway_glb.js"></script>
 <script src="earth_glb.js"></script>
 <script src="moon_glb.js"></script>
 <script src="crater_glb.js"></script>
@@ -6932,160 +6933,73 @@ function preloadSphereGLB(dataUrl, radius, cb){
   }, (err)=>{ console.warn('Weltraum-GLB Ladefehler:', err); });
 }
 // ---------- MILCHSTRASSE ------------------------------------------------------------------------
-// Die vorhandene Sternenkuppel (starDome, das Minecraft-GLB) kann kein Band zeigen, und zwar aus
-// einem grundsaetzlichen Grund: sie besteht aus 780 gleichmaessig ueber die Kugel gestreuten weissen
-// Quads, ohne Textur und ohne UV-Koordinaten. Eine Milchstrasse IST aber eine Ungleichverteilung —
-// ein Band, in dem die Sterne dicht stehen, und Pole, an denen kaum welche sind. Aus einer
-// Gleichverteilung laesst sich das nachtraeglich nicht herausholen.
+// Ein echtes Panoramafoto (sky_pano_-_milkyway_by_MozillaHubs), und das ist die richtige Loesung —
+// mein vorheriger Versuch, das Band aus 1.500 gerechneten Sternen und 40 Schleierflecken zu bauen,
+// ist dafuer ersatzlos entfallen. Er hatte zwei Probleme, die sich nicht wegrechnen liessen:
+//   · Die Schleierflecken waren als Vielecke zu erkennen (SphereGeometry mit 6 Segmenten bei 98 px
+//     Bildgroesse), und additiv ueberlagert traten die Kanten doppelt hervor.
+//   · Ein Sternband aus einzelnen Punkten sieht nie wie eine Galaxie aus. Die Milchstrasse ist ein
+//     Schleier aus Milliarden unaufloesbarer Sterne, mit Staubbaendern und ungleicher Helligkeit —
+//     das sind gewachsene Strukturen, keine Verteilungsfunktion.
 //
-// Deshalb ein eigenes Feld, das die Kuppel ERGAENZT (sie bleibt): Punkte auf der Kugel, deren
-// Annahmewahrscheinlichkeit von der galaktischen Breite abhaengt. Dazu ein paar weiche Flecken, die
-// den Schleier andeuten, den einzelne Punkte nie geben.
+// Das Panorama loest beides auf einmal und kostet dabei WENIGER: 334 KB GLB gegen 1.540 Instanzen.
+// Es ist eine Kugelschale (Radius 500 im Modell, hier auf die Kuppel skaliert) mit einer 1024x512
+// JPEG-Textur als emissiveTexture — sie leuchtet also selbst und braucht kein Licht, genau wie ein
+// Sternhimmel es tun muss.
 //
-// Machart wie die Fischschwaerme und das Drift-Feld: InstancedMesh, also ein Draw-Call pro Sorte.
-const MW_STARS   = 1500;      // Sterne im Band und ringsum
-const MW_GLOW    = 40;        // weiche Flecken fuer den Schleier (siehe MW_GLOW_R)
-const MW_R       = 0.97;      // Radius als Anteil von STAR_R: knapp INNERHALB der Kuppel, damit
-                              // beide Felder zusammen einen Himmel bilden und nicht zwei Schalen
-// Neigung des Bandes gegen die Waagerechte. 62 Grad ist die echte Neigung der Milchstrasse gegen
-// die Ekliptik — und sie spielt sich auch gut: das Band steht schraeg im Bild, statt als Guertel um
-// den Horizont oder als Ring genau ueber dem Kopf zu liegen.
-const MW_TILT    = 62 * Math.PI/180;
-// Wie stark das Band gebuendelt ist: der Wert schnuert die Breitenverteilung zusammen (siehe
-// mwPoint). NACHGERECHNET statt geschaetzt, gemessen als Anteil der Sterne im 30-Grad-Band gegen
-// die 26 %, die eine Gleichverteilung dort schon von selbst haette:
-//   CONC 12 -> 46 % (Faktor 1,8)   25 -> 58 % (2,2)   40 -> 67 % (2,6)   60 -> 76 % (2,9)
-// Mein erster Wert 12 war deutlich zu schwach: Faktor 1,8 ist als Band gar nicht zu erkennen, das
-// waere nur ein etwas dichterer Bereich. 60 gibt ein klares Band und laesst gleichzeitig 99 Sterne
-// mehr als 40 Grad davon entfernt stehen, der uebrige Himmel bleibt also besetzt.
-const MW_CONC    = 60;
-// Sterngroessen in Metern. Gerechnet fuer die Bandentfernung (0,97 mal STAR_R): bei 60 Grad FOV auf
-// einer 800-px-Ansicht entspricht 1 Pixel dort 1.524 m.
-//
-// Zwei Anlaeufe gebraucht, und der zweite war eine Uebersteuerung: 1.100-3.100 m waren 0,7-2,0 px,
-// der kleinste Stern lag also im Subpixel und flimmerte. Daraufhin habe ich auf 2.400-7.800 m
-// erhoeht — das sind 1,6 bis 5,1 px, und 5 px sind keine Lichtquelle mehr, sondern eine erkennbare
-// Scheibe ("die Sterne wirken jetzt insgesamt wie Flecken"). Richtig war, nur die UNTERgrenze zu
-// heben und die obere zu lassen.
-// 1.500-3.800 m sind 1,0 bis 2,5 px: sicher sichtbar und trotzdem ein Punkt.
-const MW_SIZE_MIN = 1500, MW_SIZE_MAX = 3800;
-// Radius der weichen Flecken. 150 km klingt gewaltig, ist auf dieser Kuppel aber richtig: der
-// Bandstreifen ist 7.314 x 472 km gross, und mit den ersten 34 km bedeckten 26 Flecken nur 2 %
-// davon — einzelne Woelkchen statt Schleier. Mehr Flecken helfen dabei kaum (200 kaemen auf 13 %),
-// groessere schon: 40 Stueck mit 150 km bedecken 50 % des Bandes. In Pixeln sind das 98 px pro
-// Fleck bei 310 px Bandbreite, sie verschmelzen also, ohne das Band zuzuschmieren.
-const MW_GLOW_R   = 150000;
-let mwStars = null, mwGlow = null, mwGroup = null;
-// Deterministischer Zufall, damit der Himmel bei jedem Spielstart derselbe ist. Ein Sternhimmel, der
-// sich nach jedem Neuladen umsortiert, faellt sofort auf — und die Milchstrasse soll ein Ort sein,
-// den man wiedererkennt. Gleiches Verfahren wie cellRnd bei den Inseln.
-function mwRnd(i, salt){
-  const x = Math.sin(i*12.9898 + salt*78.233) * 43758.5453;
-  return x - Math.floor(x);
-}
-// Ein Punkt auf der Einheitskugel, gezogen nach der Banddichte. Laenge gleichmaessig, Breite
-// gebuendelt. Ein Rest von 18 % wird ueber den GANZEN Himmel verteilt (streu), sonst waere er
-// ausserhalb des Bandes voellig leer, und das stimmt nicht: dort stehen auch Sterne, nur weniger.
-function mwPoint(i){
-  const streu = mwRnd(i, 7) < 0.18;
-  const lon = mwRnd(i, 1) * Math.PI * 2;
-  let lat;
-  if(streu){
-    // Gleichmaessig auf der Kugel. arcsin und nicht linear: sonst haeufen sich die Punkte an den
-    // Polen, weil dort die Breitenkreise kurz sind.
-    lat = Math.asin(mwRnd(i, 2)*2 - 1);
-  } else {
-    // Im Band: zwei Zufallszahlen gemittelt geben eine Dreiecksverteilung (Mitte haeufiger als
-    // Rand), MW_CONC schnuert sie auf die Bandbreite zusammen.
-    const u = (mwRnd(i, 3) + mwRnd(i, 4))*0.5 - 0.5;      // -0,5 .. +0,5, Mitte betont
-    lat = u * Math.PI * 2 / Math.sqrt(MW_CONC);
-  }
-  const cl = Math.cos(lat);
-  const v = new THREE.Vector3(cl*Math.cos(lon), Math.sin(lat), cl*Math.sin(lon));
-  v.applyAxisAngle(new THREE.Vector3(1, 0, 0), MW_TILT);   // Bandebene kippen
-  return v;
-}
+// Die vorhandene Sternenkuppel (starDome) BLEIBT und liegt darueber: 1024 px auf 360 Grad sind
+// 2,8 px pro Grad, waehrend der Bildschirm 13,3 px pro Grad zeigt — Sterne aus dem Panorama waeren
+// also weiche Flecken. Die Kuppel liefert die scharfen Punkte, das Panorama den Schleier dahinter.
+// Zusammen ergibt das erst den Himmel.
+let mwDome = null, mwMat = null;
+// Radius knapp INNERHALB der Sternenkuppel (STAR_R), damit beide zusammen einen Himmel bilden und
+// die Kuppelsterne vor dem Band liegen. Weiter als der fernste Himmelskoerper (Sonne bei 1.020.000 m)
+// und naeher als die Far-Plane (1.600.000 m).
+const MW_R = 0.98;
 function buildMilkyWay(){
-  if(mwGroup) return;
-  mwGroup = new THREE.Group();
-  const R = STAR_R * MW_R;
-  // ---- Sterne. MeshBasic wie die Kuppel: Sterne leuchten selbst, Streulicht gibt es im All keines.
-  // Farbe pro Instanz ueber instanceColor — echte Sterne sind nicht weiss, sondern von blaeulich bis
-  // orange, und genau diese Streuung macht den Unterschied zwischen Punkten und Sternhimmel.
-  const sg = new THREE.SphereGeometry(1, 5, 3);      // Einheitskugel, pro Instanz skaliert
-  // ADDITIVES Blending, und das ist der Unterschied zwischen "Fleck" und "Stern": normales
-  // Blending MISCHT mit dem Hintergrund, ein halbdurchsichtiger Punkt wird dabei grau. Additiv
-  // wird das Licht AUFADDIERT — der Punkt leuchtet, und wo im Band mehrere uebereinander liegen,
-  // summieren sie sich zu einem hellen Schimmer. Genau das macht ein dichtes Sternfeld.
-  const sm = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false,
-                                           blending:THREE.AdditiveBlending });
-  mwStars = new THREE.InstancedMesh(sg, sm, MW_STARS);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  const p = new THREE.Vector3(), col = new THREE.Color();
-  for(let i=0;i<MW_STARS;i++){
-    p.copy(mwPoint(i)).multiplyScalar(R);
-    // Groesse: die meisten klein, wenige gross. Die dritte Potenz drueckt die Verteilung nach unten,
-    // sonst wirkt der Himmel wie mit gleich grossen Perlen bestickt.
-    const gr = MW_SIZE_MIN + Math.pow(mwRnd(i, 5), 3)*(MW_SIZE_MAX - MW_SIZE_MIN);
-    s.set(gr, gr, gr);
-    m.compose(p, q, s);
-    mwStars.setMatrixAt(i, m);
-    // Farbe: etwa die Haelfte kuehl-blaeulich, die andere warm. Der Farbton wandert nur wenig — zu
-    // bunt sieht nach Kirmes aus, nicht nach Himmel.
-    const warm = mwRnd(i, 6);
-    col.setHSL(warm < 0.5 ? 0.58 : 0.09, 0.30 + warm*0.25, 0.74 + mwRnd(i, 8)*0.22);
-    mwStars.setColorAt(i, col);
-  }
-  mwStars.instanceColor.needsUpdate = true;
-  mwGroup.add(mwStars);
-  // ---- Weiche Flecken: der Schleier zwischen den Sternen. Einzelne Punkte geben ihn nie, und ohne
-  // ihn bleibt das Band eine Ansammlung von Pixeln statt einer leuchtenden Wolke. Sie liegen NUR im
-  // Bandkern (halbe Breite) und sind sehr schwach.
-  const gg = new THREE.SphereGeometry(1, 6, 4);
-  // Auch additiv (siehe die Sterne) und in einem waermeren Weiss: der Schleier ist das Licht von
-  // Milliarden unaufloesbarer Sterne, nicht eine blaue Wolke. Mit 9fb4e8 wirkte er wie ein
-  // Grafikfehler, weil er den Himmel BLAU einfaerbte statt ihn aufzuhellen.
-  const gm = new THREE.MeshBasicMaterial({ color:0xd8e2f5, transparent:true, opacity:0,
-                                           depthWrite:false, blending:THREE.AdditiveBlending });
-  mwGlow = new THREE.InstancedMesh(gg, gm, MW_GLOW);
-  for(let i=0;i<MW_GLOW;i++){
-    // +1000 als Index-Offset: eigene Zufallsreihe, damit die Flecken nicht auf den Sternen sitzen.
-    const j = i + 1000;
-    const lon = mwRnd(j, 1) * Math.PI * 2;
-    const u = (mwRnd(j, 3) + mwRnd(j, 4))*0.5 - 0.5;
-    const lat = u * Math.PI / Math.sqrt(MW_CONC);          // halb so breit wie die Sterne: der Kern
-    const cl = Math.cos(lat);
-    p.set(cl*Math.cos(lon), Math.sin(lat), cl*Math.sin(lon));
-    p.applyAxisAngle(new THREE.Vector3(1,0,0), MW_TILT).multiplyScalar(R*0.995);
-    const gr = MW_GLOW_R * (0.6 + mwRnd(j, 5)*0.9);
-    s.set(gr, gr, gr*0.55);        // in einer Achse gestaucht: ein Schleier, keine Kugel
-    m.compose(p, q, s);
-    mwGlow.setMatrixAt(i, m);
-  }
-  mwGroup.add(mwGlow);
-  mwGroup.visible = false;
-  scene.add(mwGroup);
+  if(mwDome || !window.MILKYWAY_GLB) return;
+  // Dieselbe Hilfsfunktion, mit der auch Erde, Mond und Sterne geladen werden: sie skaliert das
+  // Modell auf den gewuenschten Radius und packt es in eine Gruppe.
+  preloadSphereGLB(window.MILKYWAY_GLB, STAR_R*MW_R, (g)=>{
+    g.traverse(o=>{
+      if(!o.isMesh) return;
+      // Das Material des Modells nutzt emissiveTexture — genau richtig, aber es ist ein
+      // MeshStandardMaterial, und das kostet unnoetig (PBR-Rechnung fuer eine Flaeche, die nur
+      // leuchtet). Auf MeshBasic umgestellt, mit der Textur als map: gleiches Bild, weniger Arbeit,
+      // und garantiert lichtunabhaengig.
+      const src = Array.isArray(o.material) ? o.material[0] : o.material;
+      const tex = src && (src.emissiveMap || src.map);
+      mwMat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.BackSide,
+                                            transparent:true, opacity:0, depthWrite:false,
+                                            // Additiv: das Band ADDIERT Licht zum schwarzen Himmel,
+                                            // statt ihn zu ueberdecken. Damit bleiben die Sterne der
+                                            // Kuppel sichtbar, auch wo das Band darueber liegt.
+                                            blending:THREE.AdditiveBlending });
+      o.material = mwMat;
+      // BackSide, weil man von INNEN in die Kugel schaut. Und ganz nach hinten in die
+      // Zeichenreihenfolge, damit alles andere davor liegt.
+      o.renderOrder = -2;
+      o.frustumCulled = false;
+    });
+    g.visible = false;
+    mwDome = g;
+    scene.add(g);
+  });
 }
-// Mit demselben Blendwert wie die Sternenkuppel einblenden (spaceBlend), aber SCHWAECHER: die
-// Milchstrasse ist ein zarter Schimmer, kein zweiter Sternhimmel. Die Einzelsterne treten deutlich
-// hervor, der Schleier bleibt angedeutet.
-//
-// Der Schleier von 0,10 auf 0,22, damit das Band KLAR zu erkennen ist (gewuenscht: "die
-// Milchstraße etwas kräftiger"). Das geht jetzt, weil beide Materialien additiv sind: additives
-// Licht kann den Himmel nicht truebe faerben, es hellt ihn nur auf. Bei 50 % Bandbedeckung ergibt
-// 0,22 eine summierte Aufhellung von 0,11 — deutlich sichtbar, und die Sterne liegen mit 0,95
-// darueber.
-const MW_STAR_OP = 0.95, MW_GLOW_OP = 0.22;
+// Wie kraeftig das Band im Weltall steht. 0,55 ist ein bewusster Kompromiss: das Panorama ist ein
+// FOTO mit langer Belichtung, in voller Staerke waere es heller als der Himmel eines Kinderspiels
+// sein sollte und wuerde die Sterne der Kuppel erschlagen. Bei 0,55 ist das Band klar zu erkennen
+// und die Einzelsterne bleiben die Hauptsache.
+const MW_OPACITY = 0.55;
 function updateMilkyWay(f){
-  if(!mwGroup) return;
-  mwGroup.visible = f > 0.02;
-  if(!mwGroup.visible) return;
-  // Mitwandern wie die Kuppel: sie soll immer gleich weit weg bleiben, egal wo man ist. Ohne das
-  // fliegt man aus ihr heraus, sobald man ein paar Hunderttausend Meter zurueckgelegt hat — und im
+  if(!mwDome) return;
+  mwDome.visible = f > 0.02;
+  if(!mwDome.visible) return;
+  // Mitwandern wie die Sternenkuppel: das Band soll immer gleich weit weg bleiben. Ohne das fliegt
+  // man daraus heraus, sobald man ein paar Hunderttausend Meter zurueckgelegt hat — und im
   // Hyperraum sind das Sekunden.
-  mwGroup.position.copy(state.pos);
-  if(mwStars) mwStars.material.opacity = f * MW_STAR_OP;
-  if(mwGlow)  mwGlow.material.opacity  = f * MW_GLOW_OP;
+  mwDome.position.copy(state.pos);
+  if(mwMat) mwMat.opacity = f * MW_OPACITY;
 }
 function preloadSpace(){
   // Sternenkuppel: exakte Kugelschale, von innen sichtbar, lichtunabhängig, blendet mit der Höhe ein
@@ -7095,7 +7009,7 @@ function preloadSpace(){
     g.traverse(o=>{ if(o.isMesh){ o.material = starMat; o.renderOrder = -1; } });
     g.visible = false; starDome = g; scene.add(g);
   });
-  buildMilkyWay();      // gerechnetes Sternband, kein Download (siehe dort)
+  buildMilkyWay();      // Milchstrassen-Panorama hinter der Sternenkuppel (siehe dort)
   preloadSphereGLB(window.EARTH_GLB, EARTH_R, (g)=>{ g.visible = false; earthBall = g; scene.add(g); });
   for(const b of bodies){
     const data = BODY_GLB[b.def.key] && BODY_GLB[b.def.key]();
@@ -8294,20 +8208,31 @@ const UW_FOG_NEAR = 22;
 // grosszuegig, aber das ist eine Kinderwelt mit Korallen und Fischschwaermen, und die soll man
 // sehen. Der Nebel BLEIBT deutlich (75 m gegen 3.000 m an Luft), es ist also weiter Unterwasser.
 const UW_FOG_FAR  = 180;    // m Sichtweite knapp unter der Oberflaeche
-// Am Grund 135 m und nicht 85: der Bug liegt 123,8 m von der Kamera entfernt (76,8 m Abstand plus
-// 47 m halber Rumpf), bei 85 m waere die eigene Bootsnase unten im Nebel verschwunden. 135 m deckt
-// sie mit Rand. Der Unterschied zu 180 m oben bleibt als Tiefeneindruck erhalten.
-const UW_FOG_DEEP = 135;
+// Am Grund fast dieselbe Sichtweite wie oben (165 gegen 180 m). Vorher waren es 135 m, und das war
+// die Ursache fuer "in der tiefsee sieht man nichts": der Bug liegt schon 123,8 m von der Kamera
+// entfernt, der Meeresboden zieht sich vom Boot bis zum Horizont, und bei flachem Blickwinkel
+// liegt der groesste Teil davon jenseits der Sichtgrenze.
+// Der geringe Unterschied bleibt als Andeutung von Tiefe — mehr braucht es nicht, weil es "fuer ein
+// kind keinen unterschied macht ob im flachen oder tiefen wasser".
+const UW_FOG_DEEP = 165;
 // Farben heller und klarer: das alte UW_DEEP (0x02141c) war praktisch schwarz, und mit SEA_DEPTH
 // auf 100 m erreicht man diese Tiefe jetzt auch wirklich — vorher lag sie unter dem, was man beim
 // Spielen sah. Das neue Tief ist ein tiefes Blaugruen: dunkel genug, dass Tiefe sich nach Tiefe
 // anfuehlt, hell genug, dass man Wrack, Grund und Fische darin erkennt.
 const UW_SURF = new THREE.Color(0x62c3cc);   // Wasserfarbe knapp unter der Oberflaeche (Lagune)
-const UW_DEEP = new THREE.Color(0x1c5f6e);   // Wasserfarbe am Grund — dunkler, aber kein Schwarz
+// Am Grund nur noch etwas dunkler als oben (war 1c5f6e). Aus demselben Grund wie die Sichtweite:
+// die Tiefe soll das Bild nicht zuziehen.
+const UW_DEEP = new THREE.Color(0x3f97a5);
 const UW_RATE = 2.5;
-// Ueber welche Fahrzeugtiefe der Unterwasser-Eindruck einblendet. 3 m ist bewusst MEHR als der
-// Wellenhub nach oben (gemessen 2,4 m): so kann kein einzelner Wellenberg den Wert durchreissen.
-const UW_DIVE_BAND = 3;
+// TOTZONE unter der Wasserlinie: bis hierher bleibt das Bild ueber Wasser. Der Grund steht im
+// Screenshot: bei Tiefe 1 m lag schon ein Drittel Unterwasserfarbe ueber dem Bild, obwohl das Boot
+// mit dem Turm heraussah — gemeldet als "es gibt immer noch einen einfluss auf wellen und sicht auf
+// der meeresoberflaeche". 3 m sind bei einem 13 m dicken Rumpf "Deck gerade nass", und sie decken
+// den Wellenhub (2,49 m) mit ab: eine ueberlaufende Welle kann den Wert nicht mehr anheben.
+const UW_DIVE_START = 3;
+// Und ueber welche weitere Strecke dann eingeblendet wird: von 3 bis 8 m Tiefe. Bei 8 m ist der
+// Turm sicher unter Wasser, dort gehoert die volle Unterwassersicht hin.
+const UW_DIVE_BAND = 5;
 // Eigener Blend-Wert fuer den Kamera-Zug, und der Grund dafuer ist wichtig: er darf NICHT uwBlend
 // sein. uwBlend kommt aus cameraDepth(), also aus der Kamerahoehe — wuerde der Zug daran
 // haengen, haette man einen Kreis: Zug senkt die Kamera, Kamera ist unter Wasser, Zug wird
@@ -8337,7 +8262,9 @@ function updateUwCamBlend(dt){
   let ziel = 0;
   if(locale === 'earth' && isSub() && !eva){
     const tiefe = seaYAt(state.pos.x, state.pos.z) - state.pos.y;
-    ziel = Math.min(1, Math.max(0, tiefe / UW_DIVE_BAND));
+    // Erst ab der Totzone anfangen (siehe UW_DIVE_START), dann ueber UW_DIVE_BAND einblenden.
+    const roh = Math.min(1, Math.max(0, (tiefe - UW_DIVE_START) / UW_DIVE_BAND));
+    ziel = roh*roh*(3 - 2*roh);      // smoothstep: laeuft an beiden Enden weich aus
   }
   uwCamBlend += (ziel - uwCamBlend) * Math.min(1, UW_RATE*dt);
 }
@@ -8378,7 +8305,10 @@ function updateUnderwater(dt){
   // smoothstep obendrauf, damit auch die ERSTE Ableitung stetig ist: an beiden Enden des Bandes
   // laeuft die Aenderung aus, statt mit einer Kante anzufangen. Denselben Weg gehen die Wellen
   // am Schelf (seabedY) und der Orca-Tauchbogen — im Bild ist eine Kante immer zu sehen.
-  const roh = Math.min(1, Math.max(0, cameraDepth() / UW_BAND));
+  // Die LINSE: erst ab einem halben Meter unter der Flaeche zaehlt sie als eingetaucht. Ohne diesen
+  // Vorlauf schaltete schon eine Kraeuselung das Bild um, wenn die Kamera genau auf der Hoehe der
+  // Wasserlinie schwebt.
+  const roh = Math.min(1, Math.max(0, (cameraDepth() - 0.5) / UW_BAND));
   const kamZiel = roh*roh*(3 - 2*roh);
   // Das MAXIMUM aus Kamera und Fahrzeug (siehe uwCamBlend), und das ist der Kern der Sache:
   // die Kamera allein gab ein flackerndes Bild, weil sie im Wellenhub von 4,8 m pendelt — bei
@@ -8437,13 +8367,16 @@ function updateUnderwater(dt){
   // bleiben jetzt 70 % des Lichts statt 50 %, und der Grundwert steigt auf 1,6 — dort also 1,12
   // gegen zuvor 0,68 und gegen 0,26 im Ursprungszustand. Die Sonne zieht mit (0,55): sie gibt die
   // Richtung, aus der das Licht einfaellt, und ohne sie wirkt alles flach.
-  const dunkel = 1 - 0.3*tief;
-  hemiLight.intensity = hemiLight.intensity + (1.60*dunkel - hemiLight.intensity)*b;
-  sun.intensity       = sun.intensity       + (0.55*dunkel - sun.intensity      )*b;
+  // Die Tiefe daempft nur noch WENIG (0,08 statt 0,3): ausdruecklich gewuenscht, weil es "fuer ein
+  // kind keinen unterschied macht ob im flachen oder tiefen wasser". Am Grund bleiben damit 92 %
+  // des Lichts statt 70 %. Ein kleiner Rest Verlauf bleibt, damit Tiefe ueberhaupt spuerbar ist.
+  const dunkel = 1 - 0.08*tief;
+  hemiLight.intensity = hemiLight.intensity + (1.75*dunkel - hemiLight.intensity)*b;
+  sun.intensity       = sun.intensity       + (0.60*dunkel - sun.intensity      )*b;
   // Das richtungslose Licht (siehe uwAmbient): es macht aus der schwarzen Bootssilhouette einen
   // Koerper und hebt den Meeresboden vom Wasser ab. 0,75 ist kraeftig, aber unter Wasser gehoert
   // das so — dort gibt es kaum Schatten, weil das Licht an jedem Wasserteilchen gestreut wird.
-  uwAmbient.intensity = uwAmbient.intensity + (0.75*dunkel - uwAmbient.intensity)*b;
+  uwAmbient.intensity = uwAmbient.intensity + (0.95*dunkel - uwAmbient.intensity)*b;
 }
 
 // ---------- Weltraum-Anzeige über dem Flieger ----------
