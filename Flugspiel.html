@@ -6789,6 +6789,150 @@ function preloadSphereGLB(dataUrl, radius, cb){
     cb(wrap);
   }, (err)=>{ console.warn('Weltraum-GLB Ladefehler:', err); });
 }
+// ---------- MILCHSTRASSE ------------------------------------------------------------------------
+// Die vorhandene Sternenkuppel (starDome, das Minecraft-GLB) kann kein Band zeigen, und zwar aus
+// einem grundsaetzlichen Grund: sie besteht aus 780 gleichmaessig ueber die Kugel gestreuten weissen
+// Quads, ohne Textur und ohne UV-Koordinaten. Eine Milchstrasse IST aber eine Ungleichverteilung —
+// ein Band, in dem die Sterne dicht stehen, und Pole, an denen kaum welche sind. Aus einer
+// Gleichverteilung laesst sich das nachtraeglich nicht herausholen.
+//
+// Deshalb ein eigenes Feld, das die Kuppel ERGAENZT (sie bleibt): Punkte auf der Kugel, deren
+// Annahmewahrscheinlichkeit von der galaktischen Breite abhaengt. Dazu ein paar weiche Flecken, die
+// den Schleier andeuten, den einzelne Punkte nie geben.
+//
+// Machart wie die Fischschwaerme und das Drift-Feld: InstancedMesh, also ein Draw-Call pro Sorte.
+const MW_STARS   = 1500;      // Sterne im Band und ringsum
+const MW_GLOW    = 40;        // weiche Flecken fuer den Schleier (siehe MW_GLOW_R)
+const MW_R       = 0.97;      // Radius als Anteil von STAR_R: knapp INNERHALB der Kuppel, damit
+                              // beide Felder zusammen einen Himmel bilden und nicht zwei Schalen
+// Neigung des Bandes gegen die Waagerechte. 62 Grad ist die echte Neigung der Milchstrasse gegen
+// die Ekliptik — und sie spielt sich auch gut: das Band steht schraeg im Bild, statt als Guertel um
+// den Horizont oder als Ring genau ueber dem Kopf zu liegen.
+const MW_TILT    = 62 * Math.PI/180;
+// Wie stark das Band gebuendelt ist: der Wert schnuert die Breitenverteilung zusammen (siehe
+// mwPoint). NACHGERECHNET statt geschaetzt, gemessen als Anteil der Sterne im 30-Grad-Band gegen
+// die 26 %, die eine Gleichverteilung dort schon von selbst haette:
+//   CONC 12 -> 46 % (Faktor 1,8)   25 -> 58 % (2,2)   40 -> 67 % (2,6)   60 -> 76 % (2,9)
+// Mein erster Wert 12 war deutlich zu schwach: Faktor 1,8 ist als Band gar nicht zu erkennen, das
+// waere nur ein etwas dichterer Bereich. 60 gibt ein klares Band und laesst gleichzeitig 99 Sterne
+// mehr als 40 Grad davon entfernt stehen, der uebrige Himmel bleibt also besetzt.
+const MW_CONC    = 60;
+// Sterngroessen in Metern. Gerechnet fuer die Bandentfernung (0,97 mal STAR_R): bei 60 Grad FOV auf
+// einer 800-px-Ansicht entspricht 1 Pixel dort 1.524 m.
+//
+// Mein erster Ansatz (1.100 bis 3.100 m) war zu klein — nachgemessen 0,7 bis 2,0 px, der kleinste
+// Stern lag also UNTER einem Pixel und waere je nach Aufloesung geflimmert oder verschwunden.
+// 2.400 bis 7.800 m sind 1,6 bis 5,1 px: der kleinste sicher sichtbar, der groesste noch ein Punkt
+// und keine erkennbare Kugel.
+const MW_SIZE_MIN = 2400, MW_SIZE_MAX = 7800;
+// Radius der weichen Flecken. 150 km klingt gewaltig, ist auf dieser Kuppel aber richtig: der
+// Bandstreifen ist 7.314 x 472 km gross, und mit den ersten 34 km bedeckten 26 Flecken nur 2 %
+// davon — einzelne Woelkchen statt Schleier. Mehr Flecken helfen dabei kaum (200 kaemen auf 13 %),
+// groessere schon: 40 Stueck mit 150 km bedecken 50 % des Bandes. In Pixeln sind das 98 px pro
+// Fleck bei 310 px Bandbreite, sie verschmelzen also, ohne das Band zuzuschmieren.
+const MW_GLOW_R   = 150000;
+let mwStars = null, mwGlow = null, mwGroup = null;
+// Deterministischer Zufall, damit der Himmel bei jedem Spielstart derselbe ist. Ein Sternhimmel, der
+// sich nach jedem Neuladen umsortiert, faellt sofort auf — und die Milchstrasse soll ein Ort sein,
+// den man wiedererkennt. Gleiches Verfahren wie cellRnd bei den Inseln.
+function mwRnd(i, salt){
+  const x = Math.sin(i*12.9898 + salt*78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+// Ein Punkt auf der Einheitskugel, gezogen nach der Banddichte. Laenge gleichmaessig, Breite
+// gebuendelt. Ein Rest von 18 % wird ueber den GANZEN Himmel verteilt (streu), sonst waere er
+// ausserhalb des Bandes voellig leer, und das stimmt nicht: dort stehen auch Sterne, nur weniger.
+function mwPoint(i){
+  const streu = mwRnd(i, 7) < 0.18;
+  const lon = mwRnd(i, 1) * Math.PI * 2;
+  let lat;
+  if(streu){
+    // Gleichmaessig auf der Kugel. arcsin und nicht linear: sonst haeufen sich die Punkte an den
+    // Polen, weil dort die Breitenkreise kurz sind.
+    lat = Math.asin(mwRnd(i, 2)*2 - 1);
+  } else {
+    // Im Band: zwei Zufallszahlen gemittelt geben eine Dreiecksverteilung (Mitte haeufiger als
+    // Rand), MW_CONC schnuert sie auf die Bandbreite zusammen.
+    const u = (mwRnd(i, 3) + mwRnd(i, 4))*0.5 - 0.5;      // -0,5 .. +0,5, Mitte betont
+    lat = u * Math.PI * 2 / Math.sqrt(MW_CONC);
+  }
+  const cl = Math.cos(lat);
+  const v = new THREE.Vector3(cl*Math.cos(lon), Math.sin(lat), cl*Math.sin(lon));
+  v.applyAxisAngle(new THREE.Vector3(1, 0, 0), MW_TILT);   // Bandebene kippen
+  return v;
+}
+function buildMilkyWay(){
+  if(mwGroup) return;
+  mwGroup = new THREE.Group();
+  const R = STAR_R * MW_R;
+  // ---- Sterne. MeshBasic wie die Kuppel: Sterne leuchten selbst, Streulicht gibt es im All keines.
+  // Farbe pro Instanz ueber instanceColor — echte Sterne sind nicht weiss, sondern von blaeulich bis
+  // orange, und genau diese Streuung macht den Unterschied zwischen Punkten und Sternhimmel.
+  const sg = new THREE.SphereGeometry(1, 5, 3);      // Einheitskugel, pro Instanz skaliert
+  const sm = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false });
+  mwStars = new THREE.InstancedMesh(sg, sm, MW_STARS);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const p = new THREE.Vector3(), col = new THREE.Color();
+  for(let i=0;i<MW_STARS;i++){
+    p.copy(mwPoint(i)).multiplyScalar(R);
+    // Groesse: die meisten klein, wenige gross. Die dritte Potenz drueckt die Verteilung nach unten,
+    // sonst wirkt der Himmel wie mit gleich grossen Perlen bestickt.
+    const gr = MW_SIZE_MIN + Math.pow(mwRnd(i, 5), 3)*(MW_SIZE_MAX - MW_SIZE_MIN);
+    s.set(gr, gr, gr);
+    m.compose(p, q, s);
+    mwStars.setMatrixAt(i, m);
+    // Farbe: etwa die Haelfte kuehl-blaeulich, die andere warm. Der Farbton wandert nur wenig — zu
+    // bunt sieht nach Kirmes aus, nicht nach Himmel.
+    const warm = mwRnd(i, 6);
+    col.setHSL(warm < 0.5 ? 0.58 : 0.09, 0.30 + warm*0.25, 0.74 + mwRnd(i, 8)*0.22);
+    mwStars.setColorAt(i, col);
+  }
+  mwStars.instanceColor.needsUpdate = true;
+  mwGroup.add(mwStars);
+  // ---- Weiche Flecken: der Schleier zwischen den Sternen. Einzelne Punkte geben ihn nie, und ohne
+  // ihn bleibt das Band eine Ansammlung von Pixeln statt einer leuchtenden Wolke. Sie liegen NUR im
+  // Bandkern (halbe Breite) und sind sehr schwach.
+  const gg = new THREE.SphereGeometry(1, 6, 4);
+  const gm = new THREE.MeshBasicMaterial({ color:0x9fb4e8, transparent:true, opacity:0,
+                                           depthWrite:false });
+  mwGlow = new THREE.InstancedMesh(gg, gm, MW_GLOW);
+  for(let i=0;i<MW_GLOW;i++){
+    // +1000 als Index-Offset: eigene Zufallsreihe, damit die Flecken nicht auf den Sternen sitzen.
+    const j = i + 1000;
+    const lon = mwRnd(j, 1) * Math.PI * 2;
+    const u = (mwRnd(j, 3) + mwRnd(j, 4))*0.5 - 0.5;
+    const lat = u * Math.PI / Math.sqrt(MW_CONC);          // halb so breit wie die Sterne: der Kern
+    const cl = Math.cos(lat);
+    p.set(cl*Math.cos(lon), Math.sin(lat), cl*Math.sin(lon));
+    p.applyAxisAngle(new THREE.Vector3(1,0,0), MW_TILT).multiplyScalar(R*0.995);
+    const gr = MW_GLOW_R * (0.6 + mwRnd(j, 5)*0.9);
+    s.set(gr, gr, gr*0.55);        // in einer Achse gestaucht: ein Schleier, keine Kugel
+    m.compose(p, q, s);
+    mwGlow.setMatrixAt(i, m);
+  }
+  mwGroup.add(mwGlow);
+  mwGroup.visible = false;
+  scene.add(mwGroup);
+}
+// Mit demselben Blendwert wie die Sternenkuppel einblenden (spaceBlend), aber SCHWAECHER: die
+// Milchstrasse ist ein zarter Schimmer, kein zweiter Sternhimmel. Die Einzelsterne treten deutlich
+// hervor, der Schleier bleibt angedeutet.
+//
+// 0,10 fuer den Schleier und nicht 0,16: seit die Flecken 150 km gross sind, bedecken sie 50 % des
+// Bandes und ueberlagern sich dabei. Gerechnet ergibt 0,10 eine summierte Helligkeit von 0,05 im
+// Band — sichtbar als Schimmer, ohne die Sterne zu ueberstrahlen.
+const MW_STAR_OP = 0.85, MW_GLOW_OP = 0.10;
+function updateMilkyWay(f){
+  if(!mwGroup) return;
+  mwGroup.visible = f > 0.02;
+  if(!mwGroup.visible) return;
+  // Mitwandern wie die Kuppel: sie soll immer gleich weit weg bleiben, egal wo man ist. Ohne das
+  // fliegt man aus ihr heraus, sobald man ein paar Hunderttausend Meter zurueckgelegt hat — und im
+  // Hyperraum sind das Sekunden.
+  mwGroup.position.copy(state.pos);
+  if(mwStars) mwStars.material.opacity = f * MW_STAR_OP;
+  if(mwGlow)  mwGlow.material.opacity  = f * MW_GLOW_OP;
+}
 function preloadSpace(){
   // Sternenkuppel: exakte Kugelschale, von innen sichtbar, lichtunabhängig, blendet mit der Höhe ein
   preloadSphereGLB(window.STARS_GLB, STAR_R, (g)=>{
@@ -6797,6 +6941,7 @@ function preloadSpace(){
     g.traverse(o=>{ if(o.isMesh){ o.material = starMat; o.renderOrder = -1; } });
     g.visible = false; starDome = g; scene.add(g);
   });
+  buildMilkyWay();      // gerechnetes Sternband, kein Download (siehe dort)
   preloadSphereGLB(window.EARTH_GLB, EARTH_R, (g)=>{ g.visible = false; earthBall = g; scene.add(g); });
   for(const b of bodies){
     const data = BODY_GLB[b.def.key] && BODY_GLB[b.def.key]();
@@ -7952,6 +8097,7 @@ function updateSpaceBlend(dt){
     starDome.position.copy(state.pos);      // Kuppel bleibt immer gleich weit weg
     if(starMat) starMat.opacity = f;
   }
+  updateMilkyWay(f);                        // Sternband, mit demselben Wert eingeblendet
   // Auf Mond UND Mars hängt die Erde als Kugel am Himmel und wandert mit (wie eine Kulisse).
   // Ohne das Umsetzen stünde sie weiter dort, wo sie beim Verlassen der Atmosphäre lag — nämlich
   // mit dem Mittelpunkt 20 km unter dem Startpunkt, also als "Unterbau" unter der Landschaft.
