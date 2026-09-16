@@ -64,7 +64,7 @@
     <div class="hrow"><span>R-Stick ↕</span><b>Schub 0–100 % (auch im Schlauchboot) · zu Fuß: <b>umsehen</b> (↕ hoch/runter, ←→ herum)</b></div>
     <div class="hrow"><span>A (halten)</span><b>Bremse / Motor aus</b></div>
     <div class="hrow"><span>Y</span><b><b>ein- und aussteigen</b> — gelandet aus dem Flieger heraus, draußen wieder hinein · vor einem geparkten Flugzeug, am Rover oder am eigenen Flieger: <b>umsteigen</b></b></div>
-    <div class="hrow"><span>B</span><b>nur noch <b>Aktion</b>: Wasser abwerfen · löschen · Kiste abwerfen · Schleudersitz · im Weltall Laser · draußen zu Fuß <b>hüpfen</b></b></div>
+    <div class="hrow"><span>B</span><b>nur noch <b>Aktion</b>: Wasser abwerfen · löschen · Kiste abwerfen · Schleudersitz · im U-Boot getaucht <b>Sonar-Ping</b> · im Weltall Laser · draußen zu Fuß <b>hüpfen</b></b></div>
     <div class="hrow"><span>D-Pad →</span><b>Modell wechseln</b></div>
     <div class="hrow"><span>X (halten)</span><b>Boost (100 % Schub)</b></div>
     <div class="hrow"><span>LB / RB (halten)</span><b>Ansicht von links/rechts</b></div>
@@ -89,7 +89,7 @@
     <div class="htitle">🎯 Was man machen kann</div>
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B. Sie landet <b>überall</b>: Wasser, Landebahn, Trägerdeck und <b>Wiese</b> — und rollt dort auch</b></div>
     <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer, liegt im Wasser und nickt mit den Wellen · B = Wasserstrahl nach vorn (bis 160 m), löscht Feuer und brennende Wracks · braucht keinen Tank · Land und Strand sind eine Wand, schräg fährt man daran entlang</b></div>
-    <div class="hrow"><span>🛥️ U-Boot</span><b>liegt am <b>Strand jeder Insel</b> neben dem Feuerwehrboot (und steht als letztes in der Modellauswahl). <b>Y</b> = einsteigen. Pfeil <b>↑ taucht ab</b>, <b>↓ wieder auf</b> — es braucht dazu <b>Fahrt</b>, wie ein Flugzeug. Unten liegen <b>Schiffswracks</b>, Seegras, Korallen und <b>Fischschwärme</b>; bis rund <b>100 m</b> tief. Es hält die Tiefe von allein und setzt sich nicht auf den Grund. <b>Aussteigen</b>: auftauchen und <b>Y</b> — du sitzt dann im <b>Schlauchboot</b> und kannst herumfahren. Wieder <b>hin</b>? Einfach mit dem Schlauchboot ans U-Boot fahren und es <b>berühren</b></b></div>
+    <div class="hrow"><span>🛥️ U-Boot</span><b>liegt am <b>Strand jeder Insel</b> neben dem Feuerwehrboot (und steht als letztes in der Modellauswahl). <b>Y</b> = einsteigen. Pfeil <b>↑ taucht ab</b>, <b>↓ wieder auf</b> — es braucht dazu <b>Fahrt</b>, wie ein Flugzeug. Unten liegen <b>Schiffswracks</b>, Seegras, Korallen und <b>Fischschwärme</b>; bis rund <b>100 m</b> tief. Getaucht <b>B</b> = <b>Sonar-Ping</b>: je näher das nächste Wrack, desto lauter kommt er zurück — und die Periskop-Scheibe zeigt die Wracks als rote Punkte. Es hält die Tiefe von allein und setzt sich nicht auf den Grund. <b>Aussteigen</b>: auftauchen und <b>Y</b> — du sitzt dann im <b>Schlauchboot</b> und kannst herumfahren. Wieder <b>hin</b>? Einfach mit dem Schlauchboot ans U-Boot fahren und es <b>berühren</b></b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf der <b>Landebahn</b> oder auf dem <b>Trägerdeck</b> laden (📦 zeigt es an), mit <b>B</b> abwerfen — wo man mag</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
@@ -2124,7 +2124,10 @@ function preloadSeaShips(){
       // updateUwCells merkt eine Zelle absichtlich nicht als leer, solange die Vorlagen fehlen —
       // die Zellen sind dann aber schon gebaut und muessen einmal fallen.
       if(def.key === 'sub') refreshIslands();
-      if(def.key === 'liberty') clearUwCells();
+      // 'sail' zaehlt seit dieser Runde mit: aus ihm entstehen in tiefem Wasser ebenfalls
+      // Grossfund-Wracks (siehe wreckInfo1), und die Zellen der ersten Sekunden wurden ohne das
+      // Modell gebaut.
+      if(def.key === 'liberty' || def.key === 'sail') clearUwCells();
     }, (err)=>{ console.warn('Schiff-GLB Ladefehler ('+def.key+'):', err); });
   }
 }
@@ -2404,13 +2407,42 @@ const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln 
 // Bei 50 km/h stoesst man damit etwa alle zwei Minuten auf ein Wrack — vorher waren es bei 14 %
 // gut vier Minuten, und deshalb "hab immer noch kein wrack gesehen".
 const WRECK_CHANCE = 0.55;
-// Nur wo es tief genug ist: ein Wrack im 8-m-Flachwasser ragte aus dem Meer heraus. Der Frachter
-// ist 135 m lang und liegt auf der Seite, das sind gut 20 m Aufbauhoehe.
-// Von 45 auf 25 m: Wracks duerfen naeher an den Schelf. Der Schelfsaum ist der Ort, an dem man mit
-// dem U-Boot entlangfaehrt (dort sind Licht, Pflanzen und Fische) — mit 45 m Mindesttiefe lagen
-// die Wracks alle draussen in der strukturlosen Tiefsee, wo niemand sucht. Ein Frachter braucht
-// 25 m Wasser, das reicht auch fuer den Rumpf.
-const WRECK_MIN_DEPTH = 25;
+// ---- WIE TIEF MUSS DAS WASSER SEIN? ------------------------------------------------------------
+// Die Antwort stand hier zweimal falsch, und beide Male war sie GESCHAETZT: erst "gut 20 m
+// Aufbauhoehe" fuer den Frachter, dann eine Absenkung von 45 auf 25 m, damit die Wracks naeher an
+// den Schelf duerfen. Beides fiel nicht auf, weil das Modell unsichtbar war (siehe makeWreck).
+//
+// AUSGEMESSEN an der echten Geometrie, ueber alle Kraengungen, Neigungen und Kurse, die wreckInfo1
+// wuerfelt (C:/tmp/whoehe.js, C:/tmp/wnach2.js), ragt ein aufgesetztes Wrack ueber den Grund:
+//   Liberty-Frachter   38,0 m
+//   Grosssegler        48,1 m   (seine Masten)
+//   Nachbau            0,460 mal Rumpflaenge, bei 150 m also 68,9 m
+// Mit 25 m Mindesttiefe stand der Frachter bis 6 m AUS dem Wasser heraus — im 33-m-Flachwasser
+// nachgerechnet, und genau das waere jetzt zu sehen, wo er sichtbar ist.
+//
+// Nicht die Hoehe des aufrechten Schiffs entscheidet, und auch nicht seine Laenge, sondern die
+// senkrechte Ausdehnung in der LAGE, in der es liegt — auf der Seite ist das im Kern die
+// Rumpfbreite (bei 80 Grad gemessen 20,5 m gegen 20,3 m Breite). Genau deshalb liegen die Wracks
+// jetzt steiler (55 bis 85 Grad statt 34 bis 80): das senkt die noetige Tiefe deutlich, denn in den
+// flachen Lagen wirkte noch die volle Aufbauhoehe. Dazu kommt die Neigung ueber Bug und Heck
+// (+-10 Grad), die bei 135 m Rumpf ein Ende um rund 12 m hebt — die Laenge kippt also mit hinein.
+const WRECK_CLEAR = 8;      // m Luft zwischen Wrackspitze und Wasseroberflaeche. Die Welle steht bis
+                            // 2,1 m hoch, 8 m sind also reichlich Reserve — und ein Wrack soll man
+                            // suchen muessen, nicht von oben sehen.
+// Die kleinste Rumpflaenge ist 70 m, ein solcher Nachbau ragt 32,2 m hoch. Mit WRECK_CLEAR sind das
+// 41 m — darunter passt ueberhaupt kein Wrack, also ist hier die Grenze. Es kostet fast nichts:
+// 99,9 % der Wrackplaetze liegen bei 50 m oder tiefer (Median 100 m).
+const WRECK_MIN_DEPTH = 41;
+// Wie hoch ein Nachbau ragt, gemessen als Anteil seiner Rumpflaenge. Aus dieser Zahl wird umgekehrt
+// die groesste Laenge bestimmt, die eine Stelle noch traegt (siehe wreckInfo1) — dadurch
+// verschwindet kein Wrack im flacheren Wasser, es ist dort nur kleiner. Das ist auch stimmig:
+// ein Kuestenfrachter sinkt eher in Kuestennaehe als ein Stueckgutschiff.
+const WRECK_H_FACTOR = 0.48;   // 0,460 gemessen, aufgerundet: die Nachbildung der Masten in der
+                               // Messung ist eine Naeherung, und ein Wrack, das zu klein ausfaellt,
+                               // ist besser als eines, das aus dem Meer schaut.
+// Die beiden Grossfund-Modelle brauchen feste Tiefen (ihre Groesse ist nicht verhandelbar):
+const LIB_WRECK_MIN_DEPTH  = 46;   // 38,0 m hoch + WRECK_CLEAR
+const SAIL_WRECK_MIN_DEPTH = 57;   // 48,1 m hoch + WRECK_CLEAR
 // Wie viele Wracks eine Wasserzelle hoechstens tragen kann. Von 1 auf 2 ("die dichte der kleinen
 // wracks um 1 erhoehen"): jeder Wurf wuerfelt eigenstaendig mit WRECK_CHANCE und eigenem Salt,
 // zwei Wuerfe ergeben also nicht zwangslaeufig zwei Wracks.
@@ -2513,24 +2545,39 @@ function wreckInfo1(cx, cz, k){
   // vergeblich, denn der Grund war nie die Seltenheit: das Modell wurde UEBERHAUPT NICHT GEZEICHNET
   // (siehe den Materialfehler in makeWreck). Die 0,5 bleibt trotzdem stehen; nachgemessen liegt
   // damit ein Grossfund alle 1.199 m, und ein Fund, den man sieht, darf so haeufig sein.
+  // 'gross' ist hier nur der WUNSCH — ob es einer wird, entscheidet die Tiefe (echtGross unten).
   // Nur der ERSTE Wurf einer Zelle kann ein Grossfund sein. Ein zweiter GLB-Frachter in derselben
   // Zelle waere ein volles Schiffsmodell mehr (12.263 Dreiecke gegen 400) und nimmt dem Fund
   // ausserdem seine Besonderheit.
   const gross = k === 0 && cellRnd(cx,cz,S+8) < 0.5;
-  // Grossfunde sind IMMER der Liberty-Frachter, nie der Grossegler. Der Segler ('sail' zeigt auf
-  // empty_glb) hat rund 60 m hohe Masten — sein Bounding reicht in Y von -255 bis +127. Auf die
-  // Seite gekippt (34 bis 80 Grad) ragen die Spitzen 60 m weit zur Seite und fast bis zur
-  // Oberflaeche, und weil die Auflege-Rechnung mit der halben RUMPFBREITE arbeitet, sinkt der
-  // schlanke Rumpf dabei in den Boden. Ergebnis war ein halbes Wrack plus ein Gebilde daneben.
-  // Der Frachter ist kompakt, hat flache Aufbauten und liegt sauber auf der Seite.
-  const key = gross ? 'liberty' : null;
-  return { wx, wz, y, key, gross,
-           // Laenge des Nachbaus: 70 bis 150 m, also von Kuestenfrachter bis Stueckgutschiff.
-           len: 70 + cellRnd(cx,cz,S+9)*80,
+  const tiefe = -y;
+  // Grossfund: Frachter ODER Grossegler. Der Segler war ausgeschlossen, weil die alte
+  // Auflege-RECHNUNG ihn halb in den Boden zog — mit der halben Rumpfbreite gerechnet, waehrend
+  // seine Masten gekippt weit zur Seite ragen. Seit makeWreck die Lage MISST statt sie zu schaetzen
+  // (siehe dort), gilt das nicht mehr.
+  //
+  // Was hier liegen darf, entscheidet die TIEFE, denn beide Modelle haben eine feste Groesse:
+  // tief genug fuer den Segler -> jeder zweite Grossfund ist einer; sonst der flachere Frachter;
+  // reicht es auch fuer den nicht, wird es ein Nachbau (dessen Laenge passt sich an, siehe unten).
+  let key = null, echtGross = false;
+  if(gross && tiefe >= SAIL_WRECK_MIN_DEPTH && cellRnd(cx,cz,S+11) < 0.5){ key = 'sail'; echtGross = true; }
+  else if(gross && tiefe >= LIB_WRECK_MIN_DEPTH){ key = 'liberty'; echtGross = true; }
+  // Laenge des Nachbaus: 70 bis 150 m, also von Kuestenfrachter bis Stueckgutschiff — aber nur so
+  // lang, wie die Stelle es traegt. Ohne diese Grenze ragte ein 150-m-Nachbau in 60 m Wasser
+  // 9 m aus dem Meer (68,9 m hoch gemessen).
+  const lenRoh = 70 + cellRnd(cx,cz,S+9)*80;
+  const lenMax = (tiefe - WRECK_CLEAR) / WRECK_H_FACTOR;
+  return { wx, wz, y, key, gross: echtGross,
+           len: Math.min(lenRoh, lenMax),
            rot:  cellRnd(cx,cz,S+4)*Math.PI*2,      // Kurs, in dem es gesunken ist
-           // Krängung: auf welche Seite es gekippt liegt. Zwischen 35 und 80 Grad — aufrecht sähe
-           // aus wie ein fahrendes Schiff, ganz auf dem Kopf wie ein Fehler.
-           roll: (0.6 + cellRnd(cx,cz,S+5)*0.8) * (cellRnd(cx,cz,S+6)<0.5?-1:1),
+           // Kraengung: auf welche Seite es gekippt liegt. 55 bis 85 Grad — es liegt also deutlich
+           // AUF DER SEITE. Vorher waren es 34 bis 80 Grad, und die flachen Lagen hatten zwei
+           // Nachteile: bei 34 Grad sieht ein Schiff noch fast fahrend aus, und weil dort die
+           // aufrechte Hoehe noch voll wirkt, bestimmte gerade die FLACHSTE Lage die noetige
+           // Wassertiefe. Auf der Seite liegend wird die Rumpfbreite zur Hoehe: gemessen 20,5 m
+           // senkrechte Ausdehnung bei 80 Grad gegen 20,3 m Rumpfbreite (C:/tmp/wachse.js).
+           // Damit sinkt die noetige Tiefe beim Frachter von 53 auf 46 m, beim Segler von 71 auf 57.
+           roll: (0.96 + cellRnd(cx,cz,S+5)*0.52) * (cellRnd(cx,cz,S+6)<0.5?-1:1),
            // Und ein wenig ueber Bug oder Heck geneigt, weil der Grund nicht eben ist.
            pitch:(cellRnd(cx,cz,S+7)-0.5)*0.35 };
 }
@@ -2569,9 +2616,10 @@ function wreckInfos(cx, cz){
   }
   return out;
 }
-// Ein Wrack bauen. Es liegt auf dem Grund, also muss der Ursprung so tief, dass der gekippte Rumpf
-// aufliegt statt zu schweben: bei Krängung sinkt die Bordwand um sin(roll) mal halbe Rumpfbreite.
-// Ausgemessen wird das nicht — shipHalf kennt hw schon aus dem Wasserlinienband (preloadSeaShips).
+// Ein Wrack bauen. Es liegt auf dem Grund, also muss der Ursprung so hoch, dass der gekippte Rumpf
+// genau aufliegt statt zu schweben oder im Sand zu stecken.
+// Das wird GEMESSEN: erst die Drehung setzen, dann die Bounding-Box nehmen, dann um ihre Unterkante
+// anheben. Jede Rechnung mit Breite und Aufbauhoehe war eine Schaetzung und lag daneben (siehe unten).
 function makeWreck(info){
   // EINFACHES Wrack (der Normalfall): Nachbau aus Grundformen, rund 400 Dreiecke statt 12.263.
   // Es braucht kein geladenes Modell, ist also auch sofort da — beim GLB-Wrack musste man warten,
@@ -2580,12 +2628,13 @@ function makeWreck(info){
     const g0 = new THREE.Group();
     g0.add(makeSimpleWreck(info.len, cellRnd(Math.round(info.wx), Math.round(info.wz), 31),
                                      cellRnd(Math.round(info.wx), Math.round(info.wz), 32)));
-    // Auf den Grund legen: bei Kraengung sinkt die Bordwand um sin(roll) mal halbe Breite.
-    // Halbe Breite ist der Rumpfradius br*0,5 = laenge*0,08 (die BREITE wird nicht gestaucht,
-    // nur die Hoehe — siehe makeSimpleWreck).
-    const hw0 = info.len*0.08;
-    g0.position.set(info.wx, info.y + Math.abs(Math.sin(info.roll))*hw0, info.wz);
+    // Auf den Grund legen — GEMESSEN, wie beim Grossfund: erst drehen, dann die Bounding-Box, und
+    // um deren Unterkante anheben. Die alte Rechnung (|sin(roll)| mal Rumpfradius) liess die
+    // Aufbauten, den Schornstein und die Masten aussen vor und setzte damit zu tief oder zu hoch an.
     g0.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
+    g0.updateMatrixWorld(true);
+    const bb0 = new THREE.Box3().setFromObject(g0);
+    g0.position.set(info.wx, info.y - bb0.min.y - 0.4, info.wz);   // 0,4 m im Sand (siehe unten)
     return g0;
   }
   const tpl = shipTemplates[info.key];
@@ -2615,19 +2664,25 @@ function makeWreck(info){
     o.material = warListe ? neu : neu[0];
   });
   g.add(m);
-  const h = shipHalf[info.key];
-  const hw = h ? h.hw : 12;
-  // MIT SICHERHEITSZUSCHLAG heben. |sin(roll)| mal halbe Breite allein reicht nicht: der
-  // Modellursprung sitzt auf der WASSERLINIE, also rund 8 m ueber dem Kiel, und ein auf die
-  // Bordwand gekipptes Schiff liegt auf einer Diagonale aus Breite und Seitenhoehe — nicht auf der
-  // halben Breite. Bei starker Kraengung ragte der Aufbau deshalb in den Grund.
-  // shipHalf.top ist die vermessene Aufbauhoehe ueber der Wasserlinie — gekippt ragt genau die
-  // zur Seite und muss ausgeglichen werden. Mit sin(roll) gewichtet, weil sie nur bei Kraengung wirkt.
-  // Ein Wrack, das etwas zu hoch liegt, sieht aus wie eines auf einer Sandbank; eines im Boden
-  // sieht kaputt aus. Und weil ein Wrack nichts traegt, hat die Hoehe keine Nebenwirkung.
-  const hoch = Math.abs(Math.sin(info.roll)) * (hw + (h && h.top ? h.top*0.5 : hw));
-  g.position.set(info.wx, info.y + hoch, info.wz);
+  // AUFSETZEN WIRD GEMESSEN, NICHT GERECHNET. Vorher stand hier ein Zuschlag aus halber Breite und
+  // halber Aufbauhoehe, mit |sin(roll)| gewichtet — eine Schaetzung, und sie lag zu hoch: gegen die
+  // echte GLB-Geometrie geprueft schwebte der Frachter im Mittel 8,05 m ueber dem Sand, im
+  // schlimmsten Fall 13,06 m (147 Lagen durchgerechnet, C:/tmp/wfloat.js). Gemeldet als "es
+  // schwebt jetzt in der Luft" — und das war es auch schon vorher, nur unsichtbar.
+  //
+  // Der Weg dahin ist einfach: erst drehen, DANN die Bounding-Box nehmen. Deren Unterkante ist der
+  // tiefste Punkt des gekippten Wracks, und genau um die muss der Ursprung angehoben werden —
+  // fuer jede Lage, jedes Modell und jede Kraengung richtig, ohne Sonderfall.
+  // Deshalb darf jetzt auch der Segler ein Wrack sein (siehe wreckInfo1): seine Masten fallen
+  // hierbei einfach mit in die Box.
   g.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
+  g.updateMatrixWorld(true);
+  // Box in WELTkoordinaten, waehrend die Gruppe noch im Ursprung steht: min.y ist damit direkt der
+  // Abstand des tiefsten Punktes zum Gruppenursprung.
+  const bb = new THREE.Box3().setFromObject(g);
+  // 0,4 m Einsinken: ein Wrack liegt seit Jahrzehnten im Sand, es steht nicht darauf. Ohne das
+  // beruehrt es den Grund an genau einem Punkt und sieht aus wie hingestellt.
+  g.position.set(info.wx, info.y - bb.min.y - 0.4, info.wz);
   return g;
 }
 // ---- VEGETATION: Seegras und Korallen auf dem Schelf -------------------------------------------
@@ -4135,6 +4190,12 @@ function buttonB(){
   if(eva){ evaActionB(); return; }
   if(locale === 'space'){ fireLaser(); return; }    // im Weltall: Laser (Einzelschuss)
   if(isBoat()) boatSpray();
+  // Im U-BOOT ist B das Sonar. Nur getaucht: an der Oberflaeche gibt es nichts zu orten, und
+  // uwCamBlend ist derselbe Massstab, den auch die Meereskulisse benutzt.
+  else if(isSub()){
+    if(uwCamBlend > 0.6) sonarPing();
+    else { showBig('\u{2B07}\u{FE0F}'); bigTimer = 1.2; }   // Hinweis: erst abtauchen
+  }
   else if(isCanadair()) dropWater();
   else if(isAlphaJet() || isMustang()) ejectSeat();
   else if(isTransall()) dropCrate();
@@ -10309,8 +10370,10 @@ const AMB_GULL_R  = 900;    // m: bis hierher sind Moewen zu hoeren. Etwas mehr 
                             // (170 bis 330 m) plus Schelf — man hoert sie also schon beim Anfahren.
 const AMB_MAX_Y   = 400;    // m Hoehe: darueber verstummt die Kulisse. Ein Flugzeug in Reisehoehe
                             // hoert nur seinen Motor.
-const AMB_GULL_VOL = 0.16;  // Grundlautstaerke. Bewusst niedrig gehalten ("die toene aber insgesamt
-const AMB_OCEAN_VOL= 0.13;  // leise"): beide sind Kulisse, kein Effekt.
+const AMB_GULL_VOL = 0.26;  // Grundlautstaerke. Von 0,16 hoch ("das moewen ambiente kann ein wenig
+                            // lauter werden") — Kulisse bleibt es trotzdem, der Motor liegt bei
+                            // 0,09 bis 0,25 und das Ozeanrauschen bleibt, wo es war ("wind ist super").
+const AMB_OCEAN_VOL= 0.13;  // unveraendert: genau richtig getroffen.
 const AMB_RATE    = 0.7;    // wie schnell die Lautstaerke nachlaeuft (pro Sekunde). Langsam, damit
                             // der Wechsel Insel/offenes Meer ein Uebergang ist und kein Umschalten.
 let ambGullSrc = null, ambGullGain = null;
@@ -10372,63 +10435,49 @@ function updateAmbient(dt){
   ambGullGain.gain.value  += (gull  - ambGullGain.gain.value ) * k;
   ambOceanGain.gain.value += (ocean - ambOceanGain.gain.value) * k;
 }
-// ---- SONAR-PING: alle 15 s ein Signal, dessen Lautstaerke am naechsten Wrack haengt ------------
-// "vielleicht alle 15s ein leises ping unter wasser in abhaengigkeit vom naechsten wrack unter
-// wasser (lautstaerke von schwach bis leise)". Der Ping ist damit kein Schmuck, sondern das
-// SUCHGERAET: er wird lauter, je naeher man einem Wrack kommt, und ergaenzt das Periskop, das nur
-// getaucht hilft und nach oben zeigt. Man hoert, dass da etwas ist, bevor man es sieht (unter
-// Wasser reicht der Blick 165 bis 180 m).
-const SONAR_EVERY  = 15;    // s zwischen zwei Pings
+// ---- SONAR-PING auf B: Lautstaerke nach Abstand zum naechsten Wrack ----------------------------
+// Erst lief er automatisch alle 15 s. Auf Wunsch jetzt "nicht alle 15s sondern als aktion auf b
+// lautstaerke in abhaengigkeit der entfernung behalten" — und das ist auch das bessere Geraet: man
+// pingt, wenn man wissen will, ob da etwas ist, statt zu warten, bis der Takt es verraet.
+// Der Ping ergaenzt das Periskop, denn unter Wasser reicht der Blick nur 165 bis 180 m. Man HOERT
+// also, dass da etwas ist, bevor man es sieht.
 const SONAR_R      = 1200;  // m: ab hier ist ueberhaupt etwas zu hoeren. Etwas weniger als der
                             // Periskop-Radius (1.400 m), damit das Bild eher da ist als der Ton.
-const SONAR_VOL_MIN= 0.02;  // "von schwach bis leise": am Rand kaum wahrnehmbar,
-const SONAR_VOL_MAX= 0.10;  // direkt am Wrack immer noch leiser als der Motor (0,09 bis 0,25).
-let sonarT = SONAR_EVERY;   // Restzeit. Voll starten, damit nicht sofort beim Abtauchen einer kommt.
-// Ein einzelner Ping: kurzer Sinus, der in der Tonhoehe leicht abfaellt, mit langem Nachhall-Schwanz.
-// Synthetisch und nicht als Datei, wie der Ueberschallknall und die Motoren — ein Ping ist ein
-// Sinus mit Huellkurve, dafuer braucht es kein Sample.
+const SONAR_VOL_MIN= 0.05;  // "lautstaerke in abhaengigkeit der entfernung behalten": am Rand
+const SONAR_VOL_MAX= 0.30;  // schwach, am Wrack deutlich. Hoeher als beim automatischen Ping, denn
+                            // jetzt loest man ihn selbst aus und will die Antwort auch hoeren.
+const SONAR_COOL   = 1.2;   // s Sperre zwischen zwei Pings: haelt das Echo frei und verhindert,
+                            // dass gehaltenes B eine Kanonade wird.
+let sonarCool = 0;
+// Der Ping ist jetzt eine AUFNAHME (ambient.js, Schluessel "sonar") und kein synthetischer Sinus
+// mehr — "hier ein richtiger sonar ping". Sie wird einmal dekodiert und danach aus dem Puffer
+// gespielt, sonst dekodiert jeder Tastendruck 216 kB neu.
+let sonarBuf = null, sonarPending = false;
 function playSonarPing(vol){
   if(!soundOn || !audioCtx || audioCtx.state !== 'running') return;
-  const sr = audioCtx.sampleRate, dur = 1.4;
-  const buf = audioCtx.createBuffer(1, Math.floor(sr*dur), sr);
-  const d = buf.getChannelData(0);
-  // Phase integrieren statt sin(2*pi*f*t) mit veraenderlichem f: nur so bleibt sie stetig, wenn die
-  // Frequenz faellt (dasselbe Verfahren wie in makeSubEngineBuffer).
-  let ph = 0;
-  for(let i=0;i<d.length;i++){
-    const t = i/sr;
-    // 1.050 Hz auf 880 Hz fallend: der bekannte, leicht 'durchhaengende' Sonarton.
-    const f = 1050 - 170*Math.min(1, t/0.35);
-    ph += 2*Math.PI*f/sr;
-    // Huellkurve: 8 ms Anschlag (ohne den knackt es), dann exponentiell ausklingen — der lange
-    // Schwanz ist der Nachhall im Wasser und macht aus einem Piepen ein Sonar.
-    const an = Math.min(1, t/0.008);
-    const ab = Math.exp(-t*3.2);
-    d[i] = Math.sin(ph) * an * ab * 0.9;
-  }
-  const src = audioCtx.createBufferSource(); src.buffer = buf;
-  const g = audioCtx.createGain(); g.gain.value = vol;
-  // Etwas Hoehen wegnehmen: Wasser daempft hohe Frequenzen, ein Sinus allein klingt zu trocken.
-  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
-  src.connect(lp).connect(g).connect(audioCtx.destination);
-  src.start();
-}
-function updateSonar(dt){
-  // Nur GETAUCHT im U-Boot: an der Oberflaeche gibt es nichts zu orten, und in einem Flugzeug
-  // schon gar nicht. uwCamBlend ist derselbe Massstab, den die Meereskulisse benutzt (dort
-  // umgekehrt: < 0,3 heisst ueber Wasser).
-  if(!soundOn || !audioCtx || locale !== 'earth' || !isSub() || uwCamBlend < 0.6){
-    sonarT = SONAR_EVERY;   // ueber Wasser zuruecksetzen: nach dem Abtauchen sollen 15 s vergehen
+  if(!sonarBuf){
+    // Beim ersten Mal dekodieren und den Ping DANACH nachziehen — sonst waere der allererste
+    // Tastendruck stumm, und das fuehlt sich wie ein Fehler an.
+    if(!sonarPending && window.FMS_AMB && window.FMS_AMB.sonar){
+      sonarPending = true;
+      decodeSound(window.FMS_AMB.sonar).then(b=>{
+        sonarBuf = b; sonarPending = false;
+        playSonarPing(vol);       // jetzt liegt der Puffer, also kommt der Ping doch
+      }).catch(err=>{ sonarPending = false; console.warn('Sonar-Ping Ladefehler:', err); });
+    }
     return;
   }
-  sonarT -= dt;
-  if(sonarT > 0) return;
-  sonarT = SONAR_EVERY;
-  // Das naechste Wrack suchen. Abgesucht werden die Zellen im Umkreis von SONAR_R — bei CELL 850
-  // sind das 3x3, und wreckInfos ist billig (cellRnd plus ein seabedY je Wurf).
+  const src = audioCtx.createBufferSource(); src.buffer = sonarBuf;
+  const g = audioCtx.createGain(); g.gain.value = vol;
+  src.connect(g).connect(audioCtx.destination);
+  src.start();
+}
+// Abstand zum naechsten Wrack im RAUM, oder Infinity. Getrennt von updateSonar, weil der Tastendruck
+// ihn braucht und nicht der Frametakt.
+function sonarDist(){
   const pcx = Math.round(state.pos.x / CELL), pcz = Math.round(state.pos.z / CELL);
   const span = Math.ceil(SONAR_R / CELL) + 1;
-  let nah = 1e9;
+  let nah = Infinity;
   for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
     for(const wi of wreckInfos(pcx+dx, pcz+dz)){
       // Abstand im RAUM, nicht in der Ebene: ein Wrack 100 m unter einem ist nicht 'da', und beim
@@ -10437,11 +10486,25 @@ function updateSonar(dt){
       if(d < nah) nah = d;
     }
   }
-  if(nah > SONAR_R) return;          // nichts in Reichweite: dann bleibt es still
+  return nah;
+}
+// B im getauchten U-Boot: einmal pingen. Die Lautstaerke haengt am naechsten Wrack — das ist der
+// Sinn der Sache, man tastet damit die Umgebung ab.
+// Ist nichts in Reichweite, kommt der Ping TROTZDEM, nur ganz leise: ein Sonar, das auf Tastendruck
+// schweigt, fuehlt sich kaputt an, und "nichts geortet" ist selbst eine Antwort.
+function sonarPing(){
+  if(sonarCool > 0) return;
+  sonarCool = SONAR_COOL;
+  const nah = sonarDist();
+  if(nah > SONAR_R){ playSonarPing(SONAR_VOL_MIN*0.6); return; }
   // Naeher = lauter, mit smoothstep, damit die Naehe sich am Ende deutlicher anfuehlt als am Rand.
   const f = 1 - nah/SONAR_R;
   const s = f*f*(3-2*f);
   playSonarPing(SONAR_VOL_MIN + (SONAR_VOL_MAX-SONAR_VOL_MIN)*s);
+}
+// Nur noch die Sperre herunterzaehlen — gepingt wird auf Tastendruck (siehe sonarPing).
+function updateSonar(dt){
+  if(sonarCool > 0) sonarCool -= dt;
 }
 function updateEngineSound() {
   if (!audioCtx) return;

@@ -2529,3 +2529,94 @@ Reichweite (dann bleibt es still), sonst im Mittel 0,065.
   (`Math.max(ISLAND_Y - BOAT_DRAFT*0.6, ...)`), `stepBoat` fuer das **selbst gefahrene** Boot aber
   nicht — dort steht `state.pos.y = seaSurfaceY(0, 0, dt) - BOAT_DRAFT;` ohne Boden.
 - Ob der Grossfund jetzt gefaellt, muss im Spiel entschieden werden — er war noch nie zu sehen.
+---
+
+## 2026-09-16 (2) — Das Wrack lag richtig, nur nicht auf dem Grund
+
+"das wrack sieht toll aus. aber es schwebt jetzt in der luft." — richtig, und es schwebte auch
+vorher schon, nur unsichtbar. Die Aufsetzhoehe war **geschaetzt**:
+
+```js
+const hoch = Math.abs(Math.sin(info.roll)) * (hw + (h && h.top ? h.top*0.5 : hw));
+```
+
+Gegen die echte GLB-Geometrie geprueft (147 Lagen, `C:/tmp/wfloat.js`) schwebte der Frachter im
+Mittel **8,05 m**, im schlimmsten Fall **13,06 m**. Jetzt wird es **gemessen** statt gerechnet: erst
+`rotation.set(...)`, dann `new THREE.Box3().setFromObject(g)`, dann um `bb.min.y` anheben und 0,4 m
+einsinken lassen. Nachgeprueft ist die Abweichung **0,000000 m** fuer alle 6.895 Wracks im
+Messgebiet — und das gilt fuer jedes Modell und jede Lage, ohne Sonderfall.
+
+**Lehre:** dieselbe Sorte Fehler wie beim unsichtbaren Wrack. Beides Mal stand eine Formel da, wo
+eine Messung hingehoert — und beides Mal fiel es jahrelang nicht auf.
+
+### Der Segler liegt jetzt auch unten
+
+War ausgeschlossen, weil die alte Rechnung ihn halb in den Boden zog (sie arbeitete mit der halben
+Rumpfbreite, waehrend seine Masten gekippt zur Seite ragen). Mit der Box-Messung faellt der Grund
+weg: Masten sind einfach Teil der Box. Jeder zweite Grossfund ist jetzt ein Segler — **870 Segler**
+gegen 969 Frachter im Messgebiet.
+
+### Ein zweiter Fund beim Nachmessen: Wracks ragten aus dem Meer
+
+`WRECK_MIN_DEPTH` stand auf **25 m**, der Kommentar dazu schaetzte "gut 20 m Aufbauhoehe". Gemessen
+ragt der Frachter **44,5 m** hoch — in 33 m Wasser stand er also **6 m aus dem Meer heraus**. Auch
+das war vorher unsichtbar.
+
+Dann die Rueckfrage: *"wenn der frachter auf der seite liegt muesste seine breite entscheidend sein
+nicht die hoehe oder laenge … dann wird die breite zur hoehe"* — **genau richtig**, und
+nachgerechnet (`C:/tmp/wachse.js`):
+
+| Kraengung | senkrechte Ausdehnung | |
+|---|---|---|
+| 80 Grad | **20,5 m** | = Rumpfbreite (20,3 m) |
+| 60 Grad | 23,4 m | |
+| 34 Grad | 29,6 m | Hoehe dominiert (32,8 m aufrecht) |
+
+Der schlimmste Fall war also die **flachste** Lage, nicht die steilste — plus die Neigung ueber Bug
+und Heck (+-10 Grad), die bei 135 m Rumpf ein Ende um rund 12 m hebt. Deshalb liegen die Wracks
+jetzt **steiler: 55 bis 85 Grad** statt 34 bis 80. Das sieht mehr nach Wrack aus (34 Grad wirkt wie
+ein fahrendes Schiff) und senkt die noetige Tiefe deutlich:
+
+| | Hoehe | braucht Wasser |
+|---|---|---|
+| Frachter | 38,0 m | 46 m (vorher 53) |
+| Segler | 48,1 m | 57 m (vorher 71) |
+| Nachbau | 0,460 x Rumpflaenge | ab 41 m |
+
+Statt Wracks im flacheren Wasser zu **verbieten**, wird die Nachbau-**Laenge** gedeckelt
+(`lenMax = (tiefe - WRECK_CLEAR) / WRECK_H_FACTOR`) — dort liegt dann ein Kuestenfrachter statt
+eines Stueckgutschiffs. Nachgemessen: kein Wrack kuerzer als 69,8 m, kein Wrack ragt heraus (der
+hoechste Punkt liegt **14,6 m unter** der Oberflaeche), und **alle 677** alten Wrackstellen liegen
+unveraendert am selben Platz.
+
+### Sonar: echte Aufnahme, auf B
+
+Der synthetische Sinus ist weg, die mitgebrachte Aufnahme (`sunovia-sonar-ping`, 216 kB, 6,7 s) sitzt
+in `ambient.js` unter `sonar` — byte-identisch eingebettet und gegengeprueft. Einmal dekodiert, dann
+aus dem Puffer gespielt; der allererste Druck zieht den Ping nach dem Dekodieren nach, damit er
+nicht stumm bleibt.
+
+Nicht mehr alle 15 s, sondern **B im getauchten U-Boot** ("als aktion auf b"), mit 1,2 s Sperre
+gegen Dauerfeuer. Lautstaerke bleibt am Abstand: **0,05 bis 0,30** (angehoben von 0,02–0,10, denn
+jetzt loest man ihn selbst aus). Ist nichts in Reichweite, kommt er ganz leise trotzdem — ein Sonar,
+das auf Tastendruck schweigt, fuehlt sich kaputt an, und "nichts geortet" ist selbst eine Antwort.
+Aufgetaucht zeigt B den Hinweis "erst abtauchen".
+
+### Kulisse
+
+Moewen von 0,16 auf **0,26** ("kann ein wenig lauter werden"). Ozeanrauschen bleibt bei 0,13 —
+"wind ist super".
+
+### Ein Fehler im MESSSKRIPT, der fast zu falschen Zahlen gefuehrt haette
+
+Erst kam heraus, das Wrack sei 102 m hoch. Ursache: `rotation.set(pitch, rot, roll, 'YXZ')` baut
+die Matrix als `Ry * Rx * Rz`, auf einen Punkt wirkt also **Rz zuerst**. Mein Skript drehte in der
+umgekehrten Reihenfolge, wodurch der Gierwinkel die 135-m-Laengsachse in die Senkrechte kippte.
+Merkposten: bei Euler-Reihenfolgen ist die Matrixreihenfolge die *Umkehrung* der Punktreihenfolge —
+und eine Zahl, die physikalisch unmoeglich aussieht (102 m hohes Schiff), ist meist ein Messfehler.
+
+### Offen
+
+- **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt:
+  `stepBoat` setzt `state.pos.y = seaSurfaceY(0,0,dt) - BOAT_DRAFT` ohne Untergrenze, waehrend
+  `updateHarborBoats` fuers ruhende Kai-Boot schon eine hat.
