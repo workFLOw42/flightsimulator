@@ -7140,21 +7140,20 @@ function buildMilkyWay(){
       // und garantiert lichtunabhaengig.
       const src = Array.isArray(o.material) ? o.material[0] : o.material;
       const tex = src && (src.emissiveMap || src.map);
-      // GENAU DIE FLAGS DER STERNENKUPPEL, nur mit Textur. Mein erster Versuch hatte BackSide,
-      // AdditiveBlending und renderOrder -2 — und war unsichtbar. Am verdaechtigsten ist das
-      // additive Blending zusammen mit einer Zeichenreihenfolge VOR dem Hintergrund: additiv
-      // rechnet Ziel + Quelle, und was vor scene.background liegt, wird davon ueberschrieben.
-      // Die Kuppel blendet normal und ist sichtbar — also derselbe Weg.
+      // OPAK und ganz nach hinten. Das Panorama IST der Sternhimmel — im Bild sind eigene Sterne
+      // und Nebel — es braucht also keine Transparenz und soll nichts durchlassen.
       //
-      // DoubleSide statt BackSide aus demselben Grund: die Kuppel macht es so, und bei einer
-      // 1,2-Mio-Meter-Kugel, in der man immer drinsteckt, kostet es nichts.
-      mwMat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.DoubleSide,
-                                            transparent:true, opacity:0, depthWrite:false });
+      // Zwei Anlaeufe hat mich das gekostet, und beide Fehler stecken hier als Warnung: erst
+      // additiv mit renderOrder -2 (unsichtbar, weil vor scene.background gemalt), dann transparent
+      // mit renderOrder -1 wie die Kuppel — und damit lag es bei GLEICHER Ordnung, wo Three.js nach
+      // Abstand sortiert: die Kuppel (1.200.000 m) kam zuerst, das Panorama (1.152.000 m) legte sich
+      // mit 85 % darueber, und von den Sternen blieben 15 %.
+      //
+      // Opak und mit renderOrder -3 ist die Reihenfolge eindeutig: Panorama, dann Kuppel, dann
+      // alles andere. depthWrite bleibt AUS, damit die Kugel nichts vor sich wegschneidet.
+      mwMat = new THREE.MeshBasicMaterial({ map:tex, side:THREE.DoubleSide, depthWrite:false });
       o.material = mwMat;
-      // -1 wie die Kuppel, aber das Band liegt raeumlich dahinter (MW_R 0,98 gegen 1,0), also
-      // zeichnet Three.js es innerhalb derselben Ordnung zuerst — transparente Objekte werden
-      // nach Abstand sortiert, das Fernere kommt zuerst.
-      o.renderOrder = -1;
+      o.renderOrder = -3;
       o.frustumCulled = false;
     });
     g.visible = false;
@@ -7162,12 +7161,13 @@ function buildMilkyWay(){
     scene.add(g);
   });
 }
-// Wie kraeftig das Band im Weltall steht. Ohne additives Blending (siehe buildMilkyWay) muss der
-// Wert hoeher sein als die 0,55 des ersten Versuchs: normal geblendet ERSETZT das Band den Himmel
-// anteilig, statt Licht dazuzugeben. 0,85 zeigt das Foto fast unverfaelscht und laesst dort, wo es
-// schwarz ist, den Himmel durch — das Panorama ist selbst grossflaechig dunkel, also verdeckt es
-// die Sterne der Kuppel nur im Band.
-const MW_OPACITY = 0.85;
+// Wie hell das Panorama steht. 1,6 HEBT es ueber die Bildhelligkeit hinaus, und das ist Absicht:
+// das Foto ist eine Langzeitbelichtung und im Original ueberwiegend sehr dunkel — im Spiel kam
+// davon nur "etwas lila masse" an. Ueber 1 multipliziert werden die Nebel kraeftig und die
+// eingebauten Sterne des Panoramas sichtbar, ohne dass der schwarze Anteil aufhellt (schwarz mal
+// irgendwas bleibt schwarz).
+const MW_BRIGHT = 1.6;
+const _mwC = new THREE.Color();
 function updateMilkyWay(f){
   if(!mwDome) return;
   mwDome.visible = f > 0.02;
@@ -7176,7 +7176,15 @@ function updateMilkyWay(f){
   // man daraus heraus, sobald man ein paar Hunderttausend Meter zurueckgelegt hat — und im
   // Hyperraum sind das Sekunden.
   mwDome.position.copy(state.pos);
-  if(mwMat) mwMat.opacity = f * MW_OPACITY;
+  // Eingeblendet wird ueber die FARBE, nicht die Deckkraft: das Material ist opak (siehe
+  // buildMilkyWay), hat also keine. Von Schwarz nach Weiss multipliziert ist der Weg von
+  // unsichtbar nach voll — und beim Aufstieg von der Erde erscheint das Band damit genauso
+  // allmaehlich wie die Sterne.
+  if(mwMat){
+    const s = f * MW_BRIGHT;
+    _mwC.setRGB(s, s, s);
+    mwMat.color.copy(_mwC);
+  }
 }
 function preloadSpace(){
   // Sternenkuppel: exakte Kugelschale, von innen sichtbar, lichtunabhängig, blendet mit der Höhe ein
@@ -8335,7 +8343,14 @@ function updateSpaceBlend(dt){
   scene.fog.color.copy(_skyC);
   scene.fog.near = 900  + f*200000;         // Nebel praktisch aus, sobald es dunkel wird
   scene.fog.far  = 3000 + f*1500000;
-  hemiLight.intensity = 1.0  - 0.85*f;      // im All bleibt nur wenig Streulicht
+  // Streulicht im All von 0,15 auf 0,45 (1,0 - 0,55*f): mit 0,15 blieb praktisch nur die Sonne, und
+  // die kommt aus einer festen Richtung — wer von ihr wegfliegt, sieht seinen eigenen Flieger als
+  // Silhouette. Gewuenscht als "den xwing etwas heller lassen, so dass er auch im dunkeln immer gut
+  // zu erkennen ist". Physikalisch gibt es im Vakuum kein Streulicht, aber ein unsichtbares
+  // Fahrzeug ist der schlechtere Tausch.
+  // Der HIMMEL bleibt davon unberuehrt: er ist scene.background, und Sterne wie Panorama sind
+  // MeshBasic — beides ist lichtunabhaengig.
+  hemiLight.intensity = 1.0  - 0.55*f;
   sun.intensity       = 0.85 + 0.35*f;      // dafür knallt die Sonne härter
   if(starDome){
     starDome.visible = f > 0.02;
