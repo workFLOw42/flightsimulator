@@ -191,6 +191,15 @@ addEventListener('resize', () => {
 
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0x557755, 1.0);
 scene.add(hemiLight);
+// Zusaetzliches RICHTUNGSLOSES Licht, das nur unter Wasser aufgedreht wird (siehe updateUnderwater).
+// Es loest ein Problem, das man auf einem Screenshot sofort sieht: das U-Boot war eine schwarze
+// Silhouette. hemiLight wirft von oben die Himmel- und von unten die Bodenfarbe, eine SENKRECHTE
+// Flanke bekommt davon aber fast nichts — und der Rumpf eines U-Boots ist rund, man sieht ihn also
+// hauptsaechlich von der Seite. Ambient leuchtet jede Flaeche gleich, unabhaengig von ihrer
+// Richtung, und genau so verhaelt sich Licht unter Wasser: es kommt gestreut aus allen Richtungen.
+// An der Luft bleibt es aus (Intensitaet 0), damit sich oben nichts aendert.
+const uwAmbient = new THREE.AmbientLight(0xbfe8f0, 0);
+scene.add(uwAmbient);
 const sun = new THREE.DirectionalLight(0xffffff, 0.85);
 sun.position.set(200, 400, 100); scene.add(sun);
 
@@ -415,9 +424,14 @@ const seabedCol = seabedGeo.attributes.color;
 // heller machen". Der Tiefenwert war mit 1d2a33 fast schwarz und schluckte alles, was darauf steht;
 // jetzt ist auch der tiefste Grund ein helles Graublau, auf dem ein Wrack als Silhouette lesbar
 // bleibt. Der Sand oben geht ins Cremeweiss — so wirkt der Schelf wie eine Lagune.
-const sbShallow = new THREE.Color(0xf0e6c0);
-const sbMid     = new THREE.Color(0xa8b294);
-const sbDeep    = new THREE.Color(0x5f7684);
+// Heller ALS FRUEHER, aber mit mehr KONTRAST zueinander als im letzten Versuch (f0e6c0/a8b294/
+// 5f7684). Der war zu gleichmaessig: bei 120 m Sichtweite und flachem Blickwinkel verschwamm der
+// Boden zu einer strukturlosen Flaeche — gemeldet als "der meeresboden ist quasi nicht zu
+// erkennen". Jetzt liegen heller Sand und dunkler Schlick weiter auseinander, und die Uebergaenge
+// zeichnen die Duenen nach.
+const sbShallow = new THREE.Color(0xf2e2b0);
+const sbMid     = new THREE.Color(0x8fa07a);
+const sbDeep    = new THREE.Color(0x3c5766);
 const _sbIslands = [];
 function collectSeabedIslands(ox, oz){
   _sbIslands.length = 0;
@@ -536,7 +550,96 @@ function cellRnd(cx, cz, salt) {
 }
 
 const sandMat  = new THREE.MeshLambertMaterial({ color: 0xd9c98f });
-const grassMat = new THREE.MeshLambertMaterial({ color: 0x5fa048 });
+// ---- WIESE: Grastextur mit Blueten -------------------------------------------------------------
+// Die Insel war eine einfarbige Flaeche (grassMat 0x5fa048). Genau das war der Grund fuer "das pure
+// schwarz oder die homogene wiese lassen die bewegung nicht spueren, obwohl man mit 22 km/h ja
+// eigentlich schnell unterwegs ist": ohne Struktur im Boden gibt es keinen Bezugspunkt, an dem das
+// Auge Bewegung ablesen kann. Der Astronaut laeuft 6,1 m/s — damit sich das anfuehlt, muessen
+// mehrere Details pro Sekunde vorbeiziehen, also braucht es Struktur im Abstand von 3 bis 5 m.
+//
+// WARUM EINE TEXTUR und keine Objekte: nachgerechnet. Blueten als InstancedMesh im 3-m-Raster waeren
+// 23.600 Instanzen pro 260-m-Insel (38.000 bei 330 m), und es sind bis zu 27 Inseln gleichzeitig
+// geladen — das traegt kein Tablet. Vertexfarben scheitern an der Aufloesung: die Wiese hat als
+// RingGeometry mit 7 Ringen nur alle 37 m einen Stuetzpunkt.
+// Eine kachelnde Textur kostet dagegen EINMAL 1 MB fuer alle Inseln und liefert beliebig feines
+// Detail. Sie wird zur Laufzeit gemalt (kein Download): Rauschen fuer die Grasflecken, dazu
+// gestreute Blueten in Rot, Blau, Gelb und Weiss.
+const GRASS_TILE_PX = 512;    // Kachelgroesse in Pixeln
+const GRASS_TILE_M  = 30;     // wie viele Meter eine Kachel abdeckt -> 17 px/m, eine 0,5-m-Bluete
+                              // ist damit 9 px gross und gut zu erkennen
+const GRASS_FLOWERS = 90;     // Blueten je Kachel. Auf 900 m2 sind das eine alle 3,2 m — genau die
+                              // Dichte, die beim Laufen mehrmals pro Sekunde etwas vorbeiziehen laesst
+const GRASS_TUFTS   = 260;    // dunkle und helle Grasbueschel (die Fleckigkeit aus dem Vorbild)
+let grassTex = null;
+// Die Kachel malen. Deterministisch ueber einen eigenen Zaehler, damit sie bei jedem Start gleich
+// aussieht — eine Wiese, die sich nach dem Neuladen umsortiert, faellt auf.
+function makeGrassTexture(){
+  if(grassTex) return grassTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = GRASS_TILE_PX;
+  const g = cv.getContext('2d');
+  let seed = 20260916;
+  const rnd = ()=>{ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed/0x7fffffff; };
+  // Grundton wie bisher, damit die Inseln aus der Luft unveraendert wirken.
+  g.fillStyle = '#5fa048';
+  g.fillRect(0, 0, GRASS_TILE_PX, GRASS_TILE_PX);
+  // Grosse, weiche Flecken: unterschiedlich dichter Wuchs. Sie geben der Wiese Tiefe, ohne dass ein
+  // Muster erkennbar wird.
+  for(let i=0;i<70;i++){
+    const x = rnd()*GRASS_TILE_PX, y = rnd()*GRASS_TILE_PX, r = 25 + rnd()*70;
+    const hell = rnd() < 0.5;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, hell ? 'rgba(140,200,95,0.32)' : 'rgba(52,105,44,0.30)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill();
+  }
+  // Grasbueschel: kurze Striche in wechselnden Gruentoenen. Das ist die Struktur, die beim Laufen
+  // vorbeizieht — kleiner als die Flecken, groesser als ein Pixel.
+  g.lineWidth = 1.6;
+  for(let i=0;i<GRASS_TUFTS;i++){
+    const x = rnd()*GRASS_TILE_PX, y = rnd()*GRASS_TILE_PX;
+    const len = 4 + rnd()*9, a = rnd()*Math.PI*2;
+    const h = rnd();
+    g.strokeStyle = h < 0.45 ? 'rgba(46,96,38,0.55)'
+                  : h < 0.85 ? 'rgba(126,190,84,0.50)'
+                             : 'rgba(178,214,110,0.45)';
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a)*len, y + Math.sin(a)*len);
+    g.stroke();
+  }
+  // Blueten. Weiss ist die haeufigste (Gaensebluemchen im Vorbild), die Farben sind Akzente —
+  // umgekehrt saehe die Wiese wie ein Blumenbeet aus.
+  const cols = ['#fdfdf5','#fdfdf5','#fdfdf5','#e8422f','#3f6fd8','#f2d02c'];
+  for(let i=0;i<GRASS_FLOWERS;i++){
+    const x = rnd()*GRASS_TILE_PX, y = rnd()*GRASS_TILE_PX;
+    const r = 2.2 + rnd()*2.6;
+    g.fillStyle = cols[Math.floor(rnd()*cols.length)];
+    // Fuenf Blaetter statt eines Kreises: bei 9 px ist der Unterschied zu sehen.
+    for(let k=0;k<5;k++){
+      const a = k/5*Math.PI*2 + rnd()*0.3;
+      g.beginPath();
+      g.arc(x + Math.cos(a)*r*0.6, y + Math.sin(a)*r*0.6, r*0.55, 0, Math.PI*2);
+      g.fill();
+    }
+    // Gelbe Mitte, aber nicht bei den gelben Blueten selbst.
+    if(g.fillStyle !== '#f2d02c'){
+      g.fillStyle = 'rgba(240,200,60,0.9)';
+      g.beginPath(); g.arc(x, y, r*0.45, 0, Math.PI*2); g.fill();
+    }
+  }
+  grassTex = new THREE.CanvasTexture(cv);
+  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
+  // Anisotrope Filterung: die Wiese wird flach und aus der Ferne gesehen, ohne sie verschmiert die
+  // Kachel in der Tiefe zu Grau. Der Wert wird auf das Geraetemaximum begrenzt.
+  grassTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return grassTex;
+}
+// Die Wiese traegt jetzt die gemalte Kachel (siehe makeGrassTexture). Der Grundton bleibt weiss,
+// damit die Texturfarben unveraendert durchkommen — mit dem alten 0x5fa048 als color waeren sie
+// ein zweites Mal gruen multipliziert worden.
+const grassMat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: makeGrassTexture() });
 const wallMats = [0xe8ddc8, 0xd8c0a0, 0xcfe0ec, 0xf0d0c0].map(c => new THREE.MeshLambertMaterial({ color: c }));
 const roofMats = [0xb04030, 0x8a5a3a, 0x6a6a72, 0x9a4a4a].map(c => new THREE.MeshLambertMaterial({ color: c }));
 const runwayMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
@@ -983,7 +1086,18 @@ function buildIsland(cx, cz) {
   const sand = new THREE.Mesh(new THREE.CircleGeometry(radius * 1.12, 24), sandMat);
   sand.rotation.x = -Math.PI/2; sand.position.y = ISLAND_Y - 0.05;
   g.add(sand);
-  const grass = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), grassMat);
+  // Die CircleGeometry hat UVs von 0 bis 1 ueber den GANZEN Kreis — die Kachel waere damit einmal
+  // ueber die ganze Insel gespannt und aus 30 cm Gras wuerden 30 m grosse Flecken. Deshalb werden
+  // die UVs auf Meter umgerechnet: eine Wiederholung je GRASS_TILE_M. Eigene Geometrie pro Insel,
+  // weil der Radius variiert (170 bis 330 m) und die Kachelzahl mit ihm.
+  const grassGeo = new THREE.CircleGeometry(radius, 48);
+  const guv = grassGeo.attributes.uv, gp = grassGeo.attributes.position;
+  for(let i=0;i<guv.count;i++){
+    // Aus der Vertexposition rechnen und nicht aus den vorhandenen UVs: so sitzt das Muster an
+    // WELTkoordinaten, laeuft also ueber Inselgrenzen durch und wiederholt sich nicht identisch.
+    guv.setXY(i, (gp.getX(i) + wx)/GRASS_TILE_M, (gp.getY(i) + wz)/GRASS_TILE_M);
+  }
+  const grass = new THREE.Mesh(grassGeo, grassMat);
   grass.rotation.x = -Math.PI/2; grass.position.y = ISLAND_Y;
   g.add(grass);
 
@@ -2125,10 +2239,21 @@ const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln 
 // ein Fund sein, kein Schrottplatz. Und jede Kopie ist ein volles Schiffsmodell (die Liberty hat
 // zehn UV-Saetze, siehe die Notizen zur GLB-Verkleinerung): drei gleichzeitig geladen kosten
 // sichtbar Bildrate. Mit 0,07 findet man rund alle 4,5 km eines und selten mehr als eines zugleich.
-const WRECK_CHANCE = 0.07;
+// Von 7 auf 14 % — eine Verdopplung, bewusst nicht mehr. Ich hatte zuerst 30 % gesetzt und damit
+// genau den Fehler wiederholt, den der Absatz darueber beschreibt: jede Kopie ist ein volles
+// Schiffsmodell, drei gleichzeitig kosten sichtbar Bildrate.
+//
+// Der Hauptgrund fuer "ich finde keine wracks" war ohnehin nicht die Haeufigkeit, sondern die
+// TIEFE: mit 45 m Mindesttiefe lagen alle Wracks draussen in der strukturlosen Tiefsee, wo man
+// gar nicht entlangfaehrt. Das behebt WRECK_MIN_DEPTH (siehe unten) und kostet nichts.
+const WRECK_CHANCE = 0.14;
 // Nur wo es tief genug ist: ein Wrack im 8-m-Flachwasser ragte aus dem Meer heraus. Der Frachter
 // ist 135 m lang und liegt auf der Seite, das sind gut 20 m Aufbauhoehe.
-const WRECK_MIN_DEPTH = 45;
+// Von 45 auf 25 m: Wracks duerfen naeher an den Schelf. Der Schelfsaum ist der Ort, an dem man mit
+// dem U-Boot entlangfaehrt (dort sind Licht, Pflanzen und Fische) — mit 45 m Mindesttiefe lagen
+// die Wracks alle draussen in der strukturlosen Tiefsee, wo niemand sucht. Ein Frachter braucht
+// 25 m Wasser, das reicht auch fuer den Rumpf.
+const WRECK_MIN_DEPTH = 25;
 function wreckInfo(cx, cz){
   if(cx===0 && cz===0) return null;             // Startzelle frei halten
   if(islandInfo(cx, cz)) return null;           // die Zelle selbst muss Wasser sein
@@ -2221,11 +2346,25 @@ function makeCoral(rnd, rnd2){
 const uwCells = new Map();      // "cx,cz" -> Group (oder null: hier ist nichts)
 const UW_VIEW_CELLS = 2;        // Radius in Zellen. Kleiner als VIEW_CELLS (3): unter Wasser sieht
                                 // man 16-42 m weit, alles Weitere waere Rechnerei fuer den Nebel.
-const WEED_PER_CELL  = 26;      // Bueschel pro Zelle
-const CORAL_PER_CELL = 14;
+// Mehr als vorher (26/14), aber mit Maß. Gemeldet als "es gibt auch kein leben oder pflanzen auf
+// dem boden als referenz", und das lag weniger an der Zahl als an der VERTEILUNG: sie stehen in
+// einem Ring um die Insel, und der war 102 m breit — die Objekte verloren sich darin.
+//
+// Die Obergrenze ist hier die Zeichenlast, nicht der Geschmack: eine Pflanze ist KEIN einzelnes
+// Mesh. makeWeed baut 3 bis 5 Plane-Meshes in einer Group, makeCoral 3. 60/34 Objekte sind also
+// rund 340 Meshes pro Zelle und bei 25 geladenen Zellen 8.500. Mit meinem ersten Ansatz (90/50)
+// waeren es 25.000 gewesen — das traegt kein Tablet.
+// Dichter WIRKT es trotzdem, weil das Band jetzt schmaler ist (siehe UW_PLANT_BANDW): dieselbe
+// Zahl auf einem Drittel der Flaeche.
+const WEED_PER_CELL  = 60;      // Bueschel pro Zelle
+const CORAL_PER_CELL = 34;
 // Bis zu welcher Tiefe Pflanzen wachsen. Tiefer wird es dunkel, dort steht nichts mehr — das ist
 // auch der Grund, warum die Tiefsee leer aussehen DARF: sie ist es wirklich.
-const WEED_MAX_DEPTH = 40;
+// 45 m statt 40: nachgemessen fielen 8 % der Bandplaetze durch diese Grenze, weil das Duenenrelief
+// +-19,5 m ausmacht und den Boden stellenweise darunter drueckt. Seit das Band nur bis 25 m Tiefe
+// reicht (UW_PLANT_BANDW), ist die Grenze nicht mehr bindend — die 45 m sind der Sicherheitsabstand
+// fuer eine Duene, die an einer Bandstelle besonders tief liegt.
+const WEED_MAX_DEPTH = 45;
 // Und wie FLACH sie hoechstens stehen duerfen. Gerechnet, nicht geschaetzt: das hoechste Objekt ist
 // ein Seegrasbueschel mit 5,6 m (Koralle 4,2 m), und die Wellenflaeche sinkt im Tal auf -2,33 m.
 // 5,6 + 2,33 = 7,9 m waeren die Grenze, bei der eine Spitze die Flaeche gerade beruehrt — 9 m gibt
@@ -2236,7 +2375,12 @@ const UW_PLANT_MIN_DEPTH = 9;
 // Wer SEA_DEPTH aendert, muss sie nachrechnen — sonst stehen Pflanzen wieder im Flachen oder
 // die Haelfte faellt durch den Filter.
 const UW_PLANT_BAND0 = 0.172;   // Beginn: die 9-m-Linie
-const UW_PLANT_BANDW = 0.256;   // Breite bis zur 40-m-Linie (0,428 - 0,172)
+// Breite bis zur 25-m-Linie (0,325 - 0,172). Bewusst SCHMAL, und das ist der wirksamste Hebel fuer
+// "es gibt kein leben auf dem boden": nachgerechnet fuer eine 260-m-Insel ist das Band bis 60 m
+// Tiefe 157 m breit (286.000 m2), dieselbe Objektzahl steht darin alle 55 m — verloren. Bis 25 m
+// sind es 59 m Breite (108.000 m2) und ein Abstand von 34 m, und die Pflanzen bleiben im hellen
+// Bereich, wo man sie auch sieht.
+const UW_PLANT_BANDW = 0.153;
 function buildUwCell(cx, cz){
   const g = new THREE.Group();
   let leer = true;
@@ -2446,30 +2590,30 @@ function updateFish(dt){
 const DRIFT_N     = 90;     // Partikel. Genug fuer den Eindruck, wenig genug fuers Budget.
 const DRIFT_BOX   = 26;     // halbe Kantenlaenge des Wuerfels um die Kamera (m)
 const DRIFT_MIN   = 2.5;    // naeher als das nicht: sonst klebt einem etwas auf der Linse
-// Eigenbewegung je Ort. Unter Wasser STEIGEN Blasen (das ist ihr halber Reiz), an Land treibt
-// Pollen langsam seitlich, im All steht der Staub still — dort bewegt sich nur der Spieler.
+// Eigenbewegung je Ort. Unter Wasser STEIGEN Blasen (das ist ihr halber Reiz), im All und auf Mond
+// und Mars steht der Staub still — dort bewegt sich nur der Spieler, und genau das soll man sehen.
 const DRIFT_RISE  = 1.6;    // m/s Aufstieg der Blasen
-const DRIFT_POLLEN= 0.35;   // m/s seitliches Treiben an Land
 let driftMesh = null, driftPos = null, driftKind = null;
 const _drM = new THREE.Matrix4(), _drQ = new THREE.Quaternion();
 const _drP = new THREE.Vector3(), _drS = new THREE.Vector3(1,1,1);
 // Welche Sorte gehoert hierher? null heisst: hier braucht es keine (es gibt genug Bezug).
-//   'bubble' unter Wasser, 'dust' im Weltall, 'pollen' zu Fuss oder im Rover an Land.
+//   'bubble' unter Wasser, 'dust' im Weltall und auf Mond/Mars (zu Fuss oder im Rover).
 // Im FLUGZEUG ueber der Insel bewusst NICHT: dort gibt es Wellen, Inseln, Haeuser und Wolken als
 // Bezug, und Partikel vor der Nase saehen bei 500 km/h wie ein Fehler aus.
 function driftKindNow(){
   if(uwBlend > 0.35) return 'bubble';
   if(locale === 'space') return 'dust';
-  // Zu Fuss und im Rover: langsame Fortbewegung ueber gleichmaessigen Boden, genau der Fall aus
-  // der Meldung. Im Boot NICHT — dort ist das Wasser selbst bewegt, da fehlt kein Bezug.
-  if(eva && !eva.boat){
-    // Auf der Erde Pollen, auf Mond und Mars STAUB: dort ist Vakuum, in dem nichts schwebt, aber
-    // die Referenz braucht man erst recht — grauer Regolith ist noch gleichmaessiger als eine
-    // Wiese. Im Hangar (locale 'death') gar nichts: der Boden hat Struktur, Waende und Kanten.
-    if(locale === 'earth') return 'pollen';
-    if(GROUNDS[locale]) return 'dust';
-    return null;
-  }
+  // Zu Fuss und im Rover auf MOND und MARS: dort ist der Boden ein graues, gleichmaessiges
+  // Hoehenraster ohne Textur, da fehlt der Bezug wirklich. Physikalisch ist Staub im Vakuum
+  // fragwuerdig, aber ohne ihn laeuft man dort im Nichts.
+  //
+  // AUF DER ERDE NICHT MEHR: dort hat die Wiese jetzt eine eigene Struktur mit Grasbuescheln und
+  // Blueten (siehe makeGrassTexture), und die ist die bessere Referenz — man laeuft ueber eine
+  // Oberflaeche, statt durch schwebende Punkte. Die Pollen waren dort ein Notbehelf, und als
+  // Schneetreiben vor der Nase auch keine Zierde.
+  //
+  // Im Hangar ebenfalls nichts: dessen Boden hat Struktur, Waende und Kanten.
+  if(eva && !eva.boat && GROUNDS[locale]) return 'dust';
   return null;
 }
 function driftEnsure(kind){
@@ -2480,9 +2624,8 @@ function driftEnsure(kind){
   // Groesse und Farbe je Sorte. Blasen sind die groessten und hellsten (man soll sie sehen),
   // Staub im All ist fein und grau, Pollen dazwischen und warm.
   const g = kind === 'bubble' ? new THREE.SphereGeometry(0.16, 6, 4)
-          : kind === 'dust'   ? new THREE.SphereGeometry(0.10, 5, 3)
-                              : new THREE.SphereGeometry(0.12, 5, 3);
-  const c = kind === 'bubble' ? 0xdffbff : kind === 'dust' ? 0xb9c6d8 : 0xfff2c4;
+                              : new THREE.SphereGeometry(0.10, 5, 3);
+  const c = kind === 'bubble' ? 0xdffbff : 0xb9c6d8;
   // MeshBasic und nicht Lambert: diese Partikel sollen ueberall gleich hell sein, auch im All ohne
   // Streulicht und unten im dunklen Wasser. Mit Lambert waeren sie genau dort unsichtbar, wo sie
   // gebraucht werden. depthWrite aus, damit sie sich nicht gegenseitig ausstanzen.
@@ -2532,10 +2675,9 @@ function updateDrift(dt){
   // Eigenbewegung der Partikel (nicht die des Spielers — die entsteht automatisch daraus, dass
   // die Partikel im Weltraum stehen und die Kamera sich bewegt).
   const vy = kind === 'bubble' ? DRIFT_RISE : 0;
-  const vx = kind === 'pollen' ? DRIFT_POLLEN : 0;
   const L = DRIFT_BOX*2;
   for(let i=0;i<DRIFT_N;i++){
-    let x = driftPos[i*3] + vx*dt, y = driftPos[i*3+1] + vy*dt, z = driftPos[i*3+2];
+    let x = driftPos[i*3], y = driftPos[i*3+1] + vy*dt, z = driftPos[i*3+2];
     // TORUS: pro Achse um die ganze Kantenlaenge zurueckschieben, wenn der Wuerfel verlassen wird.
     // Nicht neu wuerfeln — das gaebe ein Flackern an den Raendern. So wandert dasselbe Partikel
     // auf der Gegenseite herein, was man nicht sieht, weil es 26 m entfernt passiert.
@@ -6820,11 +6962,13 @@ const MW_CONC    = 60;
 // Sterngroessen in Metern. Gerechnet fuer die Bandentfernung (0,97 mal STAR_R): bei 60 Grad FOV auf
 // einer 800-px-Ansicht entspricht 1 Pixel dort 1.524 m.
 //
-// Mein erster Ansatz (1.100 bis 3.100 m) war zu klein — nachgemessen 0,7 bis 2,0 px, der kleinste
-// Stern lag also UNTER einem Pixel und waere je nach Aufloesung geflimmert oder verschwunden.
-// 2.400 bis 7.800 m sind 1,6 bis 5,1 px: der kleinste sicher sichtbar, der groesste noch ein Punkt
-// und keine erkennbare Kugel.
-const MW_SIZE_MIN = 2400, MW_SIZE_MAX = 7800;
+// Zwei Anlaeufe gebraucht, und der zweite war eine Uebersteuerung: 1.100-3.100 m waren 0,7-2,0 px,
+// der kleinste Stern lag also im Subpixel und flimmerte. Daraufhin habe ich auf 2.400-7.800 m
+// erhoeht — das sind 1,6 bis 5,1 px, und 5 px sind keine Lichtquelle mehr, sondern eine erkennbare
+// Scheibe ("die Sterne wirken jetzt insgesamt wie Flecken"). Richtig war, nur die UNTERgrenze zu
+// heben und die obere zu lassen.
+// 1.500-3.800 m sind 1,0 bis 2,5 px: sicher sichtbar und trotzdem ein Punkt.
+const MW_SIZE_MIN = 1500, MW_SIZE_MAX = 3800;
 // Radius der weichen Flecken. 150 km klingt gewaltig, ist auf dieser Kuppel aber richtig: der
 // Bandstreifen ist 7.314 x 472 km gross, und mit den ersten 34 km bedeckten 26 Flecken nur 2 %
 // davon — einzelne Woelkchen statt Schleier. Mehr Flecken helfen dabei kaum (200 kaemen auf 13 %),
@@ -6869,7 +7013,12 @@ function buildMilkyWay(){
   // Farbe pro Instanz ueber instanceColor — echte Sterne sind nicht weiss, sondern von blaeulich bis
   // orange, und genau diese Streuung macht den Unterschied zwischen Punkten und Sternhimmel.
   const sg = new THREE.SphereGeometry(1, 5, 3);      // Einheitskugel, pro Instanz skaliert
-  const sm = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false });
+  // ADDITIVES Blending, und das ist der Unterschied zwischen "Fleck" und "Stern": normales
+  // Blending MISCHT mit dem Hintergrund, ein halbdurchsichtiger Punkt wird dabei grau. Additiv
+  // wird das Licht AUFADDIERT — der Punkt leuchtet, und wo im Band mehrere uebereinander liegen,
+  // summieren sie sich zu einem hellen Schimmer. Genau das macht ein dichtes Sternfeld.
+  const sm = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false,
+                                           blending:THREE.AdditiveBlending });
   mwStars = new THREE.InstancedMesh(sg, sm, MW_STARS);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
   const p = new THREE.Vector3(), col = new THREE.Color();
@@ -6893,8 +7042,11 @@ function buildMilkyWay(){
   // ihn bleibt das Band eine Ansammlung von Pixeln statt einer leuchtenden Wolke. Sie liegen NUR im
   // Bandkern (halbe Breite) und sind sehr schwach.
   const gg = new THREE.SphereGeometry(1, 6, 4);
-  const gm = new THREE.MeshBasicMaterial({ color:0x9fb4e8, transparent:true, opacity:0,
-                                           depthWrite:false });
+  // Auch additiv (siehe die Sterne) und in einem waermeren Weiss: der Schleier ist das Licht von
+  // Milliarden unaufloesbarer Sterne, nicht eine blaue Wolke. Mit 9fb4e8 wirkte er wie ein
+  // Grafikfehler, weil er den Himmel BLAU einfaerbte statt ihn aufzuhellen.
+  const gm = new THREE.MeshBasicMaterial({ color:0xd8e2f5, transparent:true, opacity:0,
+                                           depthWrite:false, blending:THREE.AdditiveBlending });
   mwGlow = new THREE.InstancedMesh(gg, gm, MW_GLOW);
   for(let i=0;i<MW_GLOW;i++){
     // +1000 als Index-Offset: eigene Zufallsreihe, damit die Flecken nicht auf den Sternen sitzen.
@@ -6918,10 +7070,12 @@ function buildMilkyWay(){
 // Milchstrasse ist ein zarter Schimmer, kein zweiter Sternhimmel. Die Einzelsterne treten deutlich
 // hervor, der Schleier bleibt angedeutet.
 //
-// 0,10 fuer den Schleier und nicht 0,16: seit die Flecken 150 km gross sind, bedecken sie 50 % des
-// Bandes und ueberlagern sich dabei. Gerechnet ergibt 0,10 eine summierte Helligkeit von 0,05 im
-// Band — sichtbar als Schimmer, ohne die Sterne zu ueberstrahlen.
-const MW_STAR_OP = 0.85, MW_GLOW_OP = 0.10;
+// Der Schleier von 0,10 auf 0,22, damit das Band KLAR zu erkennen ist (gewuenscht: "die
+// Milchstraße etwas kräftiger"). Das geht jetzt, weil beide Materialien additiv sind: additives
+// Licht kann den Himmel nicht truebe faerben, es hellt ihn nur auf. Bei 50 % Bandbedeckung ergibt
+// 0,22 eine summierte Aufhellung von 0,11 — deutlich sichtbar, und die Sterne liegen mit 0,95
+// darueber.
+const MW_STAR_OP = 0.95, MW_GLOW_OP = 0.22;
 function updateMilkyWay(f){
   if(!mwGroup) return;
   mwGroup.visible = f > 0.02;
@@ -8165,19 +8319,25 @@ const UW_DIVE_BAND = 3;
 // Kamera, wenn das BOOT taucht, nicht erst wenn die Linse nass wird.
 let uwCamBlend = 0;
 function updateUwCamBlend(dt){
-  // Wie tief liegt das Fahrzeug? Gemessen gegen den MITTLEREN Wasserstand (y = 0) und NICHT gegen
-  // die momentane Welle: seaYAt schwankt um +-2,4 m, damit schwankte die gemessene Tiefe eines
-  // ruhig auf 2 m fahrenden Bootes zwischen -0,4 und 4,8 m — und der Blendwert mit ihr. Der
-  // Meeresspiegel liegt hier bei 0, die Wellen kraeuseln sich darum; "wie tief ist mein Boot" ist
-  // eine Frage an den Spiegel, nicht an den Wellenberg, der gerade darueber wegzieht.
+  // NUR DAS U-BOOT taucht. Das klingt selbstverstaendlich, war aber der Fehler: vorher wurde die
+  // Tiefe aus der Hoehe abgeleitet (-state.pos.y), und damit galt jedes Boot als getaucht — denn
+  // y = 0 ist die WASSERLINIE, und ein Rumpf liegt konstruktiv darunter. stepBoat setzt
+  // pos.y = seaSurfaceY - BOAT_DRAFT, das Feuerwehrboot faehrt also dauerhaft 1,1 m unter Null und
+  // schwankt mit der Welle zwischen -3,4 und +1,4 m. clamp(-y/3) lieferte dort 0,37 bis 1,0, und
+  // weil uwBlend das Maximum nimmt, lag ueber dem offenen Meer Unterwassernebel — im Wellentakt
+  // schwankend. Gemeldet als "die sicht auf der erde hat jetzt eine abhaengigkeit zur welle".
   //
-  // UW_DIVE_BAND (3 m) ist der Uebergang: ein U-Boot, das eintaucht, hat nach 3 m Tiefe volle
-  // Unterwassersicht. Das ist mehr als der Wellenhub nach oben (2,4 m), also kann eine einzelne
-  // Welle den Wert nicht mehr durchreissen.
+  // Also nicht raten, sondern fragen, wer tauchen KANN. Alles andere schwimmt, wie tief sein Rumpf
+  // auch sitzt. Gemessen wird dann gegen die WASSERLINIE an dieser Stelle (seaYAt) und nicht gegen
+  // y = 0: das U-Boot liegt aufgetaucht selbst auf der Welle, mit y = 0 als Bezug haette es im
+  // Wellental schon als getaucht gegolten.
+  //
+  // UW_DIVE_BAND (3 m) ist der Uebergang zur vollen Unterwassersicht. Er ist groesser als der
+  // Wellenhub, also kann eine einzelne Welle den Wert nicht durchreissen.
   let ziel = 0;
-  if(locale === 'earth'){
-    const ref = eva ? eva.group.position : state.pos;
-    ziel = Math.min(1, Math.max(0, -ref.y / UW_DIVE_BAND));
+  if(locale === 'earth' && isSub() && !eva){
+    const tiefe = seaYAt(state.pos.x, state.pos.z) - state.pos.y;
+    ziel = Math.min(1, Math.max(0, tiefe / UW_DIVE_BAND));
   }
   uwCamBlend += (ziel - uwCamBlend) * Math.min(1, UW_RATE*dt);
 }
@@ -8231,11 +8391,20 @@ function updateUnderwater(dt){
   // einem Wellenberg, oder zu Fuss in der Brandung. Beides soll Unterwassersicht geben.
   const ziel = Math.max(kamZiel, uwCamBlend);
   uwBlend += (ziel - uwBlend) * Math.min(1, UW_RATE*dt);
-  if(uwBlend < 0.002){ uwBlend = 0; return; }   // an Luft: die Werte von updateSpaceBlend gelten
+  if(uwBlend < 0.002){
+    uwBlend = 0;
+    // An Luft gelten die Werte von updateSpaceBlend — nur das Unterwasser-Ambient muss hier aus,
+    // denn updateSpaceBlend kennt es nicht und wuerde es stehen lassen.
+    uwAmbient.intensity = 0;
+    return;
+  }
   // Tiefenanteil: 0 an der Oberflaeche, 1 auf SEA_DEPTH. Gerechnet wird mit der TIEFEREN von
   // Kamera und Fahrzeug — bei getauchtem Boot haengt die Kamera bis zu 5 m hoeher, und mit ihrem
   // Wert allein waere die Farbe eine Spur zu hell fuer die Tiefe, in der man wirklich faehrt.
-  const tiefRef = Math.min(camera.position.y, (locale === 'earth' && !eva) ? state.pos.y : camera.position.y);
+  // Nur beim U-Boot zaehlt die Fahrzeugtiefe mit (dieselbe Begruendung wie in updateUwCamBlend:
+  // andere Boote liegen konstruktiv unter y = 0, ohne getaucht zu sein).
+  const tiefRef = (locale === 'earth' && isSub() && !eva)
+                ? Math.min(camera.position.y, state.pos.y) : camera.position.y;
   const tief = Math.min(1, Math.max(0, -tiefRef / SEA_DEPTH));
   _uwC.copy(UW_SURF).lerp(UW_DEEP, tief);
   const b = uwBlend;
@@ -8271,6 +8440,10 @@ function updateUnderwater(dt){
   const dunkel = 1 - 0.3*tief;
   hemiLight.intensity = hemiLight.intensity + (1.60*dunkel - hemiLight.intensity)*b;
   sun.intensity       = sun.intensity       + (0.55*dunkel - sun.intensity      )*b;
+  // Das richtungslose Licht (siehe uwAmbient): es macht aus der schwarzen Bootssilhouette einen
+  // Koerper und hebt den Meeresboden vom Wasser ab. 0,75 ist kraeftig, aber unter Wasser gehoert
+  // das so — dort gibt es kaum Schatten, weil das Licht an jedem Wasserteilchen gestreut wird.
+  uwAmbient.intensity = uwAmbient.intensity + (0.75*dunkel - uwAmbient.intensity)*b;
 }
 
 // ---------- Weltraum-Anzeige über dem Flieger ----------
@@ -10089,7 +10262,23 @@ function stepSub(dt, inp){
   //   unten der Meeresboden (seabedY) plus Bodenfreiheit.
   // Dazwischen traegt die Fahrt es entlang der Nasenlage.
   const surf = seaSurfaceY(0, 0, dt) + SUB_SURF_Y;
-  const grund = seabedY(state.pos.x, state.pos.z) + SUB_FLOOR_CLR;
+  // BODENGRENZE fuer die TIEFSTE STELLE DES BOOTES, nicht fuer den Schwerpunkt. Der Rumpf ist 95 m
+  // lang, bei Nicklage haengt ein Ende also weit unter der Mitte: 12,2 m bei 15 Grad, 23,5 m bei
+  // den 30 Grad, die SUB_PMAX erlaubt. Mit 12 m Bodenfreiheit unter der MITTE steckte die Nase ab
+  // 15 Grad im Grund — gemeldet als "ich kann in den boden eintauchen".
+  //
+  // Gemessen wird an drei Stellen laengs (Bug, Mitte, Heck) und die STRENGSTE Grenze gewinnt. Der
+  // Grund muss dort abgefragt werden, wo das Ende wirklich steht: 47 m weiter vorne kann der Boden
+  // schon angestiegen sein, und genau in einen solchen Hang faehrt man beim Abtauchen hinein.
+  const fSub = new THREE.Vector3(0,0,-1).applyQuaternion(state.quat);
+  let grund = -1e9;
+  for(const d of [-SUB_LOOK, 0, SUB_LOOK]){
+    const gx = state.pos.x + fSub.x*d, gz = state.pos.z + fSub.z*d;
+    // Wie tief haengt dieses Ende unter der Bootsmitte? fSub.y ist der Sinus der Nicklage.
+    const tiefer = -fSub.y * d;      // bei Nase unten (fSub.y<0) und d>0 (Bug) positiv
+    const g = seabedY(gx, gz) + SUB_FLOOR_CLR + Math.max(0, tiefer);
+    if(g > grund) grund = g;
+  }
   // Positiver pitch heisst Nase nach OBEN (Nase auf -Z), also steigt es dann — daher +sin.
   const vy = fwdSpeed * Math.sin(pitch) * SUB_DIVE_EFF;
   state.pos.y += vy * dt;
