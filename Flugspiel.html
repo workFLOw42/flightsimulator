@@ -1746,15 +1746,38 @@ function updateIslands() {
   const pcx = Math.round(F.x / CELL);
   const pcz = Math.round(F.z / CELL);
   const needed = new Set();
-  for (let dz = -VIEW_CELLS; dz <= VIEW_CELLS; dz++) {
-    for (let dx = -VIEW_CELLS; dx <= VIEW_CELLS; dx++) {
-      const cx = pcx + dx, cz = pcz + dz;
-      const key = cx + ',' + cz;
-      needed.add(key);
-      if (!islandCells.has(key)) {
-        const isl = buildIsland(cx, cz);
-        if (isl) scene.add(isl);
-        islandCells.set(key, isl); // null merken = keine Insel, nicht neu würfeln
+  // EINE Zelle pro Frame, nicht alle fehlenden. Das war die Ursache fuer "in der luft mit dem
+  // mustang bei 500m hoehe zittert es komplett": beim Weiterfliegen um eine Zellbreite (850 m)
+  // kommen 2*VIEW_CELLS+1 = 7 neue Zellen hinzu, und die wurden zusammen in einem Frame gebaut.
+  // Beim Alpha Jet (900 km/h) passiert das alle 3,4 s, beim Mustang alle 4,4 s — jedes Mal ein Ruck.
+  //
+  // Eine Zelle ist teuer: Sandflaeche, Wiese mit eigener UV-Rechnung, Landebahn mit Markierungen,
+  // 8 bis 18 Haeuser, Palmen, Huegel, Hafen, Feuerwehrboot, U-Boot — und auf dem Vorfeld geparkte
+  // Flugzeuge, jedes ein Klon eines vollen GLB-Modells (Transall 79.302 Dreiecke, Canadair 55.006).
+  //
+  // Verteilt kostet es nichts: sieben Zellen brauchen 0,12 s, und die aeusserste liegt 2.550 m
+  // entfernt — selbst der Alpha Jet braucht dafuer 10 s. Dieselbe Technik nutzen der Meeresboden
+  // (SEABED_ROWS_PER_FRAME) und die Unterwasserzellen schon.
+  //
+  // WICHTIG ist die Reihenfolge: von innen nach aussen, damit die naechstgelegene Zelle zuerst
+  // kommt. Eine Schleife von -VIEW_CELLS nach +VIEW_CELLS wuerde bei Rueckwaertsflug die ferne
+  // Ecke zuerst bauen, waehrend vor der Nase noch nichts steht.
+  let gebaut = 0;
+  for(let ring = 0; ring <= VIEW_CELLS; ring++){
+    for (let dz = -ring; dz <= ring; dz++) {
+      for (let dx = -ring; dx <= ring; dx++) {
+        // Nur den RAND des Rings abarbeiten: das Innere kam in einer frueheren Runde dran.
+        if(ring > 0 && Math.abs(dx) !== ring && Math.abs(dz) !== ring) continue;
+        const cx = pcx + dx, cz = pcz + dz;
+        const key = cx + ',' + cz;
+        needed.add(key);
+        if (!islandCells.has(key)) {
+          if(gebaut >= 1) continue;      // erst im naechsten Frame weiter (siehe oben)
+          const isl = buildIsland(cx, cz);
+          if (isl) scene.add(isl);
+          islandCells.set(key, isl); // null merken = keine Insel, nicht neu würfeln
+          gebaut++;
+        }
       }
     }
   }
@@ -1768,14 +1791,17 @@ function updateIslands() {
   updateCarriers(pcx, pcz, needed);
 }
 // Alle aktuell gebauten Inseln neu erzeugen (z.B. nachdem das Hafen-GLB spät geladen wurde).
+// Alle gebauten Inseln VERWERFEN, damit updateIslands sie neu anlegt. Vorher baute diese Funktion
+// sie gleich selbst neu — alle 49 Zellen in einem Frame, und das bei 13 Aufrufern, darunter jedes
+// Ein- und Aussteigen. Jeder Aufruf war also genau der Ruckler, den updateIslands mit seinem
+// Haeppchen-Aufbau gerade losgeworden ist.
+//
+// Nur wegwerfen ist billig, und der Wiederaufbau verteilt sich dann von selbst ueber 0,8 s — von
+// innen nach aussen, die eigene Zelle also im naechsten Frame. Nebeneffekt: die Baulogik steht
+// jetzt nur noch an EINER Stelle.
 function refreshIslands(){
-  for(const [key, isl] of islandCells){
-    if(isl) scene.remove(isl);
-    const [cx,cz] = key.split(',').map(Number);
-    const ni = buildIsland(cx, cz);
-    if(ni) scene.add(ni);
-    islandCells.set(key, ni);
-  }
+  for(const [, isl] of islandCells) if(isl) scene.remove(isl);
+  islandCells.clear();
 }
 
 // ---------- Flugzeugträger (schwimmende Landebahn) ----------
@@ -2449,12 +2475,12 @@ function makeSimpleWreck(laenge, rnd, rnd2){
     mast.rotation.x = kipp;
     g.add(mast);
   }
-  // BRUCHKANTE: ein Stueck Rumpf, das abseits liegt. Erst damit sieht es nach Untergang aus und
-  // nicht nach einem geparkten Schiff — und es gibt dem Fund eine zweite Silhouette.
-  const bruch = new THREE.Mesh(new THREE.CylinderGeometry(br*0.44, br*0.3, laenge*0.18, 7), wreckHullMat);
-  bruch.rotation.set(Math.PI/2 + rnd2*0.5, rnd*Math.PI, rnd2*0.6);
-  bruch.position.set(br*(0.8 + rnd2*1.2), br*0.2, -laenge*(0.75 + rnd*0.25));
-  g.add(bruch);
+  // Hier lag einmal ein abgebrochenes Rumpfstueck abseits, als Hinweis auf den Untergang. Es ist
+  // ERSATZLOS ENTFALLEN, weil es rechnerisch nicht funktionieren konnte: es sass 0,25 bis 0,5
+  // Rumpflaengen VOR dem Bug (bei 150 m Laenge also 37 bis 75 m entfernt), und weil makeWreck die
+  // ganze Gruppe um 34 bis 80 Grad kippt, drehte es sich um die Rumpfachse mit und schwebte weit
+  // ueber dem Grund. Auf dem Screenshot war es als Zylinder in der Ferne zu sehen.
+  // Den Untergang erzaehlen der gekippte Rumpf und der abgebrochene, schiefe Mast ohnehin.
   return g;
 }
 function wreckInfo(cx, cz){
@@ -2468,7 +2494,12 @@ function wreckInfo(cx, cz){
   // GLB-Grossfund oder einfaches Wrack? Nur jedes fuenfte ist das volle Schiffsmodell (12.263
   // Dreiecke), der Rest ein Nachbau aus Grundformen (rund 400). So bleibt der eindrucksvolle
   // Frachter ein Fund, waehrend die Dichte insgesamt hoch genug ist, um ueberhaupt Wracks zu sehen.
-  const gross = cellRnd(cx,cz,WRECK_SALT+8) < 0.2;
+  // Jedes zweite Wrack ist der echte Frachter. 0,2 waren zu wenig: nachgerechnet traf ein Grossfund
+  // nur 5,0 % aller Zellen, also im Mittel alle 3.820 m — bei 50 km/h alle 4,5 Minuten, und dann
+  // noch mit der Chance, nah genug vorbeizufahren. Gemeldet als "immer noch kein richtiges wrack".
+  // Mit 0,5 liegt eines alle 2,4 km. Tragbar ist das, weil ein GLB-Wrack die Zelle nicht mehr
+  // blockiert und ohnehin nur eine Zelle pro Frame gebaut wird.
+  const gross = cellRnd(cx,cz,WRECK_SALT+8) < 0.5;
   // Grossfunde sind IMMER der Liberty-Frachter, nie der Grossegler. Der Segler ('sail' zeigt auf
   // empty_glb) hat rund 60 m hohe Masten — sein Bounding reicht in Y von -255 bis +127. Auf die
   // Seite gekippt (34 bis 80 Grad) ragen die Spitzen 60 m weit zur Seite und fast bis zur
@@ -2525,7 +2556,16 @@ function makeWreck(info){
   g.add(m);
   const h = shipHalf[info.key];
   const hw = h ? h.hw : 12;
-  g.position.set(info.wx, info.y + Math.abs(Math.sin(info.roll))*hw, info.wz);
+  // MIT SICHERHEITSZUSCHLAG heben. |sin(roll)| mal halbe Breite allein reicht nicht: der
+  // Modellursprung sitzt auf der WASSERLINIE, also rund 8 m ueber dem Kiel, und ein auf die
+  // Bordwand gekipptes Schiff liegt auf einer Diagonale aus Breite und Seitenhoehe — nicht auf der
+  // halben Breite. Bei starker Kraengung ragte der Aufbau deshalb in den Grund.
+  // shipHalf.top ist die vermessene Aufbauhoehe ueber der Wasserlinie — gekippt ragt genau die
+  // zur Seite und muss ausgeglichen werden. Mit sin(roll) gewichtet, weil sie nur bei Kraengung wirkt.
+  // Ein Wrack, das etwas zu hoch liegt, sieht aus wie eines auf einer Sandbank; eines im Boden
+  // sieht kaputt aus. Und weil ein Wrack nichts traegt, hat die Hoehe keine Nebenwirkung.
+  const hoch = Math.abs(Math.sin(info.roll)) * (hw + (h && h.top ? h.top*0.5 : hw));
+  g.position.set(info.wx, info.y + hoch, info.wz);
   g.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
   return g;
 }
