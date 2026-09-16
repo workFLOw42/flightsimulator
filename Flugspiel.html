@@ -89,7 +89,7 @@
     <div class="htitle">🎯 Was man machen kann</div>
     <div class="hrow"><span>🔥 Canadair</span><b>tief übers Wasser = Tank füllen, über dem Feuer B. Sie landet <b>überall</b>: Wasser, Landebahn, Trägerdeck und <b>Wiese</b> — und rollt dort auch</b></div>
     <div class="hrow"><span>🚤 Feuerwehrboot</span><b>fährt auf dem Meer, liegt im Wasser und nickt mit den Wellen · B = Wasserstrahl nach vorn (bis 160 m), löscht Feuer und brennende Wracks · braucht keinen Tank · Land und Strand sind eine Wand, schräg fährt man daran entlang</b></div>
-    <div class="hrow"><span>🛥️ U-Boot</span><b>liegt am <b>Strand jeder Insel</b> neben dem Feuerwehrboot (und steht als letztes in der Modellauswahl). <b>Y</b> = einsteigen. Pfeil <b>↑ taucht ab</b>, <b>↓ wieder auf</b> — es braucht dazu <b>Fahrt</b>, wie ein Flugzeug. Unten liegen <b>Schiffswracks</b>, Seegras, Korallen und <b>Fischschwärme</b>; bis rund <b>200 m</b> tief. Es hält die Tiefe von allein und setzt sich nicht auf den Grund. <b>Aussteigen</b>: auftauchen und <b>Y</b> — du sitzt dann im <b>Schlauchboot</b> und kannst herumfahren. Wieder <b>hin</b>? Einfach mit dem Schlauchboot ans U-Boot fahren und es <b>berühren</b></b></div>
+    <div class="hrow"><span>🛥️ U-Boot</span><b>liegt am <b>Strand jeder Insel</b> neben dem Feuerwehrboot (und steht als letztes in der Modellauswahl). <b>Y</b> = einsteigen. Pfeil <b>↑ taucht ab</b>, <b>↓ wieder auf</b> — es braucht dazu <b>Fahrt</b>, wie ein Flugzeug. Unten liegen <b>Schiffswracks</b>, Seegras, Korallen und <b>Fischschwärme</b>; bis rund <b>100 m</b> tief. Es hält die Tiefe von allein und setzt sich nicht auf den Grund. <b>Aussteigen</b>: auftauchen und <b>Y</b> — du sitzt dann im <b>Schlauchboot</b> und kannst herumfahren. Wieder <b>hin</b>? Einfach mit dem Schlauchboot ans U-Boot fahren und es <b>berühren</b></b></div>
     <div class="hrow"><span>📦 Transall</span><b>auf der <b>Landebahn</b> oder auf dem <b>Trägerdeck</b> laden (📦 zeigt es an), mit <b>B</b> abwerfen — wo man mag</b></div>
     <div class="hrow"><span>🧍 Airbus</span><b>auf Bahn landen &amp; stehen = Leute steigen um · dann weiterfliegen und wieder landen</b></div>
     <div class="hrow"><span>🚀 X-Wing</span><b>10 % senkrecht landen · 20 % abheben &amp; schweben · ab 30 % waagerecht vorwärts · 0 % = Antrieb aus</b></div>
@@ -342,7 +342,16 @@ function updateSea(dt){
 // Er RASTET deshalb auf ein festes Weltgitter ein (SEABED_STEP) und wird nur neu berechnet, wenn
 // der Spieler eine Rasterzelle weiterfaehrt — also etwa alle 125 m statt 60-mal pro Sekunde.
 // Ohne das kostete seabedY (es sucht pro Punkt die naechste Insel) mehr als das ganze uebrige Bild.
-const SEA_DEPTH   = 200;    // Tiefe auf offener See (m). Gewuenscht: "Mittel, ~200 m".
+// Tiefe auf offener See (m). Von 200 auf 100 gesenkt — gewuenscht als "vielleicht reichen 100 m
+// wassertiefe". Das ist mehr als eine Zahl, es aendert das Spielgefuehl an drei Stellen:
+//   · Der Weg nach unten ist halb so lang. Nachgemessen dauert das Abtauchen auf 100 m 19,3 s
+//     und das Auftauchen 21,4 s; vorher ging es bis zum Grund gut doppelt so weit.
+//   · Es bleibt unten HELLER. Lichtdaempfung und Sichtweite laufen beide ueber -y/SEA_DEPTH
+//     (siehe updateUnderwater) — der Grund liegt jetzt bei Anteil 1,0 auf 100 m statt auf 200 m,
+//     also ist jede Tiefe darunter heller als vorher.
+//   · Der Meeresgrund ist ueberhaupt zu sehen. Bei 16 m Sichtweite auf 200 m Tiefe kam er aus
+//     dem Schwarzen; auf 100 m liegt er im Streulicht.
+const SEA_DEPTH   = 100;
 const SEABED_SIZE = 6000;   // wie das Meeresgitter (SEA_SIZE) — Boden und Wasser enden zusammen
 const SEABED_SEG  = 48;     // halb so fein wie das Meer: der Boden hat keine Wellen, nur Relief
 const SEABED_STEP = SEABED_SIZE / SEABED_SEG;   // 125 m Rasterschritt (siehe oben)
@@ -382,7 +391,13 @@ function seabedY(x, z, islands){
   const sm = f*f*(3 - 2*f);
   // Relief. Zwei ueberlagerte lange Wellen geben Sandbaenke und Huegel; sie greifen mit sm an,
   // damit der Schelf am Strand glatt bleibt und das Relief erst draussen einsetzt.
-  const dune = Math.sin(x*0.0035)*Math.cos(z*0.0041)*15 + Math.sin((x+z)*0.0017)*24;
+  // Die Amplituden 15 und 24 waren fuer 200 m Grundtiefe gewaehlt und ergeben +-39 m. Bei 100 m
+  // waere das die HAELFTE der Gesamttiefe: der Grund haette zwischen -61 und -139 m geschwankt
+  // (nachgerechnet), das Relief haette die Absenkung stellenweise also wieder aufgehoben.
+  // Mit SEA_DEPTH/200 mitskaliert bleiben +-19,5 m, der Grund liegt zwischen -80 und -120 m —
+  // rund 100 m, und die Sandbaenke behalten ihr Verhaeltnis zur Tiefe.
+  const relief = SEA_DEPTH / 200;
+  const dune = (Math.sin(x*0.0035)*Math.cos(z*0.0041)*15 + Math.sin((x+z)*0.0017)*24) * relief;
   return SEABED_SHORE_Y + (-SEA_DEPTH - SEABED_SHORE_Y)*sm + dune*sm;
 }
 const seabedGeo = new THREE.PlaneGeometry(SEABED_SIZE, SEABED_SIZE, SEABED_SEG, SEABED_SEG);
@@ -2280,12 +2295,17 @@ function placeFishSchool(f, fx, fz){
   }
   return false;
 }
+// Schwaerme abraeumen. Herausgezogen, weil earthWorldVisible(false) sie SOFORT loswerden muss:
+// updateFish laeuft im Loop erst nach dem Ortswechsel, und in dem einen Frame dazwischen stehen
+// die Fische schon im Weltall. Nachgemessen hingen nach enterSpace() alle 5 InstancedMeshes noch
+// in der Szene — dasselbe Muster wie clearSeaShips und clearOrcas, die genau deshalb dort stehen.
+function clearFish(){
+  for(const f of fishSchools) if(f.mesh) scene.remove(f.mesh);
+  fishSchools.length = 0;
+}
 function updateFish(dt){
   if(locale !== 'earth'){
-    if(fishSchools.length){
-      for(const f of fishSchools) if(f.mesh) scene.remove(f.mesh);
-      fishSchools.length = 0;
-    }
+    if(fishSchools.length) clearFish();
     return;
   }
   const F = worldFocus();
@@ -7214,6 +7234,20 @@ function surfaceY(x, z){
 // Erdwelt beim Verlassen abräumen (und beim Zurückkommen wieder aufbauen lassen).
 function earthWorldVisible(on){
   ground.visible = on;
+  // Der MEERESBODEN gehoert dazu, und dass er hier fehlte, war ein echter Fehler: gemeldet als
+  // "warum sehe ich die unterwasserwelt aus dem hangar im weltraum?". Nachgemessen stand
+  // seabedMesh.visible nach enterSpace() UND nach enterHangar() weiter auf true.
+  //
+  // Sichtbar wurde es, weil der Boden dem Spieler folgt (updateSeabed rastert ihn auf dessen
+  // Position) und 6 km gross ist. Im Weltall haengt er also als brauner Teppich um den Flieger,
+  // und im Hangar liegt er quer durch die Halle — der Hangarboden steht bei hangarFloorY, der
+  // Meeresgrund bei -80 bis -120 m, aber ein 6-km-Gitter sieht man auch von der Seite.
+  //
+  // Warum updateSeabed allein es nicht rettet: der Aufruf im Loop haengt zwar an
+  // locale === 'earth', das hoert aber nur auf zu RECHNEN. Ein Mesh, das nicht mehr
+  // aktualisiert wird, bleibt in der Szene stehen. Genau derselbe Unterschied wie bei
+  // ground selbst, das deshalb schon immer in dieser Zeile stand.
+  seabedMesh.visible = on;
   for(const cl of clouds) cl.visible = on;
   if(!on){
     for(const [,isl] of islandCells) if(isl) scene.remove(isl);
@@ -7226,6 +7260,7 @@ function earthWorldVisible(on){
     clearSeaShips();                     // Handelsschiffe gibt es nur auf der Erde
     clearOrcas();                        // die Killerwale ebenso (updateOrcas raeumt sonst erst im naechsten Frame)
     clearUwCells();                      // und die Unterwasserwelt (Wracks, Seegras, Korallen)
+    clearFish();                         // und die Fischschwaerme (siehe dort: sonst einen Frame zu spaet)
   } else {
     updateIslands();                     // Zellen um die aktuelle Position neu aufbauen
   }
@@ -7732,26 +7767,105 @@ function updateSpaceBlend(dt){
 // laeuft in UW_RATE pro Sekunde nach — bei 2,5 ist der Wechsel in 0,4 s durch, also sichtbar als
 // Uebergang, aber ohne Wartezeit.
 const UW_FOG_NEAR = 3;      // m: direkt vor der Linse ist es noch klar
-const UW_FOG_FAR  = 42;     // m Sichtweite an der Oberflaeche (Meerwasser: 20-40 m)
-const UW_FOG_DEEP = 16;     // m Sichtweite ganz unten — es wird eng und dunkel
-const UW_SURF = new THREE.Color(0x2c7d86);   // Wasserfarbe knapp unter der Oberflaeche
-const UW_DEEP = new THREE.Color(0x02141c);   // Wasserfarbe auf SEA_DEPTH
+// Sichtweiten deutlich hochgesetzt (42 -> 75 an der Oberflaeche, 16 -> 38 unten). Gewuenscht war
+// "etwas mehr licht", und die Sichtweite gehoert dazu: 42 m sind fuer ein 95 m langes U-Boot
+// weniger als eine halbe Bootslaenge, man sah nie mehr als einen Ausschnitt des eigenen Rumpfes.
+// Mit 75 m ist der ganze Rumpf im Bild und der Grund taucht als Flaeche auf, nicht als Kante,
+// die aus dem Nichts kommt. Klares tropisches Wasser gibt real 30 bis 50 m Sicht — 75 m sind
+// grosszuegig, aber das ist eine Kinderwelt mit Korallen und Fischschwaermen, und die soll man
+// sehen. Der Nebel BLEIBT deutlich (75 m gegen 3.000 m an Luft), es ist also weiter Unterwasser.
+const UW_FOG_FAR  = 75;     // m Sichtweite an der Oberflaeche
+const UW_FOG_DEEP = 38;     // m Sichtweite am Grund — enger, aber nicht mehr blind
+// Farben heller und klarer: das alte UW_DEEP (0x02141c) war praktisch schwarz, und mit SEA_DEPTH
+// auf 100 m erreicht man diese Tiefe jetzt auch wirklich — vorher lag sie unter dem, was man beim
+// Spielen sah. Das neue Tief ist ein tiefes Blaugruen: dunkel genug, dass Tiefe sich nach Tiefe
+// anfuehlt, hell genug, dass man Wrack, Grund und Fische darin erkennt.
+const UW_SURF = new THREE.Color(0x3f9fa8);   // Wasserfarbe knapp unter der Oberflaeche (heller)
+const UW_DEEP = new THREE.Color(0x0d3742);   // Wasserfarbe am Grund (war fast schwarz)
 const UW_RATE = 2.5;
+// Wie nah die Kamera unter Wasser herangeht (siehe updateCamera). 0,42 holt sie beim U-Boot von
+// 62,8 m auf 26,2 m hinter der Bootsmitte — innerhalb der 30 bis 42 m Sichtweite, also ist das
+// eigene Fahrzeug zu sehen. Sie gilt fuer JEDES Fahrzeug unter Wasser, nicht nur fuer das U-Boot:
+// wer mit dem Schlauchboot in einen Wellenberg gerät, bekommt denselben Blick.
+const UW_CAM_PULL = 0.42;
+// Ueber welche Fahrzeugtiefe der Unterwasser-Eindruck einblendet. 3 m ist bewusst MEHR als der
+// Wellenhub nach oben (gemessen 2,4 m): so kann kein einzelner Wellenberg den Wert durchreissen.
+const UW_DIVE_BAND = 3;
+// Eigener Blend-Wert fuer den Kamera-Zug, und der Grund dafuer ist wichtig: er darf NICHT uwBlend
+// sein. uwBlend kommt aus cameraDepth(), also aus der Kamerahoehe — wuerde der Zug daran
+// haengen, haette man einen Kreis: Zug senkt die Kamera, Kamera ist unter Wasser, Zug wird
+// staerker; taucht die Kamera aus, faellt der Zug weg, sie steigt weiter, im naechsten Frame
+// wieder umgekehrt. Genau die Sorte Schwingung, die als Zittern im Bild ankommt.
+//
+// uwCamBlend haengt deshalb am FAHRZEUG: dessen Tiefe rechnet niemand aus der Kamera zurueck,
+// die Kette ist also gerichtet. Und inhaltlich ist es auch das Richtige — nah heran soll die
+// Kamera, wenn das BOOT taucht, nicht erst wenn die Linse nass wird.
+let uwCamBlend = 0;
+function updateUwCamBlend(dt){
+  // Wie tief liegt das Fahrzeug? Gemessen gegen den MITTLEREN Wasserstand (y = 0) und NICHT gegen
+  // die momentane Welle: seaYAt schwankt um +-2,4 m, damit schwankte die gemessene Tiefe eines
+  // ruhig auf 2 m fahrenden Bootes zwischen -0,4 und 4,8 m — und der Blendwert mit ihr. Der
+  // Meeresspiegel liegt hier bei 0, die Wellen kraeuseln sich darum; "wie tief ist mein Boot" ist
+  // eine Frage an den Spiegel, nicht an den Wellenberg, der gerade darueber wegzieht.
+  //
+  // UW_DIVE_BAND (3 m) ist der Uebergang: ein U-Boot, das eintaucht, hat nach 3 m Tiefe volle
+  // Unterwassersicht. Das ist mehr als der Wellenhub nach oben (2,4 m), also kann eine einzelne
+  // Welle den Wert nicht mehr durchreissen.
+  let ziel = 0;
+  if(locale === 'earth'){
+    const ref = eva ? eva.group.position : state.pos;
+    ziel = Math.min(1, Math.max(0, -ref.y / UW_DIVE_BAND));
+  }
+  uwCamBlend += (ziel - uwCamBlend) * Math.min(1, UW_RATE*dt);
+}
 let uwBlend = 0;            // 0 = an Luft, 1 = unter Wasser
 const _uwC = new THREE.Color();
-// Ist die KAMERA unter Wasser? Nicht das Fahrzeug: gefragt ist, was man SIEHT. Beim getauchten
+// Wie tief ist die KAMERA unter der Wasserflaeche? Positiv = drunter, negativ = drueber.
+// Gefragt ist die Kamera und nicht das Fahrzeug: entscheidend ist, was man SIEHT. Beim getauchten
 // U-Boot haengt die Kamera hinter dem Turm und kann noch heraussehen, wenn das Boot knapp unter
 // der Oberflaeche fährt — dann soll das Bild auch nicht gruen sein.
-function cameraUnderwater(){
-  if(locale !== 'earth') return false;
-  return camera.position.y < seaYAt(camera.position.x, camera.position.z);
+//
+// Als MASS und nicht als ja/nein: daraus wird der Blendwert (siehe updateUnderwater), und genau
+// der Unterschied hat das Aufblitzen an der Oberflaeche behoben. Die frueher hier stehende
+// Funktion cameraUnderwater() ist deshalb entfallen — sie gab ein true/false zurueck, das nach
+// dem Umbau niemand mehr brauchte.
+function cameraDepth(){
+  if(locale !== 'earth') return -1e9;
+  return seaYAt(camera.position.x, camera.position.z) - camera.position.y;
 }
+// Ueber welche Strecke der Wechsel Luft <-> Wasser laeuft. 1,5 m ist etwa eine Kopfhoehe: taucht
+// die Linse ein, ist das Bild nach anderthalb Metern voll unter Wasser. Kuerzer waere wieder ein
+// Schalter, laenger wuerde das Wasser noch in 5 m Tiefe halb durchsichtig wirken.
+const UW_BAND = 1.5;
 function updateUnderwater(dt){
-  const drin = cameraUnderwater();
-  uwBlend += ((drin ? 1 : 0) - uwBlend) * Math.min(1, UW_RATE*dt);
+  updateUwCamBlend(dt);          // Kamera-Zug (eigener Wert, siehe dort — nicht uwBlend)
+  // GLEITENDER Zielwert statt 0/1. Der harte Boolean liess den Nebel an der Oberflaeche
+  // aufblitzen: gemessen sprang die Sichtweite bei 3 m Bootstiefe zwischen 79,7 und 3.000 m,
+  // also um Faktor 38, jedes Mal wenn eine Welle ueber die Linse lief (8-mal in 20 s). Mit dem
+  // Band bleibt eine ueberspuelte Linse ein Waschen und wird kein Blitz.
+  //
+  // smoothstep obendrauf, damit auch die ERSTE Ableitung stetig ist: an beiden Enden des Bandes
+  // laeuft die Aenderung aus, statt mit einer Kante anzufangen. Denselben Weg gehen die Wellen
+  // am Schelf (seabedY) und der Orca-Tauchbogen — im Bild ist eine Kante immer zu sehen.
+  const roh = Math.min(1, Math.max(0, cameraDepth() / UW_BAND));
+  const kamZiel = roh*roh*(3 - 2*roh);
+  // Das MAXIMUM aus Kamera und Fahrzeug (siehe uwCamBlend), und das ist der Kern der Sache:
+  // die Kamera allein gab ein flackerndes Bild, weil sie im Wellenhub von 4,8 m pendelt — bei
+  // 5 m Bootstiefe sass sie auf -1,98 m und war abwechselnd drin und draussen, die Sichtweite
+  // sprang zwischen 74 und 2.334 m. Wer im U-Boot auf 5 m Tiefe faehrt, ist aber unter Wasser,
+  // auch wenn die Verfolgerkamera kurz Luft schnappt. Das Fahrzeug haelt den Wert also fest.
+  //
+  // Die Kamera bleibt trotzdem drin und wird nicht einfach ersetzt: sie deckt den umgekehrten
+  // Fall ab, dass das FAHRZEUG oben schwimmt und die LINSE eintaucht — mit dem Schlauchboot in
+  // einem Wellenberg, oder zu Fuss in der Brandung. Beides soll Unterwassersicht geben.
+  const ziel = Math.max(kamZiel, uwCamBlend);
+  uwBlend += (ziel - uwBlend) * Math.min(1, UW_RATE*dt);
   if(uwBlend < 0.002){ uwBlend = 0; return; }   // an Luft: die Werte von updateSpaceBlend gelten
-  // Tiefenanteil: 0 an der Oberflaeche, 1 auf SEA_DEPTH.
-  const tief = Math.min(1, Math.max(0, -camera.position.y / SEA_DEPTH));
+  // Tiefenanteil: 0 an der Oberflaeche, 1 auf SEA_DEPTH. Gerechnet wird mit der TIEFEREN von
+  // Kamera und Fahrzeug — bei getauchtem Boot haengt die Kamera bis zu 5 m hoeher, und mit ihrem
+  // Wert allein waere die Farbe eine Spur zu hell fuer die Tiefe, in der man wirklich faehrt.
+  const tiefRef = Math.min(camera.position.y, (locale === 'earth' && !eva) ? state.pos.y : camera.position.y);
+  const tief = Math.min(1, Math.max(0, -tiefRef / SEA_DEPTH));
   _uwC.copy(UW_SURF).lerp(UW_DEEP, tief);
   const b = uwBlend;
   scene.background.lerp(_uwC, b);
@@ -7759,11 +7873,21 @@ function updateUnderwater(dt){
   const far = UW_FOG_FAR + (UW_FOG_DEEP - UW_FOG_FAR)*tief;
   scene.fog.near = scene.fog.near + (UW_FOG_NEAR - scene.fog.near)*b;
   scene.fog.far  = scene.fog.far  + (far          - scene.fog.far )*b;
-  // Licht: die Sonne dringt nicht ein, das Streulicht von oben bleibt. Auf Tiefe wird auch das
-  // wenig — ohne diese Daempfung stehen die Wracks unten im hellen Sonnenlicht.
-  const dunkel = 1 - 0.75*tief;
-  hemiLight.intensity = hemiLight.intensity + (1.05*dunkel - hemiLight.intensity)*b;
-  sun.intensity       = sun.intensity       + (0.28*dunkel - sun.intensity      )*b;
+  // Licht: die Sonne dringt gedaempft ein, das Streulicht von oben bleibt. Eine Daempfung mit der
+  // Tiefe muss sein — ohne sie stuenden die Wracks unten im hellen Sonnenlicht.
+  //
+  // Sie war aber ZU STARK: 1 - 0,75*tief liess am Grund nur ein Viertel des Streulichts uebrig,
+  // und weil tief ueber SEA_DEPTH lief, war das bei 200 m Tiefe der Normalfall. Nachgemessen kam
+  // das Streulicht auf 180 m bei 0,37 an und die Sonne bei 0,10 — dazu 19 m Sichtweite. Unten war
+  // es damit praktisch Nacht, gemeldet als "ich haette unter wasser gerne etwas mehr licht".
+  //
+  // Jetzt bleibt am Grund die HAELFTE (1 - 0,5*tief), und der Grundwert des Streulichts steigt von
+  // 1,05 auf 1,35. Am Grund sind das 1,35*0,5 = 0,68 statt 0,26 — also gut das Zweieinhalbfache.
+  // Die Sonne zieht mit (0,28 -> 0,40): sie gibt die Richtung, aus der das Licht einfaellt, und
+  // ohne sie wirkt alles flach ausgeleuchtet statt "von oben".
+  const dunkel = 1 - 0.5*tief;
+  hemiLight.intensity = hemiLight.intensity + (1.35*dunkel - hemiLight.intensity)*b;
+  sun.intensity       = sun.intensity       + (0.40*dunkel - sun.intensity      )*b;
 }
 
 // ---------- Weltraum-Anzeige über dem Flieger ----------
@@ -10254,19 +10378,41 @@ function updateCamera(){
   // herum im Bild und die Sternenkulisse dreht sich — so wie man es aus Weltraumspielen kennt.
   // camRoll blendet den Anteil gleitend ein, damit der Übergang Erde <-> All nicht springt; auf
   // Mond und Mars (mit Boden und Schwerkraft) bleibt die Kamera aufrecht.
+  // UNTER WASSER holt die Kamera naeher heran, und das ist die Loesung eines gemessenen Problems,
+  // nicht Geschmack: das U-Boot ist 95 m lang, die Kamera stand 62,8 m hinter seiner Mitte (24 m
+  // Basisabstand mal Faktor 2,6), und die Sichtweite unter Wasser ist 42 m oben und 30 m auf
+  // 100 m Tiefe. Nachgemessen war der Bug bei 109,8 m Kameradistanz IMMER im Nebel, und vom
+  // ganzen Boot sah man 26 m (oben) bis 14 m (unten) — gemeldet als "unterwass fahren wirkt
+  // seltsam". Ohne sichtbares eigenes Fahrzeug fehlt jeder Bezug: man sieht Nebel, ein Stueck
+  // Rumpf und weiss nicht, wohin die Nase zeigt.
+  //
+  // uwCamPull blendet den Faktor mit uwBlend ein, also mit demselben Wert, der auch Nebel und
+  // Farbe fuehrt (siehe updateUnderwater). Damit ist das Herankommen genau der Uebergang durch
+  // die Oberflaeche und kein Sprung.
+  //
+  // 0,42 ist gerechnet, nicht geraten: 24 m * 2,6 * 0,42 = 26,2 m hinter der Mitte, der Bug also
+  // 73 m entfernt. Das ist bei 30 m Sicht noch zu weit fuer den Bug — bewusst so. Ein U-Boot,
+  // dessen Bug im Dunkel verschwindet, ist genau richtig; was fehlte, war der TURM als Bezug,
+  // und der steht bei 26 m mitten im klaren Bereich.
   const camE = new THREE.Euler().setFromQuaternion(state.quat, 'YXZ');
   const yaw = camE.y;
   const pitch = Math.max(-0.9, Math.min(0.9, camE.x));   // ~±51° Nicken
   const camQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, camE.z*camRoll, 'YXZ'));
   const back = new THREE.Vector3(0,0,1).applyQuaternion(camQ);   // hinter dem Flieger (mit Nicken)
   const upV  = new THREE.Vector3(0,1,0).applyQuaternion(camQ);   // Kamera-Oben (rollt nie mit)
+  const uwPull = 1 - (1 - UW_CAM_PULL) * uwCamBlend;
   const desired = planeCamRef().clone()
-    .addScaledVector(back, cfg.dist*cc.dist + camBackExtra())
-    .addScaledVector(upV,  cfg.height*cc.hgt);
+    .addScaledVector(back, (cfg.dist*cc.dist + camBackExtra()) * uwPull)
+    .addScaledVector(upV,  cfg.height*cc.hgt * uwPull);
   // Nur in der Inselwelt ist y = 0 der Meeresboden. Im Weltall liegt die Erdkugel UNTER dem Spieler
   // (Mittelpunkt bei y = -EARTH_R), man fliegt sie also im Negativen an — dort hätte diese Klemme die
   // Kamera bei y = 2 festgehalten, während der Flieger kilometerweit darunter weiterflog.
   if(locale === 'earth' && !subTaucht() && desired.y < 2) desired.y = 2;
+  // Hier stand einmal ein DECKEL, der die Kamera beim Tauchen unter der Wasserflaeche halten
+  // sollte — gegen das Flackern der Unterwassersicht. Er ist wieder heraus, weil er es nicht
+  // konnte: er rechnete mit seaYAt, und das schwankt selbst um 4,8 m, die Kamera lief der Welle
+  // also hinterher. Geloest ist das Flackern in updateUnderwater (uwBlend nimmt das Maximum aus
+  // Kamera- und Fahrzeugtiefe). Die Kamera darf hier ruhig mit der Welle atmen.
   // Die Kamera darf nicht IN einem Schiffsrumpf sitzen. Sie hatte bisher gar keine Kollision, und
   // weil sie rund 30 m hinter dem Fahrzeug haengt, steckte sie beim Vorbeifahren an einem 300-m-
   // Frachter regelmaessig darin: gemessen bei bis zu 50 % der Kurse, wenn das Boot laengsseits
