@@ -2788,7 +2788,13 @@ function updateUwCells(){
     // NICHT als leer gemerkt — sonst blieben die Wracks fuer immer weg, wenn man schneller in der
     // Naehe ist als das GLB geladen war. Genau die Falle, die beim Kai-Feuerwehrboot schon einmal
     // aufgetreten ist (dort loest refreshIslands es).
-    if(!shipTemplates['liberty'] || !shipTemplates['sail']) continue;
+    // Die frueher hier stehende Wartebedingung ist ENTFALLEN: sie hielt die ganze Zelle zurueck,
+    // solange nicht beide Schiffsmodelle geladen waren — also auch Pflanzen, Korallen und Bewuchs,
+    // die davon nichts brauchen. Seit vier von fuenf Wracks Nachbauten aus Grundformen sind
+    // (makeSimpleWreck), braucht auch das Wrack meist kein Modell.
+    // Fehlt das GLB fuer einen Grossfund, liefert makeWreck null und die Zelle wird ohne Wrack
+    // gebaut. Das ist der einzige Rest des alten Problems, und er betrifft ein Fuenftel der
+    // Wracks in den ersten Sekunden nach dem Laden.
     const grp = buildUwCell(pcx+dx, pcz+dz);
     if(grp) scene.add(grp);
     uwCells.set(key, grp);
@@ -2820,11 +2826,18 @@ const FISH_PER     = 34;        // Fische pro Schwarm
 const FISH_R       = 9;         // Radius der Wolke (m)
 const FISH_SPD     = 1.8;       // m/s Wanderung des Schwarms
 const FISH_SPAWN_MIN = 40, FISH_SPAWN_MAX = 260, FISH_DESPAWN = 420;
-// In welcher TIEFE die Schwaerme schwimmen. 8 m als Mindesttiefe hat zwei Gruende: der Wellenhub
-// reicht bis 2,33 m herab und die Fischwolke schwingt selbst um 1,6 m — darunter ragten Fische aus
-// dem Wasser (gemeldet als gelbe Punkte auf dem Meer). 35 m als Grenze nach unten haelt sie im
-// Tauchbereich und im Licht; am Grund (80 bis 120 m) waere niemand, um sie zu sehen.
-const FISH_MIN_Y = 8, FISH_MAX_Y = 35;
+// Wie hoch UEBER DEM GRUND die Schwaerme schwimmen — nicht mehr als absolute Tiefe. Das war ein
+// Fehler in beide Richtungen: erst standen sie auf grund+4 bis +14, also praktisch am Boden, und
+// man sah sie beim Tauchen nie; daraufhin habe ich sie an eine feste Tiefe von 8 bis 35 m gehaengt
+// — und weil der Grund bei 80 bis 120 m liegt, schwammen sie damit 45 bis 112 m darueber, also
+// "praktisch an der wasseroberflaeche".
+//
+// 8 bis 30 m ueber dem Grund trifft beides: das U-Boot haelt 12 m Bodenfreiheit, faehrt also mitten
+// durch diese Zone, und die Schwaerme sind trotzdem sichtbar vom Boden abgesetzt.
+const FISH_OVER_MIN = 8, FISH_OVER_MAX = 30;
+// Absolute Mindesttiefe, damit im Flachwasser nichts aus dem Meer ragt: der Wellenhub reicht bis
+// 2,33 m herab und die Fischwolke schwingt selbst um 1,6 m. 8 m lassen gut 4 m Luft.
+const FISH_MIN_Y = 8;
 // Farbe: war 0xb9c46a, ein Gelbgruen — genau das, was als "das gelbe, was noch so rumschwimmt"
 // aufgefallen ist. Ein silbriges Blaugruen sieht im Wasser nach Fisch aus statt nach Fremdkoerper.
 const fishMat = new THREE.MeshLambertMaterial({ color:0x9fd6cf });
@@ -2850,12 +2863,12 @@ function placeFishSchool(f, fx, fz){
     const grund = seabedY(x, z);
     if(grund > -FISH_MIN_Y - 2) continue;            // zu flach fuer einen Schwarm
     f.x = x; f.z = z;
-    // TIEFE: im Tauchbereich, nicht am Grund. Vorher war es grund+4..+14 — auf offener See also
-    // 66 bis 106 m tief, wo man mit dem U-Boot nie vorbeikommt. Jetzt 8 bis 35 m: das ist die
-    // Zone, die man wirklich durchfaehrt, und dort ist noch Licht.
-    f.y = -(FISH_MIN_Y + Math.random()*(FISH_MAX_Y - FISH_MIN_Y));
-    // Ueber flachem Grund ausweichen: der Grund gewinnt immer.
-    if(f.y < grund + 3) f.y = grund + 3;
+    // HOEHE UEBER DEM GRUND, nicht absolute Tiefe (siehe FISH_OVER_MIN): dort ist das Leben, und
+    // dort faehrt auch das U-Boot. Mit einer festen Tiefe schwammen sie bei 80 bis 120 m Grund
+    // hoch oben im Freiwasser.
+    f.y = grund + FISH_OVER_MIN + Math.random()*(FISH_OVER_MAX - FISH_OVER_MIN);
+    // Im Flachwasser nicht bis an die Oberflaeche: dort gewinnt die absolute Grenze.
+    if(f.y > -FISH_MIN_Y) f.y = -FISH_MIN_Y;
     f.heading = Math.random()*Math.PI*2;
     f.t = Math.random()*100;
     return true;
@@ -2891,12 +2904,16 @@ function updateFish(dt){
     // Vor Land abdrehen und ueber dem Grund bleiben (er steigt zum Ufer hin an).
     if(isOnLand(f.x + hx*20, f.z + hz*20) || isOnBeach(f.x + hx*20, f.z + hz*20))
       f.heading += 1.5*dt*(1+Math.random());
+    // Der Schwarm WANDERT, der Grund aendert sich also unter ihm. Deshalb wird die Hoehe hier
+    // nachgefuehrt: sonst haengt ein Schwarm, der ueber einen Hang zieht, ploetzlich 60 m hoch
+    // oder steckt im Boden.
     const grund = seabedY(f.x, f.z);
+    const soll = grund + (FISH_OVER_MIN + FISH_OVER_MAX)*0.5;
+    f.y += (soll - f.y) * Math.min(1, 0.35*dt);   // sanft, damit es kein Springen gibt
     if(f.y < grund + 3) f.y = grund + 3;
-    // Deckel nach oben: FISH_MIN_Y (8 m) und nicht 2,5 m. Der alte Wert lag INNERHALB des
-    // Wellenhubs (die Duenung reicht bis -2,33 m), ein Schwarm am Deckel ragte also heraus und
-    // schwamm als gelber Fleck auf dem Meer. Dazu kommt die Fischwolke selbst, die um +-1,6 m
-    // schwingt: mit 8 m bleibt auch ihr hoechster Punkt gut 4 m unter Wasser.
+    // Deckel nach oben: FISH_MIN_Y (8 m). Der Wellenhub reicht bis -2,33 m herab und die Wolke
+    // schwingt um +-1,6 m — naeher an der Oberflaeche ragten Fische heraus (waren als gelbe
+    // Punkte auf dem Meer aufgefallen).
     if(f.y > -FISH_MIN_Y) f.y = -FISH_MIN_Y;
     if(Math.hypot(f.x-F.x, f.z-F.z) > FISH_DESPAWN){ placeFishSchool(f, F.x, F.z); continue; }
     // Nur rechnen, was man sehen kann: bei 16-42 m Sichtweite ist alles Weitere im Nebel.
@@ -11814,6 +11831,34 @@ function updatePeriscope(dt){
     g.fillRect(bx-px/2, by-px/2, px, px);
   }
   g.restore();
+  // ---- WRACKS als rote Punkte. Sie kommen aus wreckInfo, das deterministisch ist — eine Zelle
+  // liefert ihr Wrack also auch dann, wenn sie noch nicht gebaut wurde. Damit reicht die Anzeige
+  // weiter als die Unterwasserwelt (UW_VIEW_CELLS 2 Zellen) und man kann gezielt hinfahren.
+  //
+  // Abgesucht werden die Zellen im Periskop-Radius. Bei PERI_R 1.400 m und CELL 850 m sind das
+  // 5x5 Zellen — 25 wreckInfo-Abfragen, und die sind billig (cellRnd plus ein seabedY).
+  const pcx = Math.round(state.pos.x / CELL), pcz = Math.round(state.pos.z / CELL);
+  const span = Math.ceil(PERI_R / CELL) + 1;
+  for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
+    const wi = wreckInfo(pcx+dx, pcz+dz);
+    if(!wi) continue;
+    const rx = wi.wx - state.pos.x, rz = wi.wz - state.pos.z;
+    // Etwas enger als PERI_R, damit der Punkt (3 bis 4,5 px Radius) ganz in der Scheibe bleibt:
+    // er wird ohne Clipping gemalt, weil er UEBER dem Gelaenderaster liegen soll.
+    if(Math.hypot(rx, rz) > PERI_R*0.94) continue;
+    // Dieselbe Drehung wie das Gelaenderaster darueber, damit Wrack und Kueste zusammenpassen.
+    const wdx = sinK*rz - cosK*rx;
+    const wdz = cosK*rz + sinK*rx;
+    const wx2 = cx + (wdx/PERI_R)*(R-2);
+    const wy2 = cy - (wdz/PERI_R)*(R-2);
+    // Grossfunde (das volle Schiffsmodell) etwas groesser und heller: sie sind die lohnendere
+    // Fahrt, und man soll vorher sehen, ob es sich um einen kleinen oder grossen Fund handelt.
+    const rad = wi.gross ? 4.5 : 3;
+    g.fillStyle = wi.gross ? '#ff5544' : '#c03828';
+    g.beginPath(); g.arc(wx2, wy2, rad, 0, Math.PI*2); g.fill();
+    // Dunkler Rand, damit der Punkt auf gruener Insel und blauem Wasser gleich gut zu sehen ist.
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 1; g.stroke();
+  }
   // Rand und eigenes Boot in der Mitte, wie beim Radar.
   g.strokeStyle='rgba(255,255,255,0.6)'; g.lineWidth=2;
   g.beginPath(); g.arc(cx,cy,R,0,Math.PI*2); g.stroke();
