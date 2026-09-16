@@ -2677,3 +2677,52 @@ haben — sonst testet man gegen den Cache und sucht den Fehler im Code.
 ### Offen
 
 - **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt.
+---
+
+## 2026-09-16 (4) — Der Ping war da, nur 861-fach zu leise
+
+"das geraeusch ist extremst leise. keine r128 normierung oder aehnliches." — nachgemessen an den
+MP3-Skalierungsfaktoren (`global_gain` im Side-Info jedes Layer-III-Frames, `C:/tmp/mp3lev.js`):
+
+| Datei | global_gain (Median) | hoerbar? |
+|---|---|---|
+| **sonar** | **123** | kaum |
+| gulls | 151 | ja |
+| ocean | 162 | ja |
+
+Vier Stufen sind eine Verdopplung, der Ping lag also rund **Faktor 861** unter dem Ozeanrauschen und
+128 unter den Moewen. Die Datei ist einfach sehr niedrig ausgesteuert — im Spiel war nichts falsch.
+
+**Loesung: normieren, nicht die Zahl anpassen.** Ein festes `vol = 3.0` haette dieselbe Wirkung,
+muesste aber bei jeder neuen Aufnahme wieder von Hand gesucht werden. `normalizePeak(buf, ziel)`
+sucht stattdessen den Spitzenwert des dekodierten Puffers und skaliert ihn auf `SONAR_PEAK = 0.9`
+(nicht 1,0: zwei ueberlappende Pings addieren sich, oberhalb 1 schneidet die Ausgabe hart ab).
+Danach heisst `vol = 0.30` wirklich "30 % Vollaussteuerung", unabhaengig von der Datei.
+
+Geprueft mit dem echten Code aus der Datei (`C:/tmp/wnorm.js`): leiser Puffer wird auf genau 0,9
+gehoben, Stereo-Balance bleibt erhalten (der GEMEINSAME Spitzenwert zaehlt, sonst kippt links/rechts),
+Stille erzeugt keine Division durch Null, und zweimal Anwenden aendert nichts mehr (idempotent — das
+ist wichtig, weil `decodeSound` den Puffer cached und ich ihn an Ort und Stelle aendere).
+
+Pegel danach, gegen den echt erzeugten Motorpuffer gerechnet (`C:/tmp/wpegel.js`):
+
+| | am Ausgang | gegen Motor-Vollgas |
+|---|---|---|
+| Motor Leerlauf | 0,068 | |
+| Motor Vollgas | 0,190 | |
+| Ping am Rand (1.200 m) | 0,045 | 0,24 x |
+| Ping am Wrack | 0,270 | 1,42 x |
+
+Am Wrack steht der Ping also ueber dem Motor — richtig so, denn man loest ihn selbst aus und will die
+Antwort hoeren, nicht ins Klangbett mischen.
+
+**Sperre von 1,2 auf 2,5 s** ("nach 1,2 sek startet es neu"): der Ping klingt rund 3 s, ein neuer
+setzte mitten in den Nachhall. Jetzt bleiben 0,5 s Ueberlappung — das klingt nach Echo statt nach
+Doppelschlag.
+
+Nebenbei bestaetigt: die Datei ist 6,74 s lang, der Klang endet aber nach etwa 3 s. Der Rest ist
+Stille im Puffer und kostet nichts — nicht wert, sie herauszuschneiden.
+
+### Offen
+
+- **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt.

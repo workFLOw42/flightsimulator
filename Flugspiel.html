@@ -10468,12 +10468,44 @@ const SONAR_R      = 1200;  // m: ab hier ist ueberhaupt etwas zu hoeren. Etwas 
 const SONAR_VOL_MIN= 0.05;  // "lautstaerke in abhaengigkeit der entfernung behalten": am Rand
 const SONAR_VOL_MAX= 0.30;  // schwach, am Wrack deutlich. Hoeher als beim automatischen Ping, denn
                             // jetzt loest man ihn selbst aus und will die Antwort auch hoeren.
-const SONAR_COOL   = 1.2;   // s Sperre zwischen zwei Pings: haelt das Echo frei und verhindert,
-                            // dass gehaltenes B eine Kanonade wird.
+const SONAR_COOL   = 2.5;   // s Sperre zwischen zwei Pings. Von 1,2 hoch: der Ping selbst klingt
+                            // rund 3 s, ein neuer setzte also mitten in den Nachhall des vorigen
+                            // ("nach 1,2 sek startet es neu"). 2,5 s lassen ihn fast ausklingen und
+                            // halten die Ueberlappung auf den Rest des Halls beschraenkt — das
+                            // klingt nach Echo statt nach Doppelschlag.
 let sonarCool = 0;
-// Der Ping ist jetzt eine AUFNAHME (ambient.js, Schluessel "sonar") und kein synthetischer Sinus
-// mehr — "hier ein richtiger sonar ping". Sie wird einmal dekodiert und danach aus dem Puffer
-// gespielt, sonst dekodiert jeder Tastendruck 216 kB neu.
+// Der Ping ist eine AUFNAHME (ambient.js, Schluessel "sonar") und kein synthetischer Sinus mehr —
+// "hier ein richtiger sonar ping". Sie wird einmal dekodiert und danach aus dem Puffer gespielt,
+// sonst dekodiert jeder Tastendruck 216 kB neu.
+//
+// UND SIE WIRD NORMIERT. Die Datei ist extrem leise ausgesteuert: gemeldet als "das geraeusch ist
+// extremst leise ... wenn ich den lautsprecher voll aufdrehe kann ich es leise wahrnehmen".
+// Nachgemessen an den MP3-Skalierungsfaktoren (global_gain, C:/tmp/mp3lev.js) liegt ihr Median bei
+// 123, waehrend die beiden hoerbaren Ambient-Aufnahmen bei 151 (Moewen) und 162 (Ozean) liegen —
+// vier Stufen sind eine Verdopplung, der Ping liegt also rund Faktor 900 darunter.
+//
+// Eine feste Zahl im Gain waere die falsche Antwort darauf: sie muesste bei jeder neuen Aufnahme
+// wieder von Hand angepasst werden. Stattdessen wird der SPITZENWERT gesucht und der Puffer darauf
+// skaliert. Danach heisst vol = 0,30 wirklich "30 % Vollaussteuerung", genau wie beim Motor
+// (0,09 bis 0,25) — der Pegel haengt an dieser Zahl und nicht mehr an der Datei.
+const SONAR_PEAK = 0.9;     // Ziel-Spitzenwert. Nicht 1,0: zwei ueberlappende Pings addieren sich,
+                            // und oberhalb von 1 schneidet die Ausgabe hart ab (Knacken).
+// Auf den Spitzenwert normieren, an Ort und Stelle. Mehrfaches Anwenden schadet nicht: danach IST
+// der Spitzenwert das Ziel, ein zweiter Durchgang skaliert also mit 1.
+function normalizePeak(buf, ziel){
+  let peak = 0;
+  for(let c=0;c<buf.numberOfChannels;c++){
+    const d = buf.getChannelData(c);
+    for(let i=0;i<d.length;i++){ const a = Math.abs(d[i]); if(a > peak) peak = a; }
+  }
+  if(peak <= 0) return buf;                 // reine Stille: nichts zu holen
+  const f = ziel / peak;
+  for(let c=0;c<buf.numberOfChannels;c++){
+    const d = buf.getChannelData(c);
+    for(let i=0;i<d.length;i++) d[i] *= f;
+  }
+  return buf;
+}
 let sonarBuf = null, sonarPending = false;
 function playSonarPing(vol){
   if(!soundOn || !audioCtx || audioCtx.state !== 'running') return;
@@ -10483,7 +10515,8 @@ function playSonarPing(vol){
     if(!sonarPending && window.FMS_AMB && window.FMS_AMB.sonar){
       sonarPending = true;
       decodeSound(window.FMS_AMB.sonar).then(b=>{
-        sonarBuf = b; sonarPending = false;
+        sonarBuf = normalizePeak(b, SONAR_PEAK);
+        sonarPending = false;
         playSonarPing(vol);       // jetzt liegt der Puffer, also kommt der Ping doch
       }).catch(err=>{ sonarPending = false; console.warn('Sonar-Ping Ladefehler:', err); });
     }
