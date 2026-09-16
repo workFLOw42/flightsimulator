@@ -2396,9 +2396,9 @@ const WRECK_SALT   = 771;   // eigener Hash-Salt, damit Wracks nicht mit Inseln 
 // zehn UV-Saetze, siehe die Notizen zur GLB-Verkleinerung): drei gleichzeitig geladen kosten
 // sichtbar Bildrate. Mit 0,07 findet man rund alle 4,5 km eines und selten mehr als eines zugleich.
 // 55 % der Wasserzellen. Diese Zahl war vorher unmoeglich und ist es jetzt nicht mehr: der Absatz
-// darueber warnt zu Recht davor, viele VOLLE Schiffsmodelle zu laden — aber seit vier von fuenf
-// Wracks Nachbauten aus Grundformen sind (rund 400 Dreiecke statt 12.263, siehe makeSimpleWreck),
-// kostet ein Wrack etwa so viel wie eine Handvoll Korallen.
+// darueber warnt zu Recht davor, viele VOLLE Schiffsmodelle zu laden — aber seit die HAELFTE der
+// Wracks Nachbauten aus Grundformen ist (rund 400 Dreiecke statt 12.263, siehe makeSimpleWreck),
+// kostet ein Wrack im Mittel etwa so viel wie eine Handvoll Korallen.
 //
 // Nachgerechnet: 55 % der Wasserzellen sind 24,8 % ALLER Zellen, also im Mittel alle 1,7 km eines.
 // Bei 50 km/h stoesst man damit etwa alle zwei Minuten auf ein Wrack — vorher waren es bei 14 %
@@ -2411,6 +2411,15 @@ const WRECK_CHANCE = 0.55;
 // die Wracks alle draussen in der strukturlosen Tiefsee, wo niemand sucht. Ein Frachter braucht
 // 25 m Wasser, das reicht auch fuer den Rumpf.
 const WRECK_MIN_DEPTH = 25;
+// Wie viele Wracks eine Wasserzelle hoechstens tragen kann. Von 1 auf 2 ("die dichte der kleinen
+// wracks um 1 erhoehen"): jeder Wurf wuerfelt eigenstaendig mit WRECK_CHANCE und eigenem Salt,
+// zwei Wuerfe ergeben also nicht zwangslaeufig zwei Wracks.
+// NACHGEMESSEN in 102,8 x 102,8 km (14.641 Zellen, C:/tmp/wmeas.js): aus 3.622 Wracks werden 6.903
+// (nach dem Verwerfen zu enger Paare, siehe WRECK_MIN_GAP), also 47,1 % aller Zellen statt 24,7 %.
+// Der Weg zum naechsten Wrack sinkt von 793 auf 619 m. Gleichzeitig geladen sind in den 3x3 Zellen
+// im Mittel 4,5 Wracks, hoechstens 14 — tragbar, weil ein Nachbau rund 400 Dreiecke kostet und zu
+// EINEM Draw-Call verschmolzen ist.
+const WRECK_TRIES = 2;
 // ---- EINFACHE WRACKS ---------------------------------------------------------------------------
 // "hab immer noch kein wrack gesehen. wie werden die aufgebaut? dargestellt? vielleicht, weiter
 // vereinfacht mehrere wracks"
@@ -2484,23 +2493,30 @@ function makeSimpleWreck(laenge, rnd, rnd2){
   // Den Untergang erzaehlen der gekippte Rumpf und der abgebrochene, schiefe Mast ohnehin.
   return g;
 }
-function wreckInfo(cx, cz){
+// EIN Wrack einer Zelle. k ist der Wurf (0 bis WRECK_TRIES-1) und geht in den Salt ein, damit die
+// Wuerfe einer Zelle voneinander unabhaengig sind. Der Abstand von 20 zwischen den Salts ist
+// grosszuegig gewaehlt: wreckInfo1 verbraucht selbst 10 aufeinanderfolgende Werte.
+// k = 0 rechnet absichtlich GENAU wie vorher — ein Wrack, das man schon gefunden hat, liegt also
+// weiter an derselben Stelle (die Ortstreue ist der Sinn des ganzen Zellenrasters).
+function wreckInfo1(cx, cz, k){
   if(cx===0 && cz===0) return null;             // Startzelle frei halten
   if(islandInfo(cx, cz)) return null;           // die Zelle selbst muss Wasser sein
-  if(cellRnd(cx, cz, WRECK_SALT) >= WRECK_CHANCE) return null;
-  const wx = cx*CELL + (cellRnd(cx,cz,WRECK_SALT+1)-0.5)*CELL*0.6;
-  const wz = cz*CELL + (cellRnd(cx,cz,WRECK_SALT+2)-0.5)*CELL*0.6;
+  const S = WRECK_SALT + k*20;
+  if(cellRnd(cx, cz, S) >= WRECK_CHANCE) return null;
+  const wx = cx*CELL + (cellRnd(cx,cz,S+1)-0.5)*CELL*0.6;
+  const wz = cz*CELL + (cellRnd(cx,cz,S+2)-0.5)*CELL*0.6;
   const y = seabedY(wx, wz);
   if(y > -WRECK_MIN_DEPTH) return null;          // zu flach (siehe oben)
-  // GLB-Grossfund oder einfaches Wrack? Nur jedes fuenfte ist das volle Schiffsmodell (12.263
-  // Dreiecke), der Rest ein Nachbau aus Grundformen (rund 400). So bleibt der eindrucksvolle
-  // Frachter ein Fund, waehrend die Dichte insgesamt hoch genug ist, um ueberhaupt Wracks zu sehen.
-  // Jedes zweite Wrack ist der echte Frachter. 0,2 waren zu wenig: nachgerechnet traf ein Grossfund
-  // nur 5,0 % aller Zellen, also im Mittel alle 3.820 m — bei 50 km/h alle 4,5 Minuten, und dann
-  // noch mit der Chance, nah genug vorbeizufahren. Gemeldet als "immer noch kein richtiges wrack".
-  // Mit 0,5 liegt eines alle 2,4 km. Tragbar ist das, weil ein GLB-Wrack die Zelle nicht mehr
-  // blockiert und ohnehin nur eine Zelle pro Frame gebaut wird.
-  const gross = cellRnd(cx,cz,WRECK_SALT+8) < 0.5;
+  // GLB-Grossfund oder einfaches Wrack? Jedes zweite Wrack ist der echte Frachter (12.263
+  // Dreiecke), der Rest ein Nachbau aus Grundformen (rund 400).
+  // Diese Zahl wurde zweimal erhoeht (0,2 -> 0,5), weil kein Grossfund zu finden war — beides
+  // vergeblich, denn der Grund war nie die Seltenheit: das Modell wurde UEBERHAUPT NICHT GEZEICHNET
+  // (siehe den Materialfehler in makeWreck). Die 0,5 bleibt trotzdem stehen; nachgemessen liegt
+  // damit ein Grossfund alle 1.199 m, und ein Fund, den man sieht, darf so haeufig sein.
+  // Nur der ERSTE Wurf einer Zelle kann ein Grossfund sein. Ein zweiter GLB-Frachter in derselben
+  // Zelle waere ein volles Schiffsmodell mehr (12.263 Dreiecke gegen 400) und nimmt dem Fund
+  // ausserdem seine Besonderheit.
+  const gross = k === 0 && cellRnd(cx,cz,S+8) < 0.5;
   // Grossfunde sind IMMER der Liberty-Frachter, nie der Grossegler. Der Segler ('sail' zeigt auf
   // empty_glb) hat rund 60 m hohe Masten — sein Bounding reicht in Y von -255 bis +127. Auf die
   // Seite gekippt (34 bis 80 Grad) ragen die Spitzen 60 m weit zur Seite und fast bis zur
@@ -2510,13 +2526,48 @@ function wreckInfo(cx, cz){
   const key = gross ? 'liberty' : null;
   return { wx, wz, y, key, gross,
            // Laenge des Nachbaus: 70 bis 150 m, also von Kuestenfrachter bis Stueckgutschiff.
-           len: 70 + cellRnd(cx,cz,WRECK_SALT+9)*80,
-           rot:  cellRnd(cx,cz,WRECK_SALT+4)*Math.PI*2,      // Kurs, in dem es gesunken ist
+           len: 70 + cellRnd(cx,cz,S+9)*80,
+           rot:  cellRnd(cx,cz,S+4)*Math.PI*2,      // Kurs, in dem es gesunken ist
            // Krängung: auf welche Seite es gekippt liegt. Zwischen 35 und 80 Grad — aufrecht sähe
            // aus wie ein fahrendes Schiff, ganz auf dem Kopf wie ein Fehler.
-           roll: (0.6 + cellRnd(cx,cz,WRECK_SALT+5)*0.8) * (cellRnd(cx,cz,WRECK_SALT+6)<0.5?-1:1),
+           roll: (0.6 + cellRnd(cx,cz,S+5)*0.8) * (cellRnd(cx,cz,S+6)<0.5?-1:1),
            // Und ein wenig ueber Bug oder Heck geneigt, weil der Grund nicht eben ist.
-           pitch:(cellRnd(cx,cz,WRECK_SALT+7)-0.5)*0.35 };
+           pitch:(cellRnd(cx,cz,S+7)-0.5)*0.35 };
+}
+// ALLE Wracks einer Zelle. Reihenfolge und Inhalt sind allein aus (cx,cz) bestimmt — Aufrufer
+// duerfen das Ergebnis also zwischenspeichern, muessen aber nichts pflegen.
+//
+// Zwei Wuerfe derselben Zelle koennen auf derselben Stelle landen: sie streuen unabhaengig ueber
+// 60 % der Zellenbreite (510 m), und NACHGEMESSEN steckten 13,6 % der Paare ineinander — der
+// engste Fall lag 5,3 m auseinander bei zusammen 82 m Rumpflaenge (C:/tmp/wnah.js). Zwei
+// ineinander gebaute Wracks sehen nicht nach zwei Funden aus, sondern nach einem Fehler.
+// Deshalb faellt der spaetere Wurf weg, wenn er einem frueheren zu nahe kommt. Der Preis dafuer
+// ist klein: 412 von 7.315 Wracks entfallen, der Weg zum naechsten steigt von 601 auf 619 m.
+const WRECK_MIN_GAP = 1.3;  // Vielfaches der halben Laengensumme, das zwischen zwei Wracks bleibt.
+                            // 1,0 waere die Beruehrung der Rumpfe, 1,3 laesst Platz fuer die
+                            // Aufbauten und die Kraengung (ein gekipptes Wrack ragt zur Seite).
+// Wie lang ein Wrack WIRKLICH ist. Beim Nachbau ist das info.len, beim Grossfund aber die Laenge
+// des Liberty-Frachters aus SHIP_TYPES (135 m) — info.len beschreibt dann nur den ungenutzten
+// Nachbau. Mit info.len gerechnet lagen 40 der 783 Grossfund-Paare zu nah (C:/tmp/wgross.js);
+// im schlimmsten Fall forderte der Code 141 m Abstand, wo 175 m noetig gewesen waeren.
+function wreckLen(info){
+  if(!info.gross) return info.len;
+  const def = SHIP_TYPES.find(d=>d.key === info.key);
+  return def ? def.len : info.len;
+}
+function wreckInfos(cx, cz){
+  const out = [];
+  for(let k=0;k<WRECK_TRIES;k++){
+    const wi = wreckInfo1(cx, cz, k);
+    if(!wi) continue;
+    const lw = wreckLen(wi);
+    let frei = true;
+    for(const alt of out){
+      if(Math.hypot(wi.wx-alt.wx, wi.wz-alt.wz) < (lw+wreckLen(alt))/2 * WRECK_MIN_GAP){ frei = false; break; }
+    }
+    if(frei) out.push(wi);
+  }
+  return out;
 }
 // Ein Wrack bauen. Es liegt auf dem Grund, also muss der Ursprung so tief, dass der gekippte Rumpf
 // aufliegt statt zu schweben: bei Krängung sinkt die Bordwand um sin(roll) mal halbe Rumpfbreite.
@@ -2546,13 +2597,22 @@ function makeWreck(info){
   m.traverse(o=>{
     if(!o.isMesh || !o.material) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
-    o.material = mats.map(src=>{
+    // Ob EIN Material oder eine Liste, muss VORHER feststehen: mats.map liefert immer ein Array,
+    // also war die alte Rueckfrage (!Array.isArray(o.material)) nach der Zuweisung nie erfuellt.
+    // Jedes Mesh bekam damit ein Array-Material — und genau daran war der Grossfund UNSICHTBAR:
+    // three.js r128 zeichnet ein Array-Material ausschliesslich ueber geometry.groups, und die
+    // Liberty ist ein einziges Mesh aus einem primitive (nachgesehen im GLB: 1 Mesh, 1 Material,
+    // 12.263 Dreiecke, C:/tmp/glbmat.js) — ohne Gruppen wird nichts gemalt. Das Wrack war also
+    // da, mit Fischschwaermen darueber und einem Punkt im Periskop, nur eben nicht zu sehen.
+    // Deshalb half auch keine Erhoehung der Haeufigkeit: "es gibt immer noch kein echtes wrack".
+    const warListe = Array.isArray(o.material);
+    const neu = mats.map(src=>{
       const mat = src.clone();
       if(mat.color) mat.color.lerp(new THREE.Color(0x4a4a38), 0.72);
       if(mat.map) mat.map = null;      // Textur weg: sonst leuchtet die Lackierung durch
       return mat;
     });
-    if(!Array.isArray(o.material)) o.material = o.material[0];
+    o.material = warListe ? neu : neu[0];
   });
   g.add(m);
   const h = shipHalf[info.key];
@@ -2846,19 +2906,22 @@ function buildUwCell(cx, cz){
   // Liste der standorttreuen Schwaerme dieser Zelle. updateReefFish dreht sie; sie haengen in
   // dieser Group, werden also mit der Zelle geladen und weggeraeumt.
   const reefFish = [];
-  const wi = wreckInfo(cx, cz);
-  if(wi){
+  // Alle Wracks der Zelle (bis zu WRECK_TRIES, siehe wreckInfos).
+  const wracks = wreckInfos(cx, cz);
+  for(let wnr=0; wnr<wracks.length; wnr++){
+    const wi = wracks[wnr];
     const w = makeWreck(wi);
-    if(w){
-      g.add(w); leer = false; g.userData.wreck = wi;
-      // ZWEI Schwaerme ueber dem Wrack, versetzt. Ein Wrack ist ein kuenstliches Riff und zieht
-      // Fische an — und genau das macht den Fund lebendig statt zu einem stillen Haufen Stahl.
-      for(let k=0;k<2;k++){
-        const rk = cellRnd(cx, cz, 1600+k*3), rk2 = cellRnd(cx, cz, 1601+k*3);
-        const fh = makeReefFish(wi.wx + (rk-0.5)*40, wi.y + 12 + rk2*14, wi.wz + (rk2-0.5)*40,
-                                rk, rk2);
-        g.add(fh); reefFish.push(fh);
-      }
+    if(!w) continue;
+    g.add(w); leer = false;
+    // ZWEI Schwaerme ueber dem Wrack, versetzt. Ein Wrack ist ein kuenstliches Riff und zieht
+    // Fische an — und genau das macht den Fund lebendig statt zu einem stillen Haufen Stahl.
+    // wnr geht in den Salt ein, sonst kreisten ueber dem zweiten Wrack einer Zelle dieselben
+    // Schwaerme in derselben Anordnung wie ueber dem ersten.
+    for(let k=0;k<2;k++){
+      const rk = cellRnd(cx, cz, 1600+k*3+wnr*7), rk2 = cellRnd(cx, cz, 1601+k*3+wnr*7);
+      const fh = makeReefFish(wi.wx + (rk-0.5)*40, wi.y + 12 + rk2*14, wi.wz + (rk2-0.5)*40,
+                              rk, rk2);
+      g.add(fh); reefFish.push(fh);
     }
   }
   // Vegetation GEZIELT auf dem Schelf, nicht ueber die Zelle gestreut. Der erste Versuch verwarf
@@ -2963,8 +3026,7 @@ function updateUwCells(){
     // die davon nichts brauchen. Sie ganz zu entfernen war aber ein Fehler: die Zelle wird unten
     // mit uwCells.set als FERTIG gemerkt und nie wieder gebaut, ein spaeter geladenes Modell kommt
     // also nie mehr an. Ergebnis war ein Grossfund, den es nie gab.
-    const wiVor = wreckInfo(pcx+dx, pcz+dz);
-    if(wiVor && wiVor.gross && !shipTemplates[wiVor.key]) continue;
+    if(wreckInfos(pcx+dx, pcz+dz).some(w=>w.gross && !shipTemplates[w.key])) continue;
     const grp = buildUwCell(pcx+dx, pcz+dz);
     if(grp) scene.add(grp);
     uwCells.set(key, grp);
@@ -10310,6 +10372,77 @@ function updateAmbient(dt){
   ambGullGain.gain.value  += (gull  - ambGullGain.gain.value ) * k;
   ambOceanGain.gain.value += (ocean - ambOceanGain.gain.value) * k;
 }
+// ---- SONAR-PING: alle 15 s ein Signal, dessen Lautstaerke am naechsten Wrack haengt ------------
+// "vielleicht alle 15s ein leises ping unter wasser in abhaengigkeit vom naechsten wrack unter
+// wasser (lautstaerke von schwach bis leise)". Der Ping ist damit kein Schmuck, sondern das
+// SUCHGERAET: er wird lauter, je naeher man einem Wrack kommt, und ergaenzt das Periskop, das nur
+// getaucht hilft und nach oben zeigt. Man hoert, dass da etwas ist, bevor man es sieht (unter
+// Wasser reicht der Blick 165 bis 180 m).
+const SONAR_EVERY  = 15;    // s zwischen zwei Pings
+const SONAR_R      = 1200;  // m: ab hier ist ueberhaupt etwas zu hoeren. Etwas weniger als der
+                            // Periskop-Radius (1.400 m), damit das Bild eher da ist als der Ton.
+const SONAR_VOL_MIN= 0.02;  // "von schwach bis leise": am Rand kaum wahrnehmbar,
+const SONAR_VOL_MAX= 0.10;  // direkt am Wrack immer noch leiser als der Motor (0,09 bis 0,25).
+let sonarT = SONAR_EVERY;   // Restzeit. Voll starten, damit nicht sofort beim Abtauchen einer kommt.
+// Ein einzelner Ping: kurzer Sinus, der in der Tonhoehe leicht abfaellt, mit langem Nachhall-Schwanz.
+// Synthetisch und nicht als Datei, wie der Ueberschallknall und die Motoren — ein Ping ist ein
+// Sinus mit Huellkurve, dafuer braucht es kein Sample.
+function playSonarPing(vol){
+  if(!soundOn || !audioCtx || audioCtx.state !== 'running') return;
+  const sr = audioCtx.sampleRate, dur = 1.4;
+  const buf = audioCtx.createBuffer(1, Math.floor(sr*dur), sr);
+  const d = buf.getChannelData(0);
+  // Phase integrieren statt sin(2*pi*f*t) mit veraenderlichem f: nur so bleibt sie stetig, wenn die
+  // Frequenz faellt (dasselbe Verfahren wie in makeSubEngineBuffer).
+  let ph = 0;
+  for(let i=0;i<d.length;i++){
+    const t = i/sr;
+    // 1.050 Hz auf 880 Hz fallend: der bekannte, leicht 'durchhaengende' Sonarton.
+    const f = 1050 - 170*Math.min(1, t/0.35);
+    ph += 2*Math.PI*f/sr;
+    // Huellkurve: 8 ms Anschlag (ohne den knackt es), dann exponentiell ausklingen — der lange
+    // Schwanz ist der Nachhall im Wasser und macht aus einem Piepen ein Sonar.
+    const an = Math.min(1, t/0.008);
+    const ab = Math.exp(-t*3.2);
+    d[i] = Math.sin(ph) * an * ab * 0.9;
+  }
+  const src = audioCtx.createBufferSource(); src.buffer = buf;
+  const g = audioCtx.createGain(); g.gain.value = vol;
+  // Etwas Hoehen wegnehmen: Wasser daempft hohe Frequenzen, ein Sinus allein klingt zu trocken.
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+  src.connect(lp).connect(g).connect(audioCtx.destination);
+  src.start();
+}
+function updateSonar(dt){
+  // Nur GETAUCHT im U-Boot: an der Oberflaeche gibt es nichts zu orten, und in einem Flugzeug
+  // schon gar nicht. uwCamBlend ist derselbe Massstab, den die Meereskulisse benutzt (dort
+  // umgekehrt: < 0,3 heisst ueber Wasser).
+  if(!soundOn || !audioCtx || locale !== 'earth' || !isSub() || uwCamBlend < 0.6){
+    sonarT = SONAR_EVERY;   // ueber Wasser zuruecksetzen: nach dem Abtauchen sollen 15 s vergehen
+    return;
+  }
+  sonarT -= dt;
+  if(sonarT > 0) return;
+  sonarT = SONAR_EVERY;
+  // Das naechste Wrack suchen. Abgesucht werden die Zellen im Umkreis von SONAR_R — bei CELL 850
+  // sind das 3x3, und wreckInfos ist billig (cellRnd plus ein seabedY je Wurf).
+  const pcx = Math.round(state.pos.x / CELL), pcz = Math.round(state.pos.z / CELL);
+  const span = Math.ceil(SONAR_R / CELL) + 1;
+  let nah = 1e9;
+  for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
+    for(const wi of wreckInfos(pcx+dx, pcz+dz)){
+      // Abstand im RAUM, nicht in der Ebene: ein Wrack 100 m unter einem ist nicht 'da', und beim
+      // Fahren dicht unter der Oberflaeche macht das den Unterschied.
+      const d = Math.hypot(wi.wx-state.pos.x, wi.y-state.pos.y, wi.wz-state.pos.z);
+      if(d < nah) nah = d;
+    }
+  }
+  if(nah > SONAR_R) return;          // nichts in Reichweite: dann bleibt es still
+  // Naeher = lauter, mit smoothstep, damit die Naehe sich am Ende deutlicher anfuehlt als am Rand.
+  const f = 1 - nah/SONAR_R;
+  const s = f*f*(3-2*f);
+  playSonarPing(SONAR_VOL_MIN + (SONAR_VOL_MAX-SONAR_VOL_MIN)*s);
+}
 function updateEngineSound() {
   if (!audioCtx) return;
   // AudioContext jeden Frame aufwecken, falls (noch) suspendiert (Browser-Autoplay-Sperre).
@@ -12161,24 +12294,25 @@ function updatePeriscope(dt){
   const pcx = Math.round(state.pos.x / CELL), pcz = Math.round(state.pos.z / CELL);
   const span = Math.ceil(PERI_R / CELL) + 1;
   for(let dz=-span; dz<=span; dz++) for(let dx=-span; dx<=span; dx++){
-    const wi = wreckInfo(pcx+dx, pcz+dz);
-    if(!wi) continue;
-    const rx = wi.wx - state.pos.x, rz = wi.wz - state.pos.z;
-    // Etwas enger als PERI_R, damit der Punkt (3 bis 4,5 px Radius) ganz in der Scheibe bleibt:
-    // er wird ohne Clipping gemalt, weil er UEBER dem Gelaenderaster liegen soll.
-    if(Math.hypot(rx, rz) > PERI_R*0.94) continue;
-    // Dieselbe Drehung wie das Gelaenderaster darueber, damit Wrack und Kueste zusammenpassen.
-    const wdx = sinK*rz - cosK*rx;
-    const wdz = cosK*rz + sinK*rx;
-    const wx2 = cx + (wdx/PERI_R)*(R-2);
-    const wy2 = cy - (wdz/PERI_R)*(R-2);
-    // Grossfunde (das volle Schiffsmodell) etwas groesser und heller: sie sind die lohnendere
-    // Fahrt, und man soll vorher sehen, ob es sich um einen kleinen oder grossen Fund handelt.
-    const rad = wi.gross ? 4.5 : 3;
-    g.fillStyle = wi.gross ? '#ff5544' : '#c03828';
-    g.beginPath(); g.arc(wx2, wy2, rad, 0, Math.PI*2); g.fill();
-    // Dunkler Rand, damit der Punkt auf gruener Insel und blauem Wasser gleich gut zu sehen ist.
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 1; g.stroke();
+    // Eine Zelle kann mehrere Wracks tragen (WRECK_TRIES), also alle durchgehen.
+    for(const wi of wreckInfos(pcx+dx, pcz+dz)){
+      const rx = wi.wx - state.pos.x, rz = wi.wz - state.pos.z;
+      // Etwas enger als PERI_R, damit der Punkt (3 bis 4,5 px Radius) ganz in der Scheibe bleibt:
+      // er wird ohne Clipping gemalt, weil er UEBER dem Gelaenderaster liegen soll.
+      if(Math.hypot(rx, rz) > PERI_R*0.94) continue;
+      // Dieselbe Drehung wie das Gelaenderaster darueber, damit Wrack und Kueste zusammenpassen.
+      const wdx = sinK*rz - cosK*rx;
+      const wdz = cosK*rz + sinK*rx;
+      const wx2 = cx + (wdx/PERI_R)*(R-2);
+      const wy2 = cy - (wdz/PERI_R)*(R-2);
+      // Grossfunde (das volle Schiffsmodell) etwas groesser und heller: sie sind die lohnendere
+      // Fahrt, und man soll vorher sehen, ob es sich um einen kleinen oder grossen Fund handelt.
+      const rad = wi.gross ? 4.5 : 3;
+      g.fillStyle = wi.gross ? '#ff5544' : '#c03828';
+      g.beginPath(); g.arc(wx2, wy2, rad, 0, Math.PI*2); g.fill();
+      // Dunkler Rand, damit der Punkt auf gruener Insel und blauem Wasser gleich gut zu sehen ist.
+      g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 1; g.stroke();
+    }
   }
   // Rand und eigenes Boot in der Mitte, wie beim Radar.
   g.strokeStyle='rgba(255,255,255,0.6)'; g.lineWidth=2;
@@ -13198,6 +13332,7 @@ function loop(now){
   updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
   updateEngineSound();
   updateAmbient(dt);         // Meereskulisse: Moewen an der Insel, Ozeanrauschen draussen
+  updateSonar(dt);           // U-Boot getaucht: Ping alle 15 s, lauter je naeher das Wrack
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
   updateWaterDrop(dt);       // Wasserabwurf-Animation
   updateBoatSpray(dt);       // Feuerwehrboot: Wasserstrahl + Löschen

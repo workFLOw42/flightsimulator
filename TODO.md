@@ -2453,3 +2453,79 @@ $sub = [IO.File]::ReadAllText('C:\tmp\subsnd.js').Replace("`r`n","`n").Replace("
 
 ● Sounds einbauen
   ⎿  $ cd /c/tmp && node -e "const fs=require('fs');fs.writeFileSync('C:/tmp/v1.ps1','\uFEFF'+fs.readFileSync('C:/tmp/v1.ps1.txt','utf8'),{encoding:'utf8'});" && powershell -NoProfile -ExecutionPolicy Bypass -File C:/tmp/v1.ps1
+---
+
+## 2026-09-16 — Das Wrack, das nie zu sehen war (und ein Sonar dazu)
+
+Meldung: **"es gibt immer noch kein echtes wrack unter wasser"** — mit dem Auftrag, den Versuch
+ganz zu entfernen, die Dichte der kleinen Wracks um 1 zu erhoehen und alle 15 s einen leisen Ping
+einzubauen, dessen Lautstaerke am naechsten Wrack haengt.
+
+**Der Grossfund wurde nicht entfernt, sondern repariert.** Nachgesehen, statt der Annahme zu
+folgen: das Modell war nicht zu selten, es wurde **ueberhaupt nicht gezeichnet**. In `makeWreck`
+stand beim Umfaerben
+
+```js
+o.material = mats.map(...);                                  // liefert IMMER ein Array
+if(!Array.isArray(o.material)) o.material = o.material[0];   // also nie erfuellt
+```
+
+Jedes Mesh bekam damit ein **Array**-Material. three.js r128 zeichnet ein Array-Material
+ausschliesslich ueber `geometry.groups` — und die Liberty ist **ein** Mesh aus **einem** primitive
+(im GLB nachgesehen: 1 Mesh, 1 Material, 12.263 Dreiecke, `C:/tmp/glbmat.js`). Ohne Gruppen wird
+nichts gemalt. Das Wrack lag also die ganze Zeit da, mit Fischschwaermen darueber und einem roten
+Punkt im Periskop, nur unsichtbar. Deshalb half auch keine der beiden Erhoehungen der Haeufigkeit
+(0,2 -> 0,5) — sie kurierten ein Symptom, das es nicht gab. Der Fix entscheidet jetzt **vor** der
+Zuweisung, ob es eine Liste war.
+
+**Lehre fuers naechste Mal:** zweimal wurde eine Zahl erhoeht, weil etwas "zu selten" schien. Wenn
+eine Haeufigkeitserhoehung nichts bringt, ist die Haeufigkeit nicht das Problem.
+
+### Dichte: ein zweiter Wurf je Wasserzelle
+
+`wreckInfo` war auf **ein** Wrack je Zelle festgelegt. Jetzt `wreckInfo1(cx, cz, k)` je Wurf plus
+`wreckInfos(cx, cz)` fuer die Liste, `WRECK_TRIES = 2`. **k = 0 rechnet genau wie vorher** — ein
+Wrack, das man schon gefunden hat, liegt weiter an derselben Stelle (427 alte Standorte geprueft,
+alle unveraendert).
+
+Nachgemessen in 102,8 x 102,8 km (14.641 Zellen, `C:/tmp/wmeas.js`):
+
+| | vorher | nachher |
+|---|---|---|
+| Wracks | 3.622 (24,7 % der Zellen) | 6.865 (46,9 %) |
+| Weg zum naechsten | 793 m | 621 m |
+| gleichzeitig geladen (3x3 Zellen) | — | im Mittel 4,5, hoechstens 14 |
+
+**Zwei Fehler dabei selbst gefunden und behoben**, beide durch Messen statt Hinsehen:
+1. Die zwei Wuerfe einer Zelle streuen unabhaengig ueber 510 m — **13,6 % der Paare steckten
+   ineinander**, der engste 5,3 m auseinander bei 82 m Rumpflaenge (`C:/tmp/wnah.js`). Jetzt faellt
+   der spaetere Wurf weg, wenn er zu nah kommt (`WRECK_MIN_GAP = 1,3`). Kostet 450 Wracks, aber der
+   Weg zum naechsten steigt nur von 601 auf 621 m.
+2. Beim **Grossfund** ist die wirkliche Laenge 135 m (SHIP_TYPES), nicht das gewuerfelte `len` des
+   ungenutzten Nachbaus. Mit `len` gerechnet lagen 40 von 745 Grossfund-Paaren zu nah
+   (`C:/tmp/wgross.js`) — deshalb `wreckLen(info)`. Danach: 0.
+
+Nur der **erste** Wurf kann ein Grossfund sein: ein zweiter GLB-Frachter in derselben Zelle waere
+ein volles Schiffsmodell mehr und nimmt dem Fund seine Besonderheit.
+
+### Sonar-Ping als Suchgeraet
+
+`updateSonar` / `playSonarPing`: alle 15 s, **nur getaucht im U-Boot** (`uwCamBlend > 0,6`), sonst
+laeuft die Uhr zurueck auf 15 s. Synthetisch wie die Motoren und der Ueberschallknall — ein
+Sinus 1.050 -> 880 Hz mit 8 ms Anschlag und exponentiellem Nachhall, Tiefpass bei 1.800 Hz, weil
+Wasser die Hoehen wegnimmt. Phase integriert statt `sin(2*pi*f*t)`, sonst springt sie beim
+Frequenzabfall (dasselbe Verfahren wie `makeSubEngineBuffer`).
+
+Lautstaerke **0,02 bis 0,10** ("von schwach bis leise"), smoothstep ueber 1.200 m Radius — bewusst
+unter dem Motor (0,09 Leerlauf bis 0,25 Vollgas) und knapp unter dem Periskop-Radius (1.400 m),
+damit das Bild eher da ist als der Ton. Abstand im **Raum** gerechnet, nicht in der Ebene: ein
+Wrack 100 m unter einem ist nicht "da". Nachgemessen an 500 Standorten: in 5,2 % ist nichts in
+Reichweite (dann bleibt es still), sonst im Mittel 0,065.
+
+### Offen
+
+- **Boot verschwindet mit der Welle unter dem Strand** (Screenshot vom 16.09.). Recherchiert, aber
+  noch nicht behoben: `updateHarborBoats` hat fuer das ruhende Kai-Boot schon eine Untergrenze
+  (`Math.max(ISLAND_Y - BOAT_DRAFT*0.6, ...)`), `stepBoat` fuer das **selbst gefahrene** Boot aber
+  nicht — dort steht `state.pos.y = seaSurfaceY(0, 0, dt) - BOAT_DRAFT;` ohne Boden.
+- Ob der Grossfund jetzt gefaellt, muss im Spiel entschieden werden — er war noch nie zu sehen.
