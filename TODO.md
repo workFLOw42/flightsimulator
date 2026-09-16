@@ -2363,3 +2363,93 @@ Sofort-Umstieg, kein Absturz.
   offenes Wrack zu tauchen wäre auch schön.
 - **Kein Licht am Boot.** Auf 200 m ist es dunkel; ein Scheinwerfer wäre der nächste Schritt, wenn die
   Tiefsee interessanter werden soll.
+
+❯ c:\Users\flori\Downloads\ElevenLabs_Möwen_am_Meer.mp3 c:\Users\flori\Downloads\ElevenLabs_Ozeansturm.mp3
+
+Zwei Sounddateien. Ich sehe mir sie und das vorhandene Sound-System an, bevor ich etwas einbaue:
+
+  Searched for 1 pattern, ran 6 shell commands
+
+Ich verstehe das System. Bevor ich einbaue, kläre ich die Größenfrage — die MP3s sind 1,2 MB zusammen:
+
+  Ran 1 shell command
+
+10 s Möwen und 20 s Sturm bei 320 kbps. Bevor ich einbaue, eine Frage zum Einsatz — davon hängt die Umsetzung ab:
+
+● User answered Claude's questions:
+· Wo sollen die beiden Sounds zu hören sein? → "Möwen an der Insel, Sturm auf offener See (Empfohlen)"
+· Sollen die Sounds auch im U-Boot unter Wasser laufen? → Nein, unter Wasser ausblenden (Empfohlen)
+
+Klar. Ich konvertiere die MP3s und baue das System:
+
+● Bash(node -e "
+      const fs=require('fs');…)
+geschrieben: 1.53 MB
+
+Name        Length
+… +2 lines
+1 file changed (binary, mode only or too large to show)
+Allowed by auto mode classifier
+
+  Ran 1 shell command
+
+Beide Dateien sind intakt (ID3-Header). Jetzt suche ich das <script>-Tag für sounds.js:
+
+  Ran 1 shell command
+
+❯ die töne aber insgesamt leise... und bitte das uboot ein anderes motoren geräusch
+
+Notiert: leise, und eigener U-Boot-Motor. Erst sehe ich mir den vorhandenen Bootsmotor an:
+
+  Ran 1 shell command
+
+Sehr gute Vorlage — dasselbe Verfahren nutze ich für den U-Boot-Motor. Ich prüfe, wie der Bootsmotor angebunden ist:
+
+  Ran 1 shell command
+
+Ich sehe die Struktur: das U-Boot nutzt den Bootsmotor. Ich baue beides — eigenen U-Boot-Motor plus die Meeresgeräusche:
+
+● Write(C:\tmp\subsnd.js)
+Wrote 60 lines to ..\..\..\..\..\..\tmp\subsnd.js
+// ---- U-BOOT-MOTOR: tiefes Summen statt Aussenborder ---------------------------------------------
+// Das U-Boot lief bisher mit demselben synthetischen Motor wie das Feuerwehrboot. Das ist als
+// Notloesung verstaendlich (beides sind Schiffsdiesel), klingt aber falsch: ein Aussenborder
+// blubbert und schlaegt, ein getauchtes U-Boot summt. Man hoert einen Elektromotor und die
+// Schraube, gedaempft durch den Druckkoerper — keine Auspuffschlaege, denn unter Wasser laeuft
+// kein Verbrennungsmotor.
+//
+// Gebaut nach demselben Verfahren wie makeBoatEngineBuffer, und der wichtigste Punkt daran ist der
+// NAHTLOSE Loop: jede beteiligte Schwingung muss am Pufferende genau dort stehen, wo sie angefangen
+// hat, sonst knackt es bei jeder Wiederholung. Dafuer werden alle Frequenzen als ganzzahlige
+… +50 lines
+
+● Write(C:\tmp\ambsnd.js)
+Wrote 77 lines to ..\..\..\..\..\..\tmp\ambsnd.js
+// ---- MEERESKULISSE: Moewen an der Insel, Ozeanrauschen draussen ---------------------------------
+// Zwei Aufnahmen (ambient.js), beide als Dauerloop, beide LEISE — sie sollen die Szene traegen, nicht
+// im Vordergrund stehen. Der Motor bleibt das laute Geraeusch.
+//
+// Ortsabhaengig, und das ist der Reiz: Moewen sind Kuestenvoegel, man hoert sie also nur in
+// Inselnaehe, und das Ozeanrauschen gehoert nach draussen aufs offene Meer. Wer vom Hafen hinaus
+// faehrt, hoert die Moewen verklingen und das Meer aufkommen.
+//
+// Beides nur UEBER Wasser und in Bodennaehe: unter Wasser hoert man keine Moewen (dort laeuft der
+// Motor und das Stroemungsrauschen), und aus 3.000 m Hoehe auch nicht.
+… +67 lines
+
+● Write(C:\tmp\v1.ps1.txt)
+Wrote 66 lines to ..\..\..\..\..\..\tmp\v1.ps1.txt
+$p = 'C:\Users\flori\Documents\Software\Github\Flugspiel\Flugspiel.html'
+$t = [IO.File]::ReadAllText($p)
+$NL = "`r`n"
+function Rep($t, $alt, $neu, $name){
+  $n = ([regex]::Matches($t, [regex]::Escape($alt))).Count
+  if($n -ne 1){ Write-Host "FEHLER $name : $n Treffer (erwartet 1)"; exit 1 }
+  Write-Host "ok  $name"
+  return $t.Replace($alt, $neu)
+}
+$sub = [IO.File]::ReadAllText('C:\tmp\subsnd.js').Replace("`r`n","`n").Replace("`n","`r`n").TrimEnd()
+… +56 lines
+
+● Sounds einbauen
+  ⎿  $ cd /c/tmp && node -e "const fs=require('fs');fs.writeFileSync('C:/tmp/v1.ps1','\uFEFF'+fs.readFileSync('C:/tmp/v1.ps1.txt','utf8'),{encoding:'utf8'});" && powershell -NoProfile -ExecutionPolicy Bypass -File C:/tmp/v1.ps1

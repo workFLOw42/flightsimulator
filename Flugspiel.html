@@ -125,6 +125,7 @@
 <script src="three.min.js"></script>
 <script src="GLTFLoader.js"></script>
 <script src="sounds.js"></script>
+<script src="ambient.js"></script>
 <script src="canadair_glb.js"></script>
 <script src="alphajet_glb.js"></script>
 <script src="airbus_glb.js"></script>
@@ -10172,6 +10173,143 @@ function startEngineLoop(buf) {
 let engineFor = null;          // welches Modell aktuell klingt
 let enginePending = null;      // welches Modell gerade geladen wird
 let engineBufCurrent = null;   // Puffer des aktuell laufenden Loops
+// ---- U-BOOT-MOTOR: tiefes Summen statt Aussenborder ---------------------------------------------
+// Das U-Boot lief bisher mit demselben synthetischen Motor wie das Feuerwehrboot. Das ist als
+// Notloesung verstaendlich (beides sind Schiffsdiesel), klingt aber falsch: ein Aussenborder
+// blubbert und schlaegt, ein getauchtes U-Boot summt. Man hoert einen Elektromotor und die
+// Schraube, gedaempft durch den Druckkoerper — keine Auspuffschlaege, denn unter Wasser laeuft
+// kein Verbrennungsmotor.
+//
+// Gebaut nach demselben Verfahren wie makeBoatEngineBuffer, und der wichtigste Punkt daran ist der
+// NAHTLOSE Loop: jede beteiligte Schwingung muss am Pufferende genau dort stehen, wo sie angefangen
+// hat, sonst knackt es bei jeder Wiederholung. Dafuer werden alle Frequenzen als ganzzahlige
+// Vielfache von 1/T gewaehlt.
+let subEngineBuf = null;
+function makeSubEngineBuffer(){
+  if(!audioCtx) return null;
+  const sr = audioCtx.sampleRate;
+  const T = 2.0;                                  // Looplaenge in Sekunden
+  const len = Math.round(sr * T);
+  const hz = (k)=> k / T;                         // k-te Harmonische der Looplaenge
+  // Grundton 26 Hz: deutlich tiefer als der Aussenborder (42 Hz). Ein Elektromotor unter Last
+  // brummt tief und gleichmaessig, und die Tiefe traegt durch das Wasser.
+  const F0   = hz(52);
+  // Die SCHRAUBE: sieben Blaetter bei niedriger Drehzahl geben ein Wummern um 8 Hz. Das ist der
+  // Klang, den man von U-Boot-Aufnahmen kennt.
+  const BLADE = hz(16);
+  // Ganz langsames Schwellen, damit es nicht wie ein Dauerton steht.
+  const SWELL = hz(3);
+  const buf = audioCtx.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  // Wasserrauschen: viel dumpfer gefiltert als beim Boot (0,015 statt 0,06), weil man es durch den
+  // Druckkoerper hoert. Erste Haelfte erzeugen und gespiegelt fortsetzen, damit der Puffer sich
+  // schliesst — Rauschen klingt gespiegelt genauso zufaellig.
+  const half = Math.floor(len/2);
+  const noise = new Float32Array(len);
+  let lp = 0, lp2 = 0;
+  for(let i=0;i<=half;i++){
+    lp  += ((Math.random()*2-1) - lp) * 0.015;    // sehr tiefer Tiefpass: dumpfes Stroemungsrauschen
+    lp2 += (lp - lp2) * 0.05;                     // zweite Stufe, nimmt die letzten Hoehen weg
+    noise[i] = lp2;
+  }
+  for(let i=half+1;i<len;i++) noise[i] = noise[len-i];
+  // Phase integrieren (siehe makeBoatEngineBuffer): nur so ist sie bei modulierter Frequenz stetig.
+  let ph = 0;
+  for(let i=0;i<len;i++){
+    const t = i / sr;
+    // Leichtes Schwellen der Drehzahl, viel schwaecher als beim Aussenborder (der flattert).
+    const wob = 1 + 0.012*Math.sin(2*Math.PI*SWELL*t);
+    ph += 2*Math.PI*F0*wob/sr;
+    // Reine Sinusanteile ohne Schlagcharakter: ein Elektromotor hat keine Zuendungen. Die
+    // geradzahligen Obertoene ueberwiegen, das klingt nach Maschine statt nach Motor.
+    let v = Math.sin(ph)*0.62 + Math.sin(2*ph)*0.22 + Math.sin(4*ph)*0.08;
+    // Das Schraubenwummern moduliert die Lautstaerke — genau das macht den U-Boot-Klang.
+    const blade = 1 + 0.35*Math.sin(2*Math.PI*BLADE*t);
+    v *= blade;
+    // Stroemungsrauschen dazu, kraeftiger als beim Boot: unter Wasser ist es das, was man neben
+    // dem Motor hoert.
+    v = v*0.62 + noise[i]*8.0;
+    d[i] = Math.max(-1, Math.min(1, v*0.5));
+  }
+  return buf;
+}
+// ---- MEERESKULISSE: Moewen an der Insel, Ozeanrauschen draussen ---------------------------------
+// Zwei Aufnahmen (ambient.js), beide als Dauerloop, beide LEISE — sie sollen die Szene traegen, nicht
+// im Vordergrund stehen. Der Motor bleibt das laute Geraeusch.
+//
+// Ortsabhaengig, und das ist der Reiz: Moewen sind Kuestenvoegel, man hoert sie also nur in
+// Inselnaehe, und das Ozeanrauschen gehoert nach draussen aufs offene Meer. Wer vom Hafen hinaus
+// faehrt, hoert die Moewen verklingen und das Meer aufkommen.
+//
+// Beides nur UEBER Wasser und in Bodennaehe: unter Wasser hoert man keine Moewen (dort laeuft der
+// Motor und das Stroemungsrauschen), und aus 3.000 m Hoehe auch nicht.
+const AMB_GULL_R  = 900;    // m: bis hierher sind Moewen zu hoeren. Etwas mehr als ein Inselradius
+                            // (170 bis 330 m) plus Schelf — man hoert sie also schon beim Anfahren.
+const AMB_MAX_Y   = 400;    // m Hoehe: darueber verstummt die Kulisse. Ein Flugzeug in Reisehoehe
+                            // hoert nur seinen Motor.
+const AMB_GULL_VOL = 0.16;  // Grundlautstaerke. Bewusst niedrig gehalten ("die toene aber insgesamt
+const AMB_OCEAN_VOL= 0.13;  // leise"): beide sind Kulisse, kein Effekt.
+const AMB_RATE    = 0.7;    // wie schnell die Lautstaerke nachlaeuft (pro Sekunde). Langsam, damit
+                            // der Wechsel Insel/offenes Meer ein Uebergang ist und kein Umschalten.
+let ambGullSrc = null, ambGullGain = null;
+let ambOceanSrc = null, ambOceanGain = null;
+let ambStarted = false;
+// Einen Dauerloop starten. Eigener Gain-Knoten je Spur, damit beide unabhaengig geblendet werden.
+function ambStart(dataUrl, cb){
+  if(!audioCtx || !dataUrl) return;
+  decodeSound(dataUrl).then(buf=>{
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0;          // stumm starten und einblenden, sonst knallt es beim Einsetzen
+    src.connect(gain).connect(audioCtx.destination);
+    src.start();
+    cb(src, gain);
+  }).catch(err=>console.warn('Ambient-Sound Ladefehler:', err));
+}
+function updateAmbient(dt){
+  if(!audioCtx || audioCtx.state !== 'running' || !window.FMS_AMB) return;
+  // Einmal starten, sobald der Context laeuft (die Autoplay-Sperre der Browser verlangt das).
+  if(!ambStarted){
+    ambStarted = true;
+    ambStart(window.FMS_AMB.gulls, (s,g)=>{ ambGullSrc = s; ambGullGain = g; });
+    ambStart(window.FMS_AMB.ocean, (s,g)=>{ ambOceanSrc = s; ambOceanGain = g; });
+  }
+  if(!ambGullGain || !ambOceanGain) return;
+  let gull = 0, ocean = 0;
+  // Nur in der Inselwelt, nur ueber Wasser, nur in Bodennaehe — und nicht getaucht (uwCamBlend
+  // steuert schon Nebel und Farbe, hier bestimmt es die Stille unter Wasser).
+  if(soundOn && locale === 'earth' && uwCamBlend < 0.3){
+    const F = worldFocus();
+    const y = eva ? eva.group.position.y : state.pos.y;
+    if(y < AMB_MAX_Y){
+      // Mit der Hoehe ausblenden, nicht hart abschneiden: sonst setzt die Kulisse beim Steigen
+      // ploetzlich aus.
+      const hoehe = 1 - Math.max(0, Math.min(1, y / AMB_MAX_Y));
+      // MOEWEN: wie weit ist die naechste Insel? islandInfo ist gecacht, die Abfrage also billig.
+      // Gesucht wird im Umkreis von AMB_GULL_R, das sind bei CELL 850 zwei Zellen in jede Richtung.
+      let nah = 1e9;
+      const pcx = Math.round(F.x / CELL), pcz = Math.round(F.z / CELL);
+      for(let dz=-1; dz<=1; dz++) for(let dx=-1; dx<=1; dx++){
+        const info = islandInfo(pcx+dx, pcz+dz);
+        if(!info) continue;
+        const d = Math.hypot(F.x-info.wx, F.z-info.wz) - info.radius;
+        if(d < nah) nah = d;
+      }
+      // Voll am Ufer, aus bei AMB_GULL_R. smoothstep, damit es an beiden Enden weich auslaeuft.
+      const gRoh = 1 - Math.max(0, Math.min(1, nah / AMB_GULL_R));
+      gull = gRoh*gRoh*(3-2*gRoh) * AMB_GULL_VOL * hoehe;
+      // OZEAN: das Gegenstueck — draussen laut, an der Insel leise. Nicht ganz aus, denn Brandung
+      // hoert man auch am Ufer; deshalb bleibt ein Drittel stehen.
+      ocean = (0.33 + 0.67*(1-gRoh)) * AMB_OCEAN_VOL * hoehe;
+    }
+  }
+  // Gleitend nachfuehren (siehe AMB_RATE): ein harter Wechsel waere als Klicken zu hoeren.
+  const k = Math.min(1, AMB_RATE*dt);
+  ambGullGain.gain.value  += (gull  - ambGullGain.gain.value ) * k;
+  ambOceanGain.gain.value += (ocean - ambOceanGain.gain.value) * k;
+}
 function updateEngineSound() {
   if (!audioCtx) return;
   // AudioContext jeden Frame aufwecken, falls (noch) suspendiert (Browser-Autoplay-Sperre).
@@ -10179,12 +10317,19 @@ function updateEngineSound() {
   const running = audioCtx.state === 'running';
   // Im Schlauchboot laeuft derselbe synthetische Aussenborder wie beim Feuerwehrboot — es ist ja
   // auch einer. Das schlaegt das Modell des abgestellten Fliegers, denn zu hoeren ist das Boot.
-  // Im Schlauchboot UND im U-Boot laeuft derselbe synthetische Bootsmotor.
-  const model = (eva && eva.boat) ? 'Boat' : (isSub() ? 'Boat' : MODEL_NAMES[currentModel]);
+  //
+  // Das U-BOOT hat seit dieser Runde einen EIGENEN Motor ('Sub'). Vorher lief dort der
+  // Aussenborder, und das klang falsch: ein Aussenborder blubbert und schlaegt, ein U-Boot summt.
+  const model = (eva && eva.boat) ? 'Boat' : (isSub() ? 'Sub' : MODEL_NAMES[currentModel]);
   // Boot: eigener, synthetisch erzeugter Motorloop (kein Sample zum Dekodieren).
   if (model === 'Boat') {
     if (!boatEngineBuf) boatEngineBuf = makeBoatEngineBuffer();
     if (boatEngineBuf && engineFor !== 'Boat') { engineBufCurrent = boatEngineBuf; engineFor = 'Boat'; }
+  }
+  // U-Boot: tiefes Summen mit Schraubenwummern (siehe makeSubEngineBuffer).
+  else if (model === 'Sub') {
+    if (!subEngineBuf) subEngineBuf = makeSubEngineBuffer();
+    if (subEngineBuf && engineFor !== 'Sub') { engineBufCurrent = subEngineBuf; engineFor = 'Sub'; }
   }
   // Puffer fürs aktuelle Modell laden (nur einmal pro Modell)
   else if (engineFor !== model && enginePending !== model) {
@@ -13052,6 +13197,7 @@ function loop(now){
   if(bigTimer > 0){ bigTimer -= dt; if(bigTimer <= 0) showBig(''); }
   updateRumble(dt);          // Controller-Vibration (Crash/Stall/Landung)
   updateEngineSound();
+  updateAmbient(dt);         // Meereskulisse: Moewen an der Insel, Ozeanrauschen draussen
   updateScoop(dt);           // Wasser aufnehmen (Canadair)
   updateWaterDrop(dt);       // Wasserabwurf-Animation
   updateBoatSpray(dt);       // Feuerwehrboot: Wasserstrahl + Löschen
