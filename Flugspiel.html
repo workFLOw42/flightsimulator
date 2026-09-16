@@ -366,9 +366,21 @@ const SEABED_SIZE = 6000;   // wie das Meeresgitter (SEA_SIZE) — Boden und Was
 const SEABED_SEG  = 48;     // halb so fein wie das Meer: der Boden hat keine Wellen, nur Relief
 const SEABED_STEP = SEABED_SIZE / SEABED_SEG;   // 125 m Rasterschritt (siehe oben)
 // Wie weit vor der Insel der Schelf liegt: innerhalb dieser Strecke steigt der Boden vom Tiefenwert
-// bis unter den Strand. 400 m sind bei 170-330 m Inselradius ein breiter, flacher Saum — dort steht
-// die Vegetation, dort schwimmen die Fische, und dort sieht man beides zusammen mit der Oberflaeche.
-const SHELF_W     = 400;
+// bis unter den Strand. Von 400 auf 180 m verkuerzt — also kurze flache Zone, dann steiler Abfall.
+//
+// Der Grund ist das Abtauchen zwischen Inseln. Nachgerechnet: das U-Boot braucht mit 12 m
+// Bodenfreiheit rund 20 m Wasser, und die waren bei 400 m Schelf erst 112 m vor der Sandkante da.
+// Die engsten 10 % der Nachbarluecken sind aber nur 124 m breit — in deren Mitte ist man 62 m von
+// jeder Kante entfernt, und dort lag der Grund bei 7,6 m. Von 975 Nachbarpaaren waren nur 81 %
+// durchfahrbar; mit 180 m sind es 91 %, und fahrbar wird es schon ab 51 m.
+//
+// Was sonst an SHELF_W haengt, ist geprueft: der Suchradius in collectSeabedIslands und der span in
+// seabedY wachsen einfach mit. UW_PLANT_BAND0/BANDW sind ANTEILE, und weil das smoothstep-Profil
+// selbstaehnlich ist, treffen dieselben Anteile weiter dieselben Tiefen (9 bis 25 m) — sie bleiben
+// also gueltig. WRECK_MIN_DEPTH und UW_PLANT_MIN_DEPTH sind absolute Tiefen und unberuehrt.
+// Nebeneffekt zum Guten: das Riffband wird schmaler (26 statt 59 m), die Pflanzen stehen damit
+// dichter zusammen (24 m Abstand statt 39 m) und wirken mehr wie ein Riff.
+const SHELF_W     = 180;
 // Bodenhoehe direkt am Strand, knapp unter dem Sand. Als ZAHL und nicht als ISLAND_Y - 1.5:
 // dieser Block laeuft zur Ladezeit, und ISLAND_Y wird erst weiter unten deklariert (das
 // Insel-System steht nach dem Meer). const wird nicht gehoistet — die Rechnung waere ein
