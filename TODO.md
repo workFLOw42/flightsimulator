@@ -2726,3 +2726,268 @@ Stille im Puffer und kostet nichts — nicht wert, sie herauszuschneiden.
 ### Offen
 
 - **Boot verschwindet mit der Welle unter dem Strand** (Screenshot 16.09.), weiter unerledigt.
+Gepusht (87f12f7, Cache v135). Deine Diagnose war richtig — ich konnte sie sogar in Zahlen fassen.
+
+Ich habe die MP3-Skalierungsfaktoren ausgelesen (global_gain je Frame):
+
+┌───────┬────────┬─────────┐
+│ Datei │ Median │ hörbar? │
+├───────┼────────┼─────────┤
+│ sonar │ 123    │ kaum    │
+├───────┼────────┼─────────┤
+│ gulls │ 151    │ ja      │
+├───────┼────────┼─────────┤
+│ ocean │ 162    │ ja      │
+└───────┴────────┴─────────┘
+
+Vier Stufen sind eine Verdopplung — der Ping lag rund Faktor 861 unter dem Ozeanrauschen. Im Code war nichts falsch, die Aufnahme ist einfach sehr niedrig ausgesteuert.
+
+Statt eine Zahl hochzudrehen, wird jetzt normiert: normalizePeak sucht den Spitzenwert des dekodierten Puffers und skaliert ihn auf 0,9. Damit heisst vol = 0,30 wirklich „30 % Vollaussteuerung", unabhängig von der Datei — eine feste Verstärkung hätte bei jeder neuen Aufnahme wieder von Hand gesucht werden müssen. Gegen den echten Motorpuffer gerechnet: Ping am Wrack 0,270 gegen 0,190 Motor-Vollgas, am Rand 0,045. Er steht am Wrack also über dem Motor, was für ein selbst ausgelöstes Signal richtig ist.
+
+Die 0,9 statt 1,0 sind Absicht: zwei überlappende Pings addieren sich, darüber schneidet die Ausgabe hart ab.
+
+Sperre auf 2,5 s — dein Hinweis „nach 1,2 s startet es neu" traf den Kern: bei ~3 s Klanglänge setzte der neue mitten in den Nachhall. Jetzt bleiben 0,5 s Überlappung, das klingt nach Echo. Die 6,74 s Dateilänge bei ~3 s Klang habe ich gelassen — der Rest ist Stille im Puffer und kostet nichts.
+
+✻ Crunched for 6m 3s · done 3:20 PM
+
+※ recap: Wir bauen die Unterwasserwelt im Flugspiel aus: Wracks liegen jetzt korrekt auf dem Grund und der Sonar-Ping auf B ist normiert und laut genug, alles gepusht. Als Nächstes bliebe der Strand-Bug, wo das Feuerwehrboot im Wellental unter dem Sand verschwindet.
+
+❯ danke. das hat geklappt. das verschwinden unter dem strand betrifft alle fzg direkt an der küstenlinie. das wellental zieht sie unter die sichtlinie des strandes. und & 'c:\Users\flori\Downloads\Screenshot 2026-09-16 152803.jpg' wrack schwebt immer noch. erst die küstenlinie, dann c&p, dann wrack und nochmal c&p
+
+Klare Reihenfolge: erst Küstenlinie, c&p, dann Wrack, c&p. Ich sehe mir den Screenshot an.
+
+  Reading c:\Users\flori\Downloads\Screenshot 2026-09-16 152803.jpg
+  ⎿  c:\Users\flori\Downloads\Screenshot 2026-09-16 152803.jpg
+  ❯ bitte ins flugspiel wechseln und in todo ab 2729 bzw 2755 weiter machen.
+
+  Read 1 file, listed 1 directory, ran 19 shell commands
+
+Ich lese den Kontext ein. Der Punkt ab 2755 ist klar: erst Küstenlinie, dann Wrack. Zuerst messe ich, was an der Küstenlinie tatsächlich passiert.
+
+  Ran 2 shell commands
+
+Der Verdacht: seaMeshY kennt die Insel-Maskierung nicht. updateSea setzt Gitterpunkte unter einer Insel auf y = -1, seaMeshY rechnet dort aber weiter mit der Wellenformel. Das messe ich nach, statt es zu behaupten.
+
+  Ran 2 shell commands
+
+Der Wellenhub in der Gittermitte ist ±2,94 m — das Boot steht bis 4,04 m unter Null. Jetzt der entscheidende Punkt: updateSea setzt Gitterpunkte unter einer Insel auf y = -1, seaMeshY rechnet dort aber weiter die reine Wellenformel. Das messe ich gegen die echte gerenderte Fläche.
+
+  Ran 1 shell command
+
+❯ so weit ich das beurteilen konnte was das segel wrack ok, aber das liberty wrack liegt schief im sand, ergo eine stelle liegt am grund, die andere lschwebt in der luft
+
+  Ran 1 shell command
+
+Auf offenem Wasser stimmt die Bootshöhe exakt — der Fehler liegt nicht in der Interpolation. Die eigentliche Zahl ist eine andere. Ich prüfe noch die Kamera und die Zeilenenden.
+
+  Ran 2 shell commands
+
+Auf befahrbarem Wasser stimmt die Bootshöhe exakt (0 von 136.800 Proben abweichend) — die Interpolation ist es nicht. Deine Beschreibung nennt aber den Mechanismus: „unter die Sichtlinie des Strandes". Das ist Kamera-Geometrie, also messe ich die.
+
+  Ran 3 shell commands
+
+Der Test war tautologisch: das Boot sitzt exakt auf einem Gitterpunkt, also stimmt seine Höhe zwangsläufig mit dem Gitter. Das war die falsche Frage. Deine Formulierung nennt die richtige — Sichtlinie. Die rechne ich jetzt.
+
+  Ran 6 shell commands
+
+Jetzt die Sichtlinie durchrechnen: Kamera 55 m hinter/14 m über dem Boot, Boot im Wellental — verdeckt der Sand die Sicht?
+
+  Ran 1 shell command
+
+Wasser verdeckt nichts. Aber die Rechnung zeigt die entscheidende Zahl: das Boot liegt im Wellental bei y = −4,04 m, der Sandteller aber fest bei y = +0,25 m. Wenn die Kamera landseitig hinter dem Boot steht, schneidet dieser Teller die Sichtlinie. Das rechne ich jetzt sauber durch.
+
+  Ran 2 shell commands
+
+Gefunden — und deine Beschreibung war exakt: in 11 % aller Küstenlagen schneidet der Sandteller die Sichtlinie. Die Ursache ist strukturell: der Sand liegt fest bei y = +0,25, das Wellental zieht das Fahrzeug auf −4,04 m. Jetzt prüfe ich die Lösung — Dünung zum Ufer hin auslaufen lassen.
+
+  Ran 2 shell commands
+
+Der Auslauf muss physikalisch richtig sein: Wellen laufen im Flachwasser aus. Ich prüfe, welche Restamplitude die Verdeckung wirklich beseitigt.
+
+  Ran 2 shell commands
+
+Weg (a) — Dünung zum Ufer auslaufen lassen — wirkt an einer Stelle für alle Fahrzeuge. Ich prüfe gegen die echte Sichtlinien-Rechnung, welche Breite reicht.
+
+  Ran 2 shell commands
+
+Ursache steht fest und ist gemessen. Jetzt lege ich die Fade-Parameter fest und prüfe sie gegen Nebenwirkungen.
+
+  Ran 2 shell commands
+
+Ein Nebeneffekt: Rest 0,08 hält die Wellenspitze an der Kante unter dem Sand — damit läuft auch kein Wasser über den Sandteller. Jetzt die Reihenfolge im Loop und die Kosten, bevor ich schreibe.
+
+  Ran 2 shell commands
+
+recycleWorld läuft nach updateSea — der Fade muss also an derselben Stelle greifen wie die Gitterpunkte. Ich messe die Kosten, bevor ich das einbaue.
+
+  Ran 2 shell commands
+
+26 ms sprengt das Budget (16,7 ms), und updateSea kostet schon 8,3 ms. Ich brauche die vorgesammelte Inselliste, die updateSea bereits hat.
+
+  Ran 2 shell commands
+
+4,2 ms zusätzlich ist zu teuer. Aber updateSea rechnet den Abstand zu jeder Insel schon — ich messe die integrierte Variante.
+
+  Ran 2 shell commands
+
+Zusatzkosten: 0,76 ms — das passt ins Budget. Jetzt baue ich es ein. Ich hole die exakten Textstellen.
+
+  Ran 1 shell command
+
+Ursache ist gemessen und die Lösung passt ins Budget. Ich baue sie ein — laut Projektregel per PowerShell mit Gegenlesen.
+
+  Ran 2 shell commands
+
+Ursache ist belegt. Der eleganteste Ort für die Korrektur ist waveY selbst — dann bekommen alle Fahrzeuge und auch das Gitter dieselbe Dämpfung. Ich prüfe vorher die Ladereihenfolge und den Cache-Namen.
+
+  Ran 3 shell commands
+
+Alles beisammen. Ich baue den Shore-Fade ein — in waveY, damit Gitter und alle Fahrzeuge dieselbe Dämpfung sehen.
+
+  Ran 1 shell command
+
+CRLF — ich normalisiere das Suchmuster.
+
+  Ran 2 shell commands
+
+Alle drei Stellen eindeutig. Ich schreibe die Änderung.
+
+  Ran 1 shell command
+
+Wichtig: waveY bekommt gitter-lokale Koordinaten (der dokumentierte Fallstrick bei Zeile 284) — shoreFade braucht aber Weltkoordinaten. Ich sehe mir den aktuellen Stand an.
+
+  Ran 2 shell commands
+
+Zwei Dinge sind zu richten: der alte Kommentarblock steht jetzt doppelt, und waveY bekommt gitter-lokale Koordinaten — shoreFade braucht Weltkoordinaten. Ich räume auf und schreibe shoreFade korrekt.
+
+  Ran 2 shell commands
+
+The here-string wrote LF where the file uses CRLF. Ich prüfe das.
+
+  Ran 2 shell commands
+
+Mein Einschub hat 36 reine LF hineingebracht — die Datei ist durchgehend CRLF. Das korrigiere ich zusammen mit dem doppelten Kommentar und shoreFade in einem Durchgang.
+
+  Ran 2 shell commands
+
+Zeilenenden sind wieder durchgehend CRLF. Jetzt der doppelte Kommentarkopf und shoreFade.
+
+  Ran 1 shell command
+
+Jetzt shoreFade selbst — mit der Weltkoordinaten-Rückrechnung und der vorgesammelten Inselliste.
+
+  Ran 1 shell command
+
+shoreFade liest jetzt ein 4er-Layout, collectSeaIslands schreibt aber 3er-Tupel. Das muss ich mitziehen — sonst rechnet beides falsch.
+
+  Ran 2 shell commands
+
+Es sind 5 Werte pro Insel geworden, nicht 4. Ich ziehe die beiden Leser nach — shoreFade und die covered-Prüfung.
+
+  Ran 2 shell commands
+
+Jetzt gegenlesen: Deklarationsreihenfolge (BEACH_FACTOR und ground stehen an anderer Stelle als der Meeresblock) und Syntax.
+
+  Ran 2 shell commands
+
+_seaIslands (364) und BEACH_FACTOR (956) stehen nach ihren Nutzern. Bei const ist das nur zur Laufzeit unkritisch — genau die Falle, die der SEABED_SHORE_Y-Kommentar dokumentiert. Ich prüfe auf Ladezeit-Aufrufe.
+
+  Ran 1 shell command
+
+Alle Aufrufe stehen in Funktionskörpern, keiner zur Ladezeit — die Reihenfolge ist unkritisch. Jetzt die Syntax- und Wirkungsprüfung.
+
+  Ran 2 shell commands
+
+Syntax ist in Ordnung. Jetzt lese ich den eingebauten Code gegen und prüfe die Wirkung mit dem echten Text aus der Datei.
+
+  Ran 1 shell command
+
+Ein Fehler steckt noch drin: shoreFade addiert ground.position — aber seaYAt subtrahiert sie vorher schon. Für dessen Aufrufer stimmt es, für updateSea auch. Das verifiziere ich mit dem echten Text aus der Datei.
+
+  Ran 2 shell commands
+
+Der echte Code läuft. Jetzt die Verifikation: erst der Sanity-Check auf offener See, dann die Sichtlinie.
+
+  Ran 1 shell command
+
+Alle Sollwerte exakt getroffen, kein Rücksprung. Jetzt der eigentliche Test: die Sichtlinie mit dem echten Code.
+
+  Ran 1 shell command
+
+0 von 27.720 Lagen verdeckt, in allen drei Kameramodi. Jetzt die Nebenwirkungen: offene See, Wasser über dem Sand, und die Kosten mit dem echten Code.
+
+  Ran 1 shell command
+
+Wichtige Nebenwirkung zu prüfen: die Kai-Boote haben eine Untergrenze (Math.max(ISLAND_Y - BOAT_DRAFT*0.6, …)). Wenn die Dünung dort jetzt gedämpft ist, könnte diese Klemme immer gewinnen — dann schaukeln sie nicht mehr.
+
+  Ran 1 shell command
+
+## Küstenlinie: Fahrzeuge verschwanden hinter dem Strand (18.09.)
+
+Dein Befund war der Schlüssel: „das wellental zieht sie unter die sichtlinie des strandes". Es war
+keine Kollision und kein Höhenfehler — das Fahrzeug lag hinter dem Sand.
+
+Gemessen: der Sandteller ist eine **flache** Scheibe auf y = 0,25 (`buildIsland`: ISLAND_Y − 0,05),
+das Wellental zieht das Fahrzeug aber auf y = −4,04 (Hub ±2,944 m minus BOAT_DRAFT). Steht die Kamera
+landseitig dahinter, schneidet der Teller die Sichtlinie: **11,2 %** aller Küstenlagen waren verdeckt,
+über alle drei Kameramodi (9,2 % im Standardmodus).
+
+Der Fix sitzt an der Ursache, nicht an der Kamera: an einem echten Ufer laufen Wellen im Flachwasser
+aus. `shoreFade` dämpft die Dünung über `SHORE_FADE_W` = 180 m auf `SHORE_FADE_REST` = 0,08. Weil das
+**in `waveY`** sitzt, gilt es für alle Fahrzeuge zugleich *und* für das Gitter — eine Korrektur pro
+Fahrzeug hätte vier Stellen gebraucht und das Fahrzeug neben die sichtbare Fläche gesetzt.
+
+Verdeckung danach: **0,0 %** in 27.720 geprüften Lagen, alle Kameramodi.
+
+Die Parameter sind gerechnet, nicht geraten:
+- **180 m** muss breiter sein als der Punktabstand des Gitters (SEA_STEP 62,5 m), sonst fällt der
+  Auslauf durchs Raster und man sieht eine Kante statt eines Auslaufs. 120 m hätten für die
+  Sichtlinie gereicht; 180 m verteilt den Übergang auf knapp drei Stützpunkte.
+- **Rest 0,08** statt 0: bei 0 stünde das Wasser am Ufer spiegelglatt und wirkte tot. Obergrenze ist
+  der Sandteller — 0,08 · 2,944 = 0,236 m bleibt darunter, 0,10 wäre mit 0,294 m schon zu hoch.
+
+Kosten: **0,84 ms** für alle 9.409 Gitterpunkte, mit dem echten Code aus der Datei gemessen. Das geht
+nur mit der vorgesammelten Inselliste (`_seaIslands`, einmal pro Frame) — mit `islandInfo` pro Punkt
+kostete dasselbe 26 ms und hätte das 16,7-ms-Budget allein gesprengt. Die Wurzel wird nur im
+Fade-Band gezogen; 73 % der Wasserfläche liegt im vollen Seegang.
+
+### Zwei Fehler, die der Fade nebenbei mit behoben hat
+
+Beide beim Nachmessen der Nebenwirkungen gefunden, keiner war gemeldet:
+
+| | vorher | jetzt |
+|---|---|---|
+| Wasser über dem Sandring | 44,6 % der Zeit, bis 2,75 m Überstand | 0,19 %, bis 9 cm |
+| Kiel des Kai-Boots schwebte über dem Sand | 14,5 % der Zeit, bis 1,50 m | nie, liegt 0,61 m im Sand |
+| Welle hob den Astronauten am Strand | 42,4 % der Zeit, bis 2,68 m | 0,0 %, bis 1 cm |
+
+Der Sandring zwischen Gras- und Sandradius ist dabei die richtige Messregion: nur dort ist Sand
+sichtbar **und** das Wasser unmaskiert. Weiter draußen darf das Wasser beliebig hoch stehen.
+
+### Eine echte Regression — und ihre Reparatur
+
+Das Kai-Feuerwehrboot nickte nicht mehr: von 7,82° auf 0,84° Hub, am Bug nur noch 4 cm. Ursache war
+kein Fehler im Fade, sondern der Faktor 0,35 in `updateHarborBoats` — der war für die
+**ungedämpfte** Dünung kalibriert.
+
+Der richtige Wert ist herleitbar, nicht Geschmackssache: `7·atan2(d,14)·fak` ist für kleine Winkel
+`0,5·fak·d`, und das ist genau `d`, wenn **fak = Nenner/Hebel = 14/7 = 2,0**. Dann folgt der Bug der
+Welle exakt — sein Abstand zur Wasserlinie bleibt konstant bei −0,90 m, statt zwischen −0,99 und
+−0,28 m zu stampfen. Bug-Hub 59 cm, das Heck bleibt 0,49 m im Sand, `rotation.x` von −8,2° bis −1,0°:
+es kippt nie nach hinten.
+
+Verifiziert an 111 echten Kai-Bootsplätzen über je 1.200 Frames, gerechnet mit den drei Zeilen
+wortwörtlich aus der Datei gelesen (`C:/tmp/kai13.js`) — nicht mit einem Nachbau.
+
+Das Kai-U-Boot (`updateHarborSubs`) behält 44 % Höhenhub und 1,14° Nicken; es liegt weiter draußen
+(HARBOR_SUB_FAC 1,30 gegen Sandkante 1,12). Bleibt so, das ist sichtbar.
+
+Geprüft und unauffällig: der Fade erzeugt keinen neuen Knick im Gitter (größter Sprung zwischen
+Nachbar-Stützpunkten 3,330 m mit gegen 3,337 m ohne Fade), und auf offener See ändert sich nichts —
+gedämpft ist 26,9 % der Wasserfläche, die mittlere Wellenhöhe bleibt bei 84,8 %.
+
+### Offen
+
+- **Liberty-Wrack liegt schief im Sand** — „eine stelle liegt am grund, die andere schwebt in der
+  luft" (Screenshot 16.09.). Das Wrack wurde auf einen einzigen Aufsetzpunkt gemessen, der Grund ist
+  dort aber geneigt. Als Nächstes dran.

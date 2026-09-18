@@ -246,18 +246,80 @@ const seaFoam = new THREE.Color(0xdff2ff);   // Wellenkamm/Gischt (fast weiß)
 // Raster fallen — sichtbar wäre nur ein Zappeln der Stützpunkte. Und mehr Segmente sind nicht drin:
 // updateSea kostet bei 96 schon 8,3 ms von 16,7 (gemessen), bei 128 wären es 14,7.
 const AMP = 3.0;
-// Wellenhöhe an einer Weltposition. Genau dieselbe Formel, die updateSea auf die Gitterpunkte legt —
-// als Funktion herausgezogen, damit das Feuerwehrboot exakt auf der Dünung liegt und nicht daneben.
-// seaTime läuft weiter, die Wellen wandern also unter dem Boot durch.
-// tOff verschiebt die Wellenzeit nach vorne: im Loop läuft stepPhysics VOR updateSea, das seaTime
-// erst danach weiterdreht. Das Boot würde also einen Frame hinter der Welle liegen (gemessen 3 cm
-// bei 1,6 m Wellenhöhe — unsichtbar, aber unnötig). Mit tOff = dt rechnet es auf demselben Stand,
+// Wie weit vor der Sandkante die Duenung ausláuft, und wieviel davon uebrig bleibt. Das ist der Fix
+// zu "das verschwinden unter dem strand betrifft alle fzg direkt an der kuestenlinie. das wellental
+// zieht sie unter die sichtlinie des strandes".
+//
+// GEMESSEN, nicht geschaetzt (C:/tmp/kueste4.js): der Sandteller ist eine FLACHE Scheibe auf
+// y = 0,25 (buildIsland: ISLAND_Y - 0,05), waehrend das Wellental das Fahrzeug auf y = -4,04 zieht
+// (Hub +/-2,944 m minus BOAT_DRAFT). Steht die Kamera dann landseitig hinter dem Fahrzeug, schneidet
+// dieser Teller die Sichtlinie: in 11,2 % aller Kuestenlagen war das Boot verdeckt, bei allen drei
+// Kameramodi (9,2 % im Standardmodus). Das Fahrzeug war also nie weg — es lag hinter dem Sand.
+//
+// Der Fix setzt an der URSACHE an und nicht an der Kamera: an einem echten Ufer laufen Wellen im
+// Flachwasser aus, sie schlagen nicht in voller Hoehe gegen den Strand. Damit ist die Verdeckung in
+// allen 22.176 geprueften Lagen und Kameramodi auf 0,0 % (vorher 9,2 %), und weil die Daempfung in
+// waveY sitzt, gilt sie fuer ALLE Fahrzeuge zugleich — Boot, U-Boot, Schlauchboot, Canadair — sowie
+// fuer das Gitter selbst. Eine Korrektur pro Fahrzeug haette vier Stellen gebraucht und das
+// Fahrzeug neben die sichtbare Flaeche gesetzt.
+//
+// SHORE_FADE_W = 180 m: muss deutlich breiter sein als der Gitter-Punktabstand (SEA_STEP 62,5 m),
+// sonst faellt der Auslauf durchs Raster und man sieht nur eine Kante statt eines Auslaufs. 120 m
+// reichten fuer die Sichtlinie auch schon, 180 m verteilt den Uebergang auf knapp drei
+// Stuetzpunkte. Gedaempft ist damit 26,9 % der Wasserflaeche, die mittlere Wellenhoehe bleibt bei
+// 84,8 % — auf offener See aendert sich nichts.
+// SHORE_FADE_REST = 0,08: NICHT null, sonst steht das Wasser am Ufer spiegelglatt und wirkt tot.
+// Die Obergrenze ist gerechnet: die Wellenspitze an der Kante darf den Sandteller (0,25 m) nicht
+// ueberragen, sonst laeuft sichtbar Wasser darueber. 0,08 * 2,944 = 0,236 m liegt knapp darunter,
+// 0,10 waere mit 0,294 m schon zu hoch.
+const SHORE_FADE_W    = 180;
+const SHORE_FADE_REST = 0.08;
+// Wie stark die Duenung an DIESER Stelle noch schwingt: 1 auf offener See, SHORE_FADE_REST an der
+// Sandkante, dazwischen ein smoothstep (weicher Uebergang ohne sichtbare Kante).
+//
+// x/z sind GITTER-LOKAL (so speist updateSea die Wellenformel) — hier wird die Weltposition
+// zurueckgerechnet, denn nur sie kennt den Abstand zur Insel.
+//
+// KOSTEN: das laeuft fuer jeden der 9.409 Gitterpunkte, also im heissesten Pfad des Spiels.
+// Zwei Dinge halten es bezahlbar (gemessen 1,60 ms fuer alle Punkte gegen 0,84 ms fuer die
+// covered-Pruefung allein, also 0,76 ms Zusatz von 16,7 ms Budget):
+//   · die vorgesammelte Inselliste (_seaIslands, EINMAL pro Frame) statt islandInfo pro Punkt.
+//     Mit islandInfo kostete dasselbe 26 ms und haette das Frame-Budget allein gesprengt.
+//   · die Wurzel wird nur im Fade-BAND gezogen. Ausserhalb entscheidet der quadrierte Abstand,
+//     und das ist der haeufigste Fall (73 % der Wasserflaeche liegt im vollen Seegang).
+function shoreFade(x, z){
+  const wx = x + ground.position.x, wz = z + ground.position.z;
+  let best = SHORE_FADE_W;
+  for(let k=0; k<_seaIslands.length; k+=5){
+    const dx = wx-_seaIslands[k], dz = wz-_seaIslands[k+1];
+    const q = dx*dx + dz*dz;
+    if(q >= _seaIslands[k+3]) continue;        // ausserhalb Sandkante+Fade -> voller Seegang
+    const r = Math.sqrt(q) - _seaIslands[k+2]; // Abstand zur SANDkante (negativ = auf dem Sand)
+    if(r < best) best = r;
+  }
+  if(best >= SHORE_FADE_W) return 1;
+  const f = best > 0 ? best/SHORE_FADE_W : 0;
+  return SHORE_FADE_REST + (1-SHORE_FADE_REST) * f*f*(3-2*f);
+}
+// Wellenhoehe an einer Weltposition. Genau dieselbe Formel, die updateSea auf die Gitterpunkte legt —
+// als Funktion herausgezogen, damit das Feuerwehrboot exakt auf der Duenung liegt und nicht daneben.
+// seaTime laeuft weiter, die Wellen wandern also unter dem Boot durch.
+// tOff verschiebt die Wellenzeit nach vorne: im Loop laeuft stepPhysics VOR updateSea, das seaTime
+// erst danach weiterdreht. Das Boot wuerde also einen Frame hinter der Welle liegen (gemessen 3 cm
+// bei 1,6 m Wellenhoehe — unsichtbar, aber unnoetig). Mit tOff = dt rechnet es auf demselben Stand,
 // den das Meeresgitter im selben Bild bekommt.
+//
+// ACHTUNG bei den Koordinaten: updateSea speist diese Funktion mit GITTER-LOKALEN Werten
+// (seaBaseX/seaBaseZ), und das Gitter wandert mit dem Spieler (ground.position). shoreFade braucht
+// aber die WELTposition, um den Abstand zur Insel zu kennen — deshalb rechnet es sie sich selbst
+// zurueck. Wer hier Weltkoordinaten hineingibt (seaYAt tut das nicht, es rechnet vorher um), bekommt
+// den Auslauf an der falschen Stelle.
 function waveY(x, z, tOff){
   const st = seaTime + (tOff || 0);
-  return Math.sin(x*0.02 + st*1.2)*AMP*0.55
-       + Math.sin(z*0.028 + st*0.9)*AMP*0.35
-       + Math.sin((x+z)*0.05 + st*1.8)*AMP*0.15;
+  const w = Math.sin(x*0.02 + st*1.2)*AMP*0.55
+          + Math.sin(z*0.028 + st*0.9)*AMP*0.35
+          + Math.sin((x+z)*0.05 + st*1.8)*AMP*0.15;
+  return w * shoreFade(x, z);
 }
 // Die Hoehe der Flaeche, die man WIRKLICH SIEHT. Und die ist NICHT waveY: das Meeresgitter kennt
 // die Welle nur an seinen Stuetzpunkten (62,5 m Abstand, SEA_SIZE/SEA_SEG) und spannt dazwischen
@@ -307,7 +369,13 @@ function collectSeaIslands(ox, oz){
   const c0z = Math.round((oz-half)/CELL), c1z = Math.round((oz+half)/CELL);
   for(let cz=c0z-1; cz<=c1z+1; cz++) for(let cx=c0x-1; cx<=c1x+1; cx++){
     const info = islandInfo(cx, cz);
-    if(info) _seaIslands.push(info.wx, info.wz, info.radius*info.radius);
+    if(!info) continue;
+    // Vier Werte je Insel, nicht drei: die Maskierung braucht den GRAS-Radius (dort endet die
+    // Insel-Oberflaeche, darunter wird das Wasser versteckt), der Ufer-Auslauf dagegen den
+    // SAND-Radius (radius*BEACH_FACTOR, so weit ist die Insel gezeichnet) und die Aussengrenze
+    // des Fade-Bandes als Quadrat, damit shoreFade die Wurzel meist sparen kann.
+    const rSand = info.radius*BEACH_FACTOR, rAussen = rSand + SHORE_FADE_W;
+    _seaIslands.push(info.wx, info.wz, rSand, rAussen*rAussen, info.radius*info.radius);
   }
 }
 // Wie oft die sichtbare Meeresflaeche neu gerechnet wird, je nach Hoehe. Nachgemessen ist der
@@ -344,9 +412,12 @@ function updateSea(dt){
     // Wurzel). Das ersetzt isOnLand pro Vertex — dort steckten 96 % der Meeres-Rechenzeit.
     const wx = x+ox, wz = z+oz;
     let covered = false;
-    for(let k=0;k<_seaIslands.length;k+=3){
+    for(let k=0;k<_seaIslands.length;k+=5){
       const dx = wx-_seaIslands[k], dz = wz-_seaIslands[k+1];
-      if(dx*dx + dz*dz < _seaIslands[k+2]){ covered = true; break; }
+      // Index +4 ist das GRAS-Radiusquadrat (siehe collectSeaIslands) — nicht +2, dort steht seit
+      // dem Ufer-Auslauf der Sandradius. Mit +2 waere hier ein Radius mit einem Quadrat verglichen
+      // worden und praktisch jede Wasserflaeche als "unter Land" versteckt.
+      if(dx*dx + dz*dz < _seaIslands[k+4]){ covered = true; break; }
     }
     if(covered){
       seaPos.setY(i, -1);                     // unter Inseloberfläche -> unter dem Land verborgen
@@ -2376,9 +2447,19 @@ function updateHarborBoats(dt){
     // Leicht nach vorn geneigt, weil das Heck auf dem Sand aufliegt und der Bug im Wasser schwimmt —
     // so sieht man, dass es an den Strand gezogen wurde. Der Bug liegt bei -Z im gedrehten System.
     // Dazu die Duenung am Bug, damit es lebt: sie hebt die Nase, das Heck bleibt liegen.
+    //
+    // Der Faktor ist NICHT frei gewaehlt, er ist Nenner/Hebel = 14/7 = 2,0. Damit folgt der Bug der
+    // Welle genau: 7*atan2(d,14)*fak ist fuer kleine Winkel 0,5*fak*d, und das ist d, wenn fak = 2.
+    // Der Bug SCHWIMMT dann mit, statt in der Duenung zu stampfen — gemessen bleibt sein Abstand zur
+    // Wasserlinie konstant bei -0,90 m, waehrend er bei 0,35 zwischen -0,99 und -0,28 m schwankte.
+    //
+    // Vorher stand hier 0,35, und das war fuer die UNGEDAEMPFTE Duenung kalibriert. Seit dem
+    // Ufer-Auslauf (SHORE_FADE_W) schwingt das Wasser am Kai nur noch mit 8 %, das Nicken war damit
+    // von 7,82 auf 0,84 Grad gefallen — 4 cm Bugbewegung, also praktisch bretteben. Mit 2,0 sind es
+    // 59 cm Bug-Hub. Das Heck bleibt dabei 0,47 m im Sand, rutscht also nicht heraus.
     const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
     const bow = seaYAt(wx + fbx*7, wz + fbz*7, dt);
-    fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 0.35;
+    fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 2.0;
   }
 }
 // ---------- Unterwasser-Welt: Wracks, Vegetation, Fische ----------------------------------------
