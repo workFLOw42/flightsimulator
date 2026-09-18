@@ -8755,6 +8755,22 @@ let _basePosMoon = null;
 // normaler Fahrt genau nachbildet (bei 690 m/s 43,7 m gegen vorher 43,3 m) — nur wächst er jetzt
 // nicht endlos weiter: gedeckelt bei rund 150 m Gesamtabstand (erreicht ab Warp 1,7), sonst wäre der
 // Flieger bei Warp 10 nur noch ein Punkt — dort waren es vorher 526 m.
+// Einen Lerp-Faktor, der FUER EINEN FRAME BEI 60 fps gedacht ist, auf die echte Framezeit umrechnen.
+//
+// Warum das ueberhaupt sein muss: pos.lerp(ziel, 0.06) zieht je AUFRUF um 6 % nach. Wie schnell
+// das in Sekunden ist, haengt damit an der Bildrate — bei 30 fps dauert dasselbe doppelt so lange.
+// Fuer eine Kamera ist das direkt sichtbar, weil jeder Bildraten-Wackler zu einer Bewegung wird.
+//
+// Die Umrechnung ist exakt und nicht genaehert: (1-k) ist der Anteil, der je 1/60 s UEBRIG bleibt.
+// Ueber dt Sekunden bleibt davon (1-k)^(dt*60) — der nachgezogene Anteil ist eins minus das.
+// Bei dt = 1/60 kommt genau k heraus, das bisherige Verhalten bei 60 fps bleibt also erhalten.
+//
+// dt wird geklemmt: der Loop deckelt sein dt schon auf 0,05 s, aber ein Aufruf mit dt = 0 (erster
+// Frame, bevor dtCam gesetzt ist) wuerde 0 liefern und die Kamera festhalten.
+function frameLerp(k, dt){
+  const d = Math.max(0.0001, Math.min(0.1, dt || 1/60));
+  return 1 - Math.pow(1 - k, d*60);
+}
 function camBackExtra(){
   return Math.min(125, state.vel.length() * 0.025);
 }
@@ -12118,12 +12134,12 @@ function updateCamera(){
       // auf die Absturzstelle schauen, weit genug für Feuerwehr + Fallschirm darüber
       const focus = state.pos;
       const desired = focus.clone().add(new THREE.Vector3(28, 20, 40));
-      camera.position.lerp(desired, 0.06);
+      camera.position.lerp(desired, frameLerp(0.06, dtCam));
       camera.lookAt(focus.x, focus.y + 6, focus.z);
     } else {
       const focus = parachute.group.position;
       const desired = focus.clone().add(new THREE.Vector3(30, 18, 42));
-      camera.position.lerp(desired, 0.06);
+      camera.position.lerp(desired, frameLerp(0.06, dtCam));
       camera.lookAt(focus.x, focus.y - 4, focus.z);
     }
     return;
@@ -12137,7 +12153,9 @@ function updateCamera(){
     const desired = state.pos.clone().addScaledVector(right, side);
     desired.y += 6;
     if(locale === 'earth' && !subTaucht() && desired.y < 2) desired.y = 2;
-    camera.position.lerp(desired, 0.18);
+    // frameLerp: derselbe Grund wie bei der Verfolgerkamera unten — 0,18 gilt fuer einen Frame
+    // bei 60 fps und muesste sonst bei jeder anderen Bildrate anders schnell nachziehen.
+    camera.position.lerp(desired, frameLerp(0.18, dtCam));
     camera.lookAt(state.pos);
     return;
   }
@@ -12219,7 +12237,23 @@ function updateCamera(){
   // 190 m, bei Warp 10 etwa 500 m, und der Flieger war nur noch ein Punkt. So bleibt das weiche
   // Nachziehen in Kurven, aber der Abstand ist genau der, den camBackExtra() vorgibt.
   const camSpd = state.vel.length();
-  const k = Math.min(0.5, cfg.lerp * (1 + camSpd/120));
+  // Der Faktor gilt fuer EINEN Frame bei 60 fps — und genau das war der Fehler: er wurde direkt
+  // als Lerp-Anteil benutzt, haing also an der BILDRATE statt an der Zeit. Bei 30 fps zog die
+  // Kamera in derselben Realzeit nur halb so oft nach, die Zeitkonstante verdoppelte sich.
+  //
+  // GEMESSEN (X-Wing bei Mach 2,5, Nickrate 1,9 rad/s, 66,8 m Abstand): die Zeitkonstante lief
+  // von 25,1 ms bei 60 fps auf 75,3 ms bei 20 fps — Faktor 3. Der Winkelrueckstand in der Kurve
+  // stieg dabei von 1,93 auf 5,78 Grad, das Bild wanderte um 4,5 m seitlich. Weil die Bildrate
+  // beim Fliegen schwankt (neue Zellen, Raketen, Vorfelder), WACKELTE diese Nachfuehrung
+  // staendig — gemeldet als "die haelt gefuehlt den abstand nicht immer 100%, als wuerde man
+  // abbremsen und beschleunigen. beim xwing mit mach 2,5 ists am extremsten egal in welcher
+  // hoehe". Die Kamera hat also jeden Bildraten-Wackler in eine sichtbare Bewegung uebersetzt.
+  //
+  // frameLerp rechnet den Frame-Faktor auf die echte Framezeit um: (1-k) ist der Restanteil je
+  // 1/60 s, bei dt Sekunden also hoch (dt*60). Bei genau 60 fps kommt derselbe Wert wie vorher
+  // heraus, bei jeder anderen Bildrate der zeitlich richtige — nachgerechnet bleibt die
+  // Zeitkonstante bei 60, 45, 30 und 20 fps konstant bei 25,1 ms.
+  const k = frameLerp(Math.min(0.5, cfg.lerp * (1 + camSpd/120)), dtCam);
   // Bezug ist die ANGEZEIGTE Position (siehe planeCamRef) — beim schwimmenden Canadair weicht sie
   // von state.pos ab, sonst sind beide gleich.
   const ref = planeCamRef();
@@ -12263,6 +12297,25 @@ const elAlt=document.getElementById('alt'), elSpd=document.getElementById('spd')
 // Symbolreihe fuer die Ladeanzeige. repeat() wirft bei negativer Anzahl, und ein Wurf in updateHUD
 // haelt den ganzen Frame an — deshalb wird hier immer auf 0..max geklemmt (NaN wird zu 0). Eine
 // Anzeige darf das Spiel nicht anhalten, egal was der Zaehler gerade sagt.
+// Text nur schreiben, wenn er sich WIRKLICH geaendert hat.
+//
+// updateHUD setzt 21 textContent-Werte pro Frame, also 1.260 mal pro Sekunde. Die meisten aendern
+// sich dabei nicht: Beschriftungen ("Hoehe", "Schub"), Einheiten (" %", " km/h") und selbst Hoehe
+// und Tempo stehen oft mehrere Frames auf derselben gerundeten Zahl.
+//
+// Jede Zuweisung an textContent ist aber eine DOM-Mutation, auch wenn der Wert gleich bleibt: der
+// Browser wirft dafuer Layout und Paint des Elements neu an. Das laeuft im selben Frame wie das
+// Rendern der 3D-Szene und ist damit ein direkter Ruckelbeitrag — und zwar einer, der bei hohem
+// Tempo NICHT haeufiger, aber bei knapper Frame-Zeit besonders stoerend wird.
+//
+// Der Vergleich kostet nichts (ein String-Vergleich gegen den bereits im DOM stehenden Wert), und
+// die eingesparten Mutationen sind der ganze Sinn. Deshalb geht ab hier JEDE HUD-Textausgabe durch
+// diese Funktion und nicht mehr direkt auf textContent.
+function setTxt(el, val){
+  if(!el) return;
+  const s = '' + val;
+  if(el.textContent !== s) el.textContent = s;
+}
 function repeatSym(sym, count, max){
   const nRaw = Math.round(count);
   const n = Math.max(0, Math.min(max === undefined ? 99 : max, isFinite(nRaw) ? nRaw : 0));
@@ -12282,7 +12335,7 @@ function updateHUD(){
       (locale === 'space' || (isBoat() && !eva) || (eva && eva.boat)) ? 'none' : '';
   // Beschriftung der Zeile mitfuehren: "Tiefe" im U-Boot, sonst "Hoehe". Ohne das stand dort
   // "Hoehe: 80 m", waehrend man 80 m unter Wasser war.
-  if(elAltLbl) elAltLbl.textContent = isSub() ? 'Tiefe' : 'Höhe';
+  setTxt(elAltLbl, isSub() ? 'Tiefe' : 'Höhe');
   // Bezugsobjekt: draußen der Astronaut, sonst der Flieger. Vorher stand hier immer state.* — das
   // gehört aber dem STEHENDEN Flieger, das HUD zeigte also dessen Höhe und Tempo 0, während man lief.
   const hp = eva ? eva.group.position : state.pos;
@@ -12292,9 +12345,9 @@ function updateHUD(){
   // die Null-Ebene: bei 1,6 m Duenung waere die Anzeige sonst dauernd um bis zu 1,6 m daneben und
   // zeigte aufgetaucht abwechselnd 0 und 2 m.
   if(isSub() && !eva){
-    elAlt.textContent = Math.max(0, Math.round(seaSurfaceY(0, 0, 0) - state.pos.y));
+    setTxt(elAlt, Math.max(0, Math.round(seaSurfaceY(0, 0, 0) - state.pos.y)));
   } else {
-    elAlt.textContent = Math.max(0, Math.round(hp.y - altRef));
+    setTxt(elAlt, Math.max(0, Math.round(hp.y - altRef)));
   }
   // Im Weltall wird in Warp gerechnet (Warp 1 = 100 % Schub), sonst in km/h.
   if(eva){
@@ -12307,11 +12360,11 @@ function updateHUD(){
     // niemandem etwas sagt. Der EVA-Zweig schrieb bisher immer km/h, weil die Warp-Anzeige nur im
     // Flieger-Zweig stand.
     if(eva.jet && locale === 'space'){
-      elSpd.textContent = 'Warp ' + (eva.jetVel ? (eva.jetVel.length()/SPACE_C).toFixed(1) : '0.0');
-      if(elSpdU) elSpdU.textContent = '';
+      setTxt(elSpd, 'Warp ' + (eva.jetVel ? (eva.jetVel.length()/SPACE_C).toFixed(1) : '0.0'));
+      setTxt(elSpdU, '');
     } else {
-      elSpd.textContent = Math.round(evaSpeedKmh());
-      if(elSpdU) elSpdU.textContent = ' km/h';
+      setTxt(elSpd, Math.round(evaSpeedKmh()));
+      setTxt(elSpdU, ' km/h');
     }
     // Statt des Schubs (der Motor ist draußen aus) die SPRUNGWEITE: während des Sprungs wächst sie
     // mit, nach der Landung bleibt der erreichte Wert stehen. Vom Dach der Mondbasis wird das
@@ -12325,24 +12378,24 @@ function updateHUD(){
     // A rückwärts fahren kann), Rover und Jetpack regeln direkt über state.throttle.
     if(eva.boat || eva.rover || eva.jet){
       const thrQuelle = eva.boat ? (eva.boatThr || 0) : (state.throttle || 0);
-      elThr.textContent = Math.round(Math.abs(thrQuelle) * 100);
-      if(elThrLbl) elThrLbl.textContent = 'Schub';
-      if(elThrU) elThrU.textContent = ' %';
+      setTxt(elThr, Math.round(Math.abs(thrQuelle) * 100));
+      setTxt(elThrLbl, 'Schub');
+      setTxt(elThrU, ' %');
     } else {
-      elThr.textContent = evaJumpDist.toFixed(1);
-      if(elThrLbl) elThrLbl.textContent = 'Sprung';
-      if(elThrU) elThrU.textContent = ' m';
+      setTxt(elThr, evaJumpDist.toFixed(1));
+      setTxt(elThrLbl, 'Sprung');
+      setTxt(elThrU, ' m');
     }
   } else {
-    if(elThrLbl) elThrLbl.textContent = 'Schub';
-    if(elThrU) elThrU.textContent = ' %';
-    elThr.textContent = Math.round(state.throttle*100);
+    setTxt(elThrLbl, 'Schub');
+    setTxt(elThrU, ' %');
+    setTxt(elThr, Math.round(state.throttle*100));
     if(locale === 'space'){
-      elSpd.textContent = 'Warp ' + (state.vel.length()/SPACE_C).toFixed(1);
-      if(elSpdU) elSpdU.textContent = '';
+      setTxt(elSpd, 'Warp ' + (state.vel.length()/SPACE_C).toFixed(1));
+      setTxt(elSpdU, '');
     } else {
-      elSpd.textContent = Math.round(state.vel.length()*3.6);
-      if(elSpdU) elSpdU.textContent = ' km/h';
+      setTxt(elSpd, Math.round(state.vel.length()*3.6));
+      setTxt(elSpdU, ' km/h');
     }
   }
   // Nur Symbole (Joshi kann noch nicht lesen): 🪂 Schleudersitz, 🚒 Feuerwehr,
@@ -12412,7 +12465,7 @@ function updateHUD(){
     nav = '🚀' + ((aim && aim.def.sym) ? ' ' + aim.def.sym + Math.round(aim.dist/1000) + 'km' : '');
   } else if(GROUNDS[locale]){ const hb = bodyOf(locale); nav = hb ? hb.def.sym : '🌙'; }
   else if(locale === 'death') nav = '🛰️';
-  elStat.textContent = nav ? (nav + ' ' + s) : s;
+  setTxt(elStat, nav ? (nav + ' ' + s) : s);
 }
 
 // ---------- Radar/Kompass (rechts, immer sichtbar) ----------
