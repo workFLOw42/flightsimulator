@@ -1330,6 +1330,7 @@ function buildIsland(cx, cz) {
     g.add(tw);
     // Stellplatz-Markierungen: je Platz ein Querstrich, damit die Plaetze abgegrenzt sind.
     const nSlotsPerRow = Math.max(1, Math.floor(pk.len / PARK_SLOT));
+    const parked = [];
     for(const s of parkSlots(cx, cz)){
       const mk = new THREE.Mesh(new THREE.PlaneGeometry(pw/PARK_ROWS - 6, 1.2), lineMat);
       mk.rotation.x = -Math.PI/2;
@@ -1357,8 +1358,14 @@ function buildIsland(cx, cz) {
         pl2.position.set(s.x, ISLAND_Y, s.z);
         pl2.rotation.y = s.yaw;
         g.add(pl2);
+        // Fuer updatePlaneLOD sammeln: die geparkten Flieger sind mit Abstand das schwerste
+        // Gepaeck der Welt (siehe PARK_LOD_D) und werden nach Entfernung abgeschaltet.
+        parked.push(pl2);
       }
     }
+    // Nur hinterlegen, wenn wirklich Flieger stehen — updatePlaneLOD kann die Insel sonst
+    // ueberspringen, ohne ein leeres Array zu durchlaufen.
+    if(parked.length) g.userData.parked = parked;
   }
   // ---- Bauwerke (Häuser / Wolkenkratzer / Hügel) aus der deterministischen Liste ----
   for(const b of islandBuildings(cx, cz)){
@@ -2349,12 +2356,24 @@ function updateRockets(dt){
     rs.t -= dt;
     if(rs.t <= 0){
       rs.phase = 'stand'; rs.y = 0; rs.v = 0;
-      // Nur DIESE eine Zelle neu bauen. refreshIslands würde alle Inseln in Sicht neu erzeugen
-      // und dabei sichtbar stocken.
+      // Die Zelle wird nur AUSGETRAGEN, nicht hier neu gebaut: updateIslands sieht sie im selben
+      // Frame als fehlend und baut sie mit seinem Budget von EINER Zelle pro Frame.
+      //
+      // Vorher stand hier ein synchrones buildIsland(cx, cz) — genau die Operation, die
+      // updateIslands mit seinem Haeppchen-Aufbau entschaerft hat, hier aber ungebremst lief.
+      // Gemeldet als "diese starten alle 1,5km. wenn man sehr schnell fliegt und es viele inseln
+      // gibt passiert das sehr schnell hintereinander".
+      //
+      // GEMESSEN: 44 % der Inseln haben eine Rampe (0,333 je km^2, im Mittel alle 1,73 km eine).
+      // Bei LAUNCH_DIST 1.500 m ist der Startkorridor 3.000 m breit, es laufen also 0,68 Rampen
+      // pro Sekunde durch das Fenster (X-Wing), 0,36 beim Alpha Jet. Jede davon baut 99 s spaeter
+      // (54 s Steigzeit + REGROW_T) eine ganze Insel neu: Sandflaeche, Wiese mit UV-Rechnung,
+      // Landebahn, 8-18 Haeuser, Palmen, Huegel, Hafen und die Vorfeld-Flugzeuge.
+      //
+      // Ueber das Loeschen laeuft dieser Neubau durch dieselbe Drossel wie jede andere neue Zelle,
+      // und mehrere gleichzeitig faellige Rampen koennen sich nicht mehr in einem Frame stapeln.
       scene.remove(isl);
-      const ni = buildIsland(cx, cz);
-      if(ni) scene.add(ni);
-      islandCells.set(key, ni);
+      islandCells.delete(key);
     }
   }
 }
@@ -2460,6 +2479,63 @@ function updateHarborBoats(dt){
     const fbx = -Math.sin(fb.rotation.y), fbz = -Math.cos(fb.rotation.y);
     const bow = seaYAt(wx + fbx*7, wz + fbz*7, dt);
     fb.rotation.x = -0.035 + Math.atan2(bow - ISLAND_Y, 14) * 2.0;
+  }
+}
+// ---------- Geparkte Flugzeuge nach Entfernung abschalten ----------------------------------------
+// Das ist der Fix zu "ruckeln mit schnellen flugzeugen in allen hoehen, oder mit allen flugzeugen
+// in grossen hoehen" — und zum Nachtrag "realistisch ist auch, das man mit volldampf tiefer als
+// 120m fliegt".
+//
+// GEMESSEN wurde zuerst alles andere, und genau das ist der Punkt: die CPU-Posten sind ALLE klein.
+// updateSea voll 2,70 ms, ein Meeresboden-Haeppchen mit Normalen 0,65 ms, die Sonden der KI-Flotte
+// unter 0,10 ms, ein clone(true) eines GLB-Modells 0,07 ms, shoreFade 0,84 ms. Zusammen unter 5 ms
+// von 16,67 — davon ruckelt nichts. Auch die verdaechtige Haeppchen-Grenze war es nicht: sieben
+// neue Zellen brauchen 0,12 s, und selbst der X-Wing braucht 1,2 s je Zellbreite.
+//
+// Was bleibt, ist die Zahl der DREIECKE in der Szene. 27 Inseln in Sicht (VIEW_CELLS 3 = 49 Zellen,
+// davon rund 55 % mit Insel), je rund 10 Vorfeldplaetze, je Modell im Mittel 43.135 Dreiecke:
+// 11,6 Millionen Dreiecke nur fuer geparkte Flugzeuge. Die Vorfelder sind damit das schwerste
+// Gepaeck der Welt — schwerer als Meer, Boden, Haeuser und Unterwasserwelt zusammen.
+//
+// Und das erklaert BEIDE gemeldeten Faelle mit einer Ursache: schnell fliegen heisst, dass dieses
+// Gepaeck im Sekundentakt aus- und eingeladen wird; hoch fliegen heisst, dass der Nebel (fog.far
+// 3.000 m) weniger verdeckt und die Kamera flach ueber viele Vorfelder gleichzeitig blickt, statt
+// dass die naechste Insel die dahinter verdeckt.
+//
+// PARK_LOD_D = 1200 m ist aus der Bildgroesse gerechnet, nicht geschaetzt: bei 27,1 m Spannweite,
+// 60 Grad FOV und 1080p ist ein geparkter Flieger auf 1.200 m noch 21 px gross — gerade noch als
+// Flugzeug erkennbar. Auf 1.700 m sind es 15 px und auf 2.550 m (Sichtrand) nur 10 px, also ein
+// Fleck. Die Grenze bei 1.200 m spart 89 % dieser Dreiecke und nimmt nichts weg, was man als
+// Flugzeug gesehen haette.
+//
+// Warum .visible und nicht Entfernen: visible = false ueberspringt Three.js beim Zeichnen samt
+// aller Kinder, laesst die Klone aber stehen. Ein Entfernen und Neuaufbauen waere genau der
+// Ruckler, den updateIslands mit seinem Haeppchen-Aufbau gerade losgeworden ist.
+//
+// Gemessen wird gegen die INSELMITTE und nicht je Flugzeug: ein Vergleich je Modell waere 270
+// Rechnungen pro Frame statt 27 und wuerde am Ergebnis nichts aendern. Damit dabei kein Flieger
+// zu frueh verschwindet, kommt der Inselradius als Zuschlag DAZU: das Vorfeld liegt
+// am Inselrand, seine Flieger sind also bis zu einen Radius NAEHER als die Mitte. Ohne diesen
+// Zuschlag waere die wirksame Grenze bei einer 330-m-Insel nur 870 m.
+const PARK_LOD_D = 1200;
+function updatePlaneLOD(){
+  if(locale !== 'earth') return;
+  const F = worldFocus();
+  for(const [key, isl] of islandCells){
+    if(!isl) continue;
+    const parked = isl.userData.parked;
+    if(!parked) continue;
+    // Inselmitte plus Inselradius als Zuschlag (siehe oben): so verschwindet kein Flieger, dessen
+    // Vorfeld noch innerhalb der Grenze liegt, nur weil die Inselmitte weiter hinten sitzt.
+    // Der Radius kommt aus dem Map-KEY ("cx,cz") — islandCells ist genau so verschluesselt, und
+    // islandInfo ist gecacht, kostet hier also nur einen Map-Zugriff.
+    const ki = key.indexOf(',');
+    const inf = islandInfo(+key.slice(0, ki), +key.slice(ki + 1));
+    const grenze = PARK_LOD_D + (inf ? inf.radius : 0);
+    const zeigen = Math.hypot(isl.position.x - F.x, isl.position.z - F.z) < grenze;
+    // Nur schreiben, wenn sich etwas aendert: das erspart Three.js das erneute Durchlaufen der
+    // Kinder in jedem Frame, in dem die Insel ihren Zustand behaelt (der Normalfall).
+    if(parked[0].visible !== zeigen) for(const pl of parked) pl.visible = zeigen;
   }
 }
 // ---------- Unterwasser-Welt: Wracks, Vegetation, Fische ----------------------------------------
@@ -13554,6 +13630,7 @@ function loop(now){
   updateShipsSea(dt);        // Handelsschiffe auf dem Meer (feste Hindernisse, fahren gemaechlich)
   updateHarborBoats(dt);     // die Feuerwehrboote am Kai schwimmen mit der Duenung
   updateHarborSubs(dt);      // die U-Boote am Strand ebenso
+  updatePlaneLOD();          // geparkte Flieger ab 1.200 m ausblenden (89 % der Dreiecke)
   // Der Meeresboden wird nur gerechnet, wenn man ihn sehen KANN: im U-Boot, im Schlauchboot oder
   // knapp ueber dem Wasser. Aus 8.000 m Hoehe verdeckt ihn die Meeresflaeche vollstaendig, und die
   // Rechnung kostet 9,3 ms (im Code dokumentiert) bei jedem Rasterwechsel — beim X-Wing alle 0,9 s.

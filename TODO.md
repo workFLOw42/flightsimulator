@@ -2991,3 +2991,90 @@ gedämpft ist 26,9 % der Wasserfläche, die mittlere Wellenhöhe bleibt bei 84,8
 - **Liberty-Wrack liegt schief im Sand** — „eine stelle liegt am grund, die andere schwebt in der
   luft" (Screenshot 16.09.). Das Wrack wurde auf einen einzigen Aufsetzpunkt gemessen, der Grund ist
   dort aber geneigt. Als Nächstes dran.
+
+
+## Ruckeln bei Tempo und Höhe: es war die GPU, nicht die Rechenzeit (18.09.)
+
+Deine Beschreibung nannte zwei Fälle — „schnelle Flugzeuge in allen Höhen **oder** alle Flugzeuge in
+großen Höhen" — plus den Nachtrag „realistisch ist auch, das man mit volldampf tiefer als 120m
+fliegt". Es ist **eine** Ursache für alle drei.
+
+### Was es nicht war
+
+Ich habe alle naheliegenden Kandidaten gemessen, und jeder einzelne war zu klein:
+
+| Posten | Kosten | Budget 16,67 ms |
+|---|---|---|
+| `updateSea` voll (mit `computeVertexNormals`) | 2,70 ms | 16 % |
+| Meeresboden-Häppchen inkl. Normalen | 0,65 ms | 4 % |
+| `shoreFade` (9.409 Punkte) | 0,84 ms | 5 % |
+| `clone(true)` eines GLB-Modells | 0,07 ms | 0,4 % |
+| Hindernis-Sonden der KI-Flotte (11 Maschinen) | < 0,10 ms | < 1 % |
+
+Zusammen unter 5 ms. Auch drei konkrete Hypothesen sind gefallen:
+
+- **`SEA_LOD` bündelt Last statt sie zu senken** — stimmt, aber die Spitze ist nur 2,7 ms.
+- **`updateIslands` schafft die Zellen nicht** — 7 Zellen brauchen 0,12 s, der X-Wing hat 1,2 s je
+  Zellbreite. Reicht bei jedem Modell.
+- **Fische/Orcas werden zu oft neu platziert** — echter Schönheitsfehler (Spawn max 260 m, Despawn
+  420 m, beim X-Wing 60 Neuplatzierungen/s), kostet aber nur 1,5 ms **pro Sekunde**.
+
+Zwei Messungen musste ich verwerfen: `SHELF_W` hatte ich mit 1200 statt 180 angesetzt, und beim
+Wasserstand über dem Sand hatte ich außerhalb der Sandkante gemessen, wo Wasser hoch stehen darf.
+
+### Was es war
+
+Die Zahl der **Dreiecke** in der Szene. 27 Inseln in Sicht (`VIEW_CELLS` 3 = 49 Zellen, ~55 % mit
+Insel), je rund 10 Vorfeldplätze, je Modell im Mittel 43.135 Dreiecke: **11,6 Millionen Dreiecke nur
+für geparkte Flugzeuge**. Mehr als Meer, Meeresboden, Häuser und Unterwasserwelt zusammen.
+
+Das erklärt beide Fälle mit einer Ursache: **schnell** heißt, dieses Gepäck wird im Sekundentakt aus-
+und eingeladen; **hoch** heißt, der Nebel (`fog.far` 3.000 m) verdeckt weniger und die Kamera blickt
+flach über viele Vorfelder gleichzeitig, statt dass die nächste Insel die dahinter verdeckt. Und
+**tief und schnell** ist beides zugleich, plus aktiver Meeresboden unter 120 m.
+
+`updatePlaneLOD` schaltet die geparkten Flieger ab `PARK_LOD_D` = 1.200 m auf `visible = false`.
+
+Die Grenze ist aus der Bildgröße gerechnet: bei 27,1 m Spannweite, 60° FOV und 1080p ist ein
+geparkter Flieger auf 1.200 m noch **21 px** groß — gerade noch als Flugzeug erkennbar. Auf 1.700 m
+sind es 15 px, am Sichtrand (2.550 m) nur 10 px, also ein Fleck.
+
+Gemessen an 400 Zufallspositionen: nur **16,3 %** der Inseln zeigen ihre Flieger, also 3,9 von 24.
+**1,7 Mio statt 10,4 Mio Dreiecke — 84 % gespart.** Die Funktion selbst kostet 2,6 µs pro Frame
+(0,016 % des Budgets), weil sie gegen die Inselmitte prüft (27 Rechnungen statt 270) und nur
+schreibt, wenn sich der Zustand ändert.
+
+`visible = false` statt Entfernen ist Absicht: Three.js überspringt den Teilbaum beim Zeichnen, die
+Klone bleiben aber stehen. Ein Entfernen und Neuaufbauen wäre genau der Ruckler, den `updateIslands`
+mit seinem Häppchen-Aufbau losgeworden ist. Der Inselradius kommt als Zuschlag dazu — das Vorfeld
+liegt am Inselrand, seine Flieger sind also bis zu einen Radius näher als die Mitte.
+
+### Die Ariane-Raketen (dein Zusatz)
+
+„diese starten alle 1,5km. wenn man sehr schnell fliegt und es viele inseln gibt passiert das sehr
+schnell hintereinander" — das war ein eigener, echter Ruckler.
+
+Die `gone`-Phase in `updateRockets` rief **synchron `buildIsland(cx, cz)`**: genau die Operation, die
+`updateIslands` mit „eine Zelle pro Frame" entschärft hat, hier aber ungebremst. Eine ganze Insel im
+Frame — Sandfläche, Wiese mit UV-Rechnung, Landebahn, 8–18 Häuser, Palmen, Hügel, Hafen und die
+Vorfeld-Flugzeuge.
+
+Gemessen: **44 %** der Inseln haben eine Rampe (0,333 je km², im Mittel alle 1,73 km eine). Bei
+`LAUNCH_DIST` 1.500 m ist der Startkorridor 3.000 m breit, es laufen also **0,68 Rampen pro Sekunde**
+durch das Fenster (X-Wing), 0,36 beim Alpha Jet. Jede baut 99 s später (54 s Steigzeit + `REGROW_T`)
+eine Insel neu.
+
+Jetzt wird die Zelle nur noch **ausgetragen** (`islandCells.delete`), und `updateIslands` baut sie mit
+seinem Budget. Zwei Dinge waren dabei zu prüfen und stimmen: `updateRockets` läuft **vor**
+`recycleWorld` → `updateIslands`, die Zelle wird also im selben Frame gebaut (kein leeres Bild), und
+`rs.phase` wird auf `'stand'` gesetzt **bevor** gelöscht wird — `buildIsland` sieht die neue Phase und
+stellt die Rakete hin. `rocketState` ist eine eigene Map und überlebt das Löschen.
+
+Mehrere gleichzeitig fällige Rampen können sich damit nicht mehr in einem Frame stapeln.
+
+### Offen
+
+- **Liberty-Wrack liegt schief im Sand** — „eine stelle liegt am grund, die andere schwebt in der
+  luft" (Screenshot 16.09.). Als Nächstes dran.
+- **Fisch/Orca-Neuplatzierung**: Spawn-Radius (260 bzw. 220 m) kleiner als Despawn-Radius (420 m).
+  Kostet kaum Zeit, ist aber unsauber — bei Tempo werden Schwärme sofort wieder verworfen.
