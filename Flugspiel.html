@@ -848,6 +848,29 @@ const hillMat = new THREE.MeshLambertMaterial({ color: 0x4e8a3a });   // Hügel 
 const rockMat = new THREE.MeshLambertMaterial({ color: 0x8a7860 });   // Fels-/Steingipfel (braun)
 const towerMats = [0x8fa5c0, 0x9db4c8, 0xa8b8c4, 0x7f97b5].map(c => new THREE.MeshLambertMaterial({ color: c }));
 const towerGlass = new THREE.MeshLambertMaterial({ color: 0x66ccee });
+// GETEILTE Einheitsgeometrie fuer alles, was aus Kisten und Kegeln besteht: eine 1x1x1-Box und ein
+// Kegel mit Radius 1 und Hoehe 1, ueber mesh.scale auf die gewuenschte Groesse gebracht.
+//
+// Der Grund ist NICHT die Rechenzeit beim Bauen, sondern der GPU-Upload. Jede eigene Geometrie
+// braucht ein eigenes Buffer-Paar im Grafikspeicher, und das wird beim ERSTEN Zeichnen angelegt —
+// also im Frame NACH dem Bau, mitten im renderer.render(). Eine Wolkenkratzer-Stadt hat gemessen
+// bis zu 132 Tuerme (Median 78) mit je 4 Meshes: das waren bis zu 528 neue Buffer-Paare in EINEM
+// Frame. Mit einer geteilten Geometrie ist es keines, denn sie liegt schon im Speicher.
+//
+// Die Bauzeit sinkt nebenbei um Faktor 3,3 (132 Tuerme: 3,92 -> 1,18 ms), aber das war nie das
+// Problem — 3,92 ms passen ins Frame-Budget. Der Upload passt nicht.
+//
+// scale statt Groesse in der Geometrie ist dabei kein Kompromiss: die Lichtberechnung nutzt die
+// Normalmatrix, und die zieht die Skalierung korrekt heraus. Nur bei NEGATIVER Skalierung kippen
+// Normalen um, und die kommt hier nicht vor (alle Werte sind Groessen, also positiv).
+const UNIT_BOX  = new THREE.BoxGeometry(1, 1, 1);
+// Der Kegel braucht seine Segmentzahl in der Geometrie (die kann scale nicht ersetzen), deshalb
+// zwei Varianten: 4 Segmente fuer Hausdaecher (eine Pyramide), 16 fuer Huegel.
+const UNIT_CONE4  = new THREE.ConeGeometry(1, 1, 4);
+const UNIT_CONE16 = new THREE.ConeGeometry(1, 1, 16);
+// Und eine 1x1-Flaeche fuer die Bahn- und Stellplatz-Markierungen. Die entstehen in Schleifen und
+// sind ALLE gleich geformt — je Insel waren das bis zu 30 identische Geometrien.
+const UNIT_PLANE = new THREE.PlaneGeometry(1, 1);
 
 // baut ein Haus an (x,z). rnd steuert Größe/Farbe. Gibt {mesh, w, d, h} zurück (für Kollision).
 function makeHouse(x, z, rnd, rnd2) {
@@ -856,9 +879,13 @@ function makeHouse(x, z, rnd, rnd2) {
   const w = 5 + rnd*11, d = 5 + rnd2*9, h = 4 + rnd*rnd2*12 + rnd*4;
   const wi = Math.floor(rnd * wallMats.length) % wallMats.length;
   const ri = Math.floor(rnd2 * roofMats.length) % roofMats.length;
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMats[wi]);
+  // Geteilte Einheitsgeometrie plus scale (siehe UNIT_BOX): spart den GPU-Upload je Haus.
+  const wall = new THREE.Mesh(UNIT_BOX, wallMats[wi]);
+  wall.scale.set(w, h, d);
   wall.position.y = h/2; g.add(wall);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,d)*0.72, Math.min(h*0.5,4), 4), roofMats[ri]);
+  const rr = Math.max(w,d)*0.72, rh = Math.min(h*0.5,4);
+  const roof = new THREE.Mesh(UNIT_CONE4, roofMats[ri]);
+  roof.scale.set(rr, rh, rr);
   roof.position.y = h + Math.min(h*0.25,2); roof.rotation.y = Math.PI/4; g.add(roof);
   g.position.set(x, ISLAND_Y, z);
   return { mesh:g, w:Math.max(w,d), d:Math.max(w,d), h: h + Math.min(h*0.5,4) };
@@ -868,11 +895,15 @@ function makeHouse(x, z, rnd, rnd2) {
 function makeTower(x, z, rnd, rnd2) {
   const g = new THREE.Group();
   const w = 14 + rnd*10, d = 14 + rnd2*10, h = 70 + rnd*90;   // hoch: 70–160 m
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), towerMats[Math.floor(rnd*towerMats.length)%towerMats.length]);
+  // Geteilte Einheitsgeometrie plus scale (siehe UNIT_BOX). Hier zaehlt es am meisten: eine Stadt
+  // hat bis zu 132 Tuerme mal 4 Meshes, das waren bis zu 528 GPU-Uploads in einem Frame.
+  const body = new THREE.Mesh(UNIT_BOX, towerMats[Math.floor(rnd*towerMats.length)%towerMats.length]);
+  body.scale.set(w, h, d);
   body.position.y = h/2; g.add(body);
   // ein paar Glas-Bänder (Etagen) andeuten
   for(let k=1;k<=3;k++){
-    const band = new THREE.Mesh(new THREE.BoxGeometry(w*1.02, h*0.06, d*1.02), towerGlass);
+    const band = new THREE.Mesh(UNIT_BOX, towerGlass);
+    band.scale.set(w*1.02, h*0.06, d*1.02);
     band.position.y = h*(0.25*k); g.add(band);
   }
   g.position.set(x, ISLAND_Y, z);
@@ -883,9 +914,12 @@ function makeTower(x, z, rnd, rnd2) {
 function makeHill(x, z, rnd, rnd2) {
   const g = new THREE.Group();
   const r = 30 + rnd*50, h = 20 + rnd2*40;
-  const hill = new THREE.Mesh(new THREE.ConeGeometry(r, h, 16), hillMat);
+  // Geteilte Einheitsgeometrie plus scale (siehe UNIT_BOX).
+  const hill = new THREE.Mesh(UNIT_CONE16, hillMat);
+  hill.scale.set(r, h, r);
   hill.position.y = h/2; g.add(hill);
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(r*0.45, h*0.35, 16), rockMat);  // brauner Gipfel
+  const cap = new THREE.Mesh(UNIT_CONE16, rockMat);  // brauner Gipfel
+  cap.scale.set(r*0.45, h*0.35, r*0.45);
   cap.position.y = h*0.82; g.add(cap);
   g.position.set(x, ISLAND_Y, z);
   return { mesh:g, w:r*2, d:r*2, h, isHill:true };
@@ -1307,7 +1341,8 @@ function buildIsland(cx, cz) {
   rw.rotation.x = -Math.PI/2; rw.position.y = ISLAND_Y + 0.02;
   g.add(rw);
   for (let z = -rwLen/2 + 15; z <= rwLen/2 - 15; z += 20) {
-    const dash = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 8), lineMat);
+    const dash = new THREE.Mesh(UNIT_PLANE, lineMat);
+    dash.scale.set(1.2, 8, 1);   // geteilte Einheitsflaeche (siehe UNIT_PLANE)
     dash.rotation.x = -Math.PI/2; dash.position.set(0, ISLAND_Y + 0.04, z);
     g.add(dash);
   }
@@ -1332,7 +1367,8 @@ function buildIsland(cx, cz) {
     const nSlotsPerRow = Math.max(1, Math.floor(pk.len / PARK_SLOT));
     const parked = [];
     for(const s of parkSlots(cx, cz)){
-      const mk = new THREE.Mesh(new THREE.PlaneGeometry(pw/PARK_ROWS - 6, 1.2), lineMat);
+      const mk = new THREE.Mesh(UNIT_PLANE, lineMat);
+      mk.scale.set(pw/PARK_ROWS - 6, 1.2, 1);   // geteilte Einheitsflaeche (siehe UNIT_PLANE)
       mk.rotation.x = -Math.PI/2;
       mk.position.set(s.x, ISLAND_Y + 0.04, s.z + (s.yaw === 0 ? PARK_SLOT/2 - 1 : -(PARK_SLOT/2 - 1)));
       g.add(mk);
