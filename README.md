@@ -994,7 +994,14 @@ daneben). Das **Gyro ist aus** — es gibt keine Fluglage und nichts zu landen. 
   Relief aus zwei überlagerten langen Wellen — Sandbänke und Hügel. Die Farbe folgt der Tiefe: heller
   Sand am Ufer, Schlick in der Mitte, fast schwarz unten.
 - **Wracks.** Der **Liberty-Frachter** (135 m) und der **Großsegler** (90 m) liegen gekippt auf dem
-  Grund, um 35 bis 80 Grad auf die Seite gelegt und leicht über Bug oder Heck geneigt. Beide sind
+  Grund, um 35 bis 80 Grad auf die Seite gelegt und **über Bug oder Heck so geneigt, wie der Grund
+  unter ihnen abfällt** (`wreckPitch` liest Bug- und Heckhöhe mit `seabedY`). Vorher war diese
+  Neigung gewürfelt, und ein 135-m-Rumpf lag damit in einem Winkel, der mit dem Gefälle nichts zu tun
+  hatte — nachgemessen schwebte ein Ende im Median **6,34 m** über dem Sand, während das andere
+  7,55 m darin steckte. Aufgesetzt wird auf den **Mittelwert** der drei Bodenhöhen unter Bug, Mitte
+  und Heck (`wreckRestY`), minus `WRECK_SINK` 0,4 m: ein Wrack liegt seit Jahrzehnten im Sand, es
+  steht nicht darauf. Wo der Grund zwischen Bug und Heck mehr als `WRECK_WOELB_MAX` (3 m) **gewölbt**
+  ist, entsteht gar keines — ein starrer Rumpf kann dort in keinem Winkel aufliegen. Beide sind
   **rostbraun umgefärbt** und ohne Textur — ein Wrack ist nicht mehr weiß und rot. Sie sind
   **dieselben Modelle**, die oben als Handelsschiffe fahren: kein neues GLB, kein Megabyte mehr.
   Nachgemessen liegt eines etwa alle **4,7 km**, und im Schnitt sind 0,7 gleichzeitig geladen — ein
@@ -1005,6 +1012,20 @@ daneben). Das **Gyro ist aus** — es gibt keine Fluglage und nichts zu landen. 
 - **Fischschwärme**, fünf gleichzeitig, je 34 Fische in einer Wolke, die selbst langsam wandert. Sie
   bleiben über dem Grund und springen nicht aus dem Wasser. Bewusst **kein Modell**, sondern
   abgeflachte Kugeln in einer `InstancedMesh`: ein Schwarm kostet damit einen einzigen Draw-Call.
+  Zieht ein Schwarm aus der Sicht, wird er **voraus** wieder ausgesetzt — in einem Kegel von
+  ±60 Grad um die Fahrtrichtung (`SPAWN_KEGEL`) und nicht mehr rundherum. Vorher landete jeder zweite
+  hinter dem Boot und war sofort wieder fällig; gemessen über zehn Minuten Vollfahrt sank die Zahl der
+  Umsetzungen von 28 auf 21 pro Minute, und gleichzeitig stieg die Zahl der **sichtbaren** Schwärme
+  von 4,6 auf 6,8. Im Stand fällt es auf Zufall zurück. Gilt genauso für die Orcas.
+- **Killerwale in drei Rollen.** Ein Drittel **springt** (45 Grad Absprung, 10 m hoch, 40 m weit),
+  der Rest bildet die **Schule** an der Oberfläche, die auf 7 m abtaucht und zum Blasen wieder
+  hochkommt — und die halbe Herde (`ORCA_DEEP_N`) sind **Tiefseetiere**, die auf der Tiefe ziehen, auf
+  der das U-Boot gerade fährt. Die braucht es, weil ein Orca auf 7 m Tiefe bei 50 m Reisetiefe 43 m
+  **über** dem Boot ist: man müsste senkrecht nach oben schauen. Sie folgen der Bootstiefe träge
+  (`ORCA_DEEP_VY` 1,49 m/s, also 33 s für 50 m) und nicken dabei höchstens 25 Grad — derselbe
+  Bahnwinkel wie die Schule oben. Nach unten hält der Meeresboden sie, **40 m vorausgelesen**, weil
+  der Schelf steiler steigt (0,82 m je Meter) als sie klettern können; wird das Wasser so flach, dass
+  ihr Rücken herausragen würde, **drehen sie ab**. Ein Tiefseetier springt nicht.
 - **Die Orcas und die Schiffsrümpfe von unten.** Beides hing schon immer im Wasser, war aber nie zu
   sehen. Die Wasserfläche selbst ist jetzt **beidseitig** (`DoubleSide`) — von unten steht sie
   dunkel im Licht, genau wie eine echte Wasseroberfläche aus der Tiefe.
@@ -1034,6 +1055,33 @@ Maßnahmen, beide nachgemessen:
 
 Gesamtkosten der Unterwasserwelt nach der Messung: rund **1,05 ms** pro Frame (Boden 0,80 · Fische
 0,12 · Strand-U-Boote 0,11 · Zellen 0,02) — gegen 6,8 ms für das bestehende Meer.
+
+### Was in der Welt nach Entfernung abgeschaltet wird
+
+Nicht die Rechenzeit war das Problem beim Ruckeln mit schnellen Flugzeugen, sondern die Zahl der
+**Dreiecke** in der Szene — und zwei Posten machen fast alles davon aus.
+
+Die **geparkten Flugzeuge** auf den Vorfeldern sind 11,6 Mio Dreiecke: 27 Inseln in Sicht, je zehn
+Plätze, im Mittel 43.135 Dreiecke je Modell. Ab `PARK_LOD_D` **1.200 m** werden sie unsichtbar
+gestellt (89 % gespart). Die Grenze ist aus der Bildgröße gerechnet: bei 27,1 m Spannweite, 60 Grad
+FOV und 1080p ist ein Flieger dort noch 21 px groß — gerade noch als Flugzeug erkennbar.
+
+Der zweite Posten war lange unentdeckt und größer, als die Vorfelder es je waren. Das
+**Feuerwehrboot am Kai** hat **461.941 Punkte** für 16 m Bootslänge — mehr als Containerfrachter
+(264.447), Transall (66.272) und Flugzeugträger (3.362) **zusammen**, und es liegt an jedem Hafen,
+also auf jeder Insel. Bei 26 Inselzellen in Sicht sind das **12,0 Mio Punkte**, die immer gezeichnet
+wurden: 81 % von allem, was nach dem Vorfeld-LOD überhaupt noch in der Szene stand. Am Sichtrand
+(2.550 m) ist dieses Boot **6 px** groß.
+
+Mit demselben 21-px-Kriterium gerechnet: `BEACH_LOD_D` **800 m** für das Boot, `XPARK_LOD_D`
+**700 m** für den geparkten X-Wing. Das **U-Boot am Strand bleibt ohne Grenze** — 95 m lang und am
+Sichtrand noch 38 px, da wäre eine Grenze sichtbares Verschwinden bei einem Siebtel der Ersparnis.
+
+Abgeschaltet wird immer mit `.visible = false` und nie durch Entfernen: Three.js überspringt einen
+unsichtbaren Knoten samt Kindern beim Zeichnen, die Klone bleiben aber stehen. Ein Entfernen und
+Neuaufbauen wäre genau der Ruckler, den der häppchenweise Zellbau gerade loswird. Das **Einsteigen
+ist davon unberührt**: `harborBoatNear` prüft 12 m Abstand und liest die Position, nicht die
+Sichtbarkeit — wer nah genug zum Einsteigen ist, sieht das Boot ohnehin.
 
 ## 🙏 Danksagungen
 

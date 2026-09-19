@@ -1500,6 +1500,7 @@ function buildIsland(cx, cz) {
     xw.position.set(xl.x, ISLAND_Y, xl.z);
     xw.rotation.y = xl.yaw;
     g.add(xw);
+    g.userData.xwingPark = xw;   // fuer updatePlaneLOD (siehe XPARK_LOD_D)
   }
 
   g.position.set(wx, 0, wz);
@@ -2554,11 +2555,56 @@ function updateHarborBoats(dt){
 // am Inselrand, seine Flieger sind also bis zu einen Radius NAEHER als die Mitte. Ohne diesen
 // Zuschlag waere die wirksame Grenze bei einer 330-m-Insel nur 870 m.
 const PARK_LOD_D = 1200;
+// ---- DIESELBE RECHNUNG fuer die Fahrzeuge am Strand, und hier war der groessere Posten ---------
+// Nachgemessen (C:/tmp/ruck24.js) ist das Feuerwehrboot am Kai das mit ABSTAND schwerste Modell im
+// ganzen Spiel: 461.941 Punkte fuer ein 16 m langes Boot — mehr als der Transall (66.272), der
+// Containerfrachter (264.447) und der Flugzeugtraeger (3.362) zusammen. Es liegt an JEDEM Hafen,
+// also auf jeder Insel, und hatte bisher kein LOD. Bei 26 Inselzellen in Sicht sind das
+// 12,0 Millionen Punkte, die IMMER gezeichnet wurden — 81 % von allem, was nach dem Vorfeld-LOD
+// ueberhaupt noch in der Szene stand.
+//
+// Auf 2.550 m (Sichtrand) ist dieses Boot 6 px gross. Es hat also 460.000 Punkte fuer sechs Pixel
+// bezahlt, und genau das ist der Rest-Ruckler beim X-Wing: er legt 2.550 m in 3,6 s zurueck, das
+// Gepaeck wird im Sekundentakt aus- und eingeladen.
+//
+// Die Grenzen sind aus der BILDGROESSE gerechnet, mit demselben Kriterium wie PARK_LOD_D (21 px,
+// "gerade noch als Fahrzeug erkennbar", bei 60 Grad FOV und 1080p):
+//   Feuerwehrboot  16 m -> 786 m   (auf 1.200 m nur noch 14 px)
+//   X-Wing         13 m -> 638 m   (auf 1.200 m nur 11 px)
+// Aufgerundet auf 800 bzw. 700 m, damit die Zahlen nicht falsche Genauigkeit vorgeben.
+//
+// Das U-BOOT bleibt ausdruecklich OHNE Grenze: es ist 95 m lang und am Sichtrand noch 38 px gross,
+// also klar erkennbar — eine Grenze waere dort sichtbares Verschwinden bei kaum Ersparnis
+// (63.963 Punkte, ein Siebtel des Bootes). Und der HAFEN mit 7.004 Punkten lohnt es nicht.
+//
+// Warum das Einsteigen davon unberuehrt bleibt: harborBoatNear prueft 12 m Abstand zum Boot und
+// liest dafuer harborBoatLocal, NICHT die Sichtbarkeit. Wer nah genug zum Einsteigen ist, sieht es
+// ohnehin — 12 m liegen weit innerhalb von 800 m.
+const BEACH_LOD_D  = 800;    // Feuerwehrboot am Strand (461.941 Punkte!)
+const XPARK_LOD_D  = 700;    // geparkter X-Wing (36.534 Punkte)
 function updatePlaneLOD(){
   if(locale !== 'earth') return;
   const F = worldFocus();
   for(const [key, isl] of islandCells){
     if(!isl) continue;
+    // Die Strand-Fahrzeuge zuerst: sie haengen nicht an userData.parked und wuerden vom continue
+    // darunter sonst uebersprungen — auf einer Stadt-Insel (kein Vorfeld) also nie abgeschaltet.
+    // Bezug ist ihre ECHTE Weltposition und nicht die Inselmitte: anders als die zehn Vorfeld-
+    // Plaetze ist es je Insel nur ein Objekt, ein Abstand je Insel kostet also nichts, und der
+    // Radius-Zuschlag (bis 330 m Unsicherheit) entfaellt damit — deshalb braucht es hier auch
+    // kein islandInfo.
+    const fb = isl.userData.harborBoat;
+    if(fb){
+      const z = Math.hypot(isl.position.x + fb.position.x - F.x,
+                           isl.position.z + fb.position.z - F.z) < BEACH_LOD_D;
+      if(fb.visible !== z) fb.visible = z;
+    }
+    const xw = isl.userData.xwingPark;
+    if(xw){
+      const z = Math.hypot(isl.position.x + xw.position.x - F.x,
+                           isl.position.z + xw.position.z - F.z) < XPARK_LOD_D;
+      if(xw.visible !== z) xw.visible = z;
+    }
     const parked = isl.userData.parked;
     if(!parked) continue;
     // Inselmitte plus Inselradius als Zuschlag (siehe oben): so verschwindet kein Flieger, dessen
@@ -2771,8 +2817,45 @@ function wreckInfo1(cx, cz, k){
            // senkrechte Ausdehnung bei 80 Grad gegen 20,3 m Rumpfbreite (C:/tmp/wachse.js).
            // Damit sinkt die noetige Tiefe beim Frachter von 53 auf 46 m, beim Segler von 71 auf 57.
            roll: (0.96 + cellRnd(cx,cz,S+5)*0.52) * (cellRnd(cx,cz,S+6)<0.5?-1:1),
-           // Und ein wenig ueber Bug oder Heck geneigt, weil der Grund nicht eben ist.
-           pitch:(cellRnd(cx,cz,S+7)-0.5)*0.35 };
+           // Und ueber Bug oder Heck geneigt, WEIL DER GRUND ABFAELLT — nicht gewuerfelt.
+           // Das war die Ursache fuer "eine stelle liegt am grund, die andere schwebt in der luft":
+           // pitch kam aus cellRnd, der Rumpf lag also in einem Winkel, der mit dem Gefaelle unter
+           // ihm nichts zu tun hatte. Bei 135 m Rumpflaenge und dem Schelfhang (SEA_DEPTH ueber
+           // SHELF_W = 180 m, also bis 0,5 m Fall je Meter) rutschte ein Ende dabei weit weg vom
+           // Sand: NACHGEMESSEN (C:/tmp/wr11.js) schwebte der Frachter im Median 6,34 m, in 87,5 %
+           // der Faelle mehr als 1 m, schlimmstenfalls 63,55 m — und steckte auf der anderen Seite
+           // im Median 7,55 m im Boden. Der Segler mit 90 m lag bei 4,37 m Median.
+           //
+           // Jetzt kommt die Neigung aus dem Grund selbst: Bug- und Heckpunkt abfragen und den
+           // Winkel zwischen ihnen nehmen. seabedY ist dieselbe Funktion, die den Grund zeichnet,
+           // die Neigung passt also genau — und weil sie nur aus (cx,cz) folgt, bleibt das Wrack
+           // ortstreu.
+           //
+           // Gemessen sinkt der Median damit von 6,34 m auf -0,31 m (es liegt also auf und sinkt
+           // leicht ein) und der 90-%-Wert von 14,73 auf 6,35 m. Die restlichen Faelle sind die
+           // GEWOELBTEN Stellen: liegt eine Delle oder ein Buckel zwischen Bug und Heck, kann ein
+           // starrer Rumpf dort ueberhaupt nicht aufliegen, ganz gleich in welchem Winkel. Die
+           // faengt die Woelbungsschwelle in wreckInfos ab (siehe WRECK_WOELB_MAX).
+           pitch: wreckPitch(wx, wz, cellRnd(cx,cz,S+4)*Math.PI*2,
+                             Math.min(lenRoh, lenMax), key) };
+}
+// Neigung ueber Bug und Heck aus dem GEFAELLE des Grundes. laenge ist die Rumpflaenge; beim
+// Grossfund zaehlt die Modelllaenge aus SHIP_TYPES und nicht info.len (dasselbe, was wreckLen
+// unterscheidet — mit info.len waere der Winkel fuer einen zu kurzen Rumpf gerechnet).
+function wreckPitch(wx, wz, rot, len, key){
+  const L = wreckModelLen(len, key);
+  // -sin/-cos: dieselbe Vorwaertsrichtung, die faceTowards und die Boote benutzen (-Z ist die Front).
+  const fx = -Math.sin(rot), fz = -Math.cos(rot);
+  const yBug = seabedY(wx + fx*L/2, wz + fz*L/2);
+  const yHeck = seabedY(wx - fx*L/2, wz - fz*L/2);
+  return Math.atan2(yBug - yHeck, L);
+}
+// Rumpflaenge fuer Geometrie-Rechnungen: beim Grossfund die Modelllaenge, sonst die gewuerfelte.
+// Als eigene Funktion, weil wreckPitch sie VOR dem Bau braucht (wreckLen bekommt ein fertiges info).
+function wreckModelLen(len, key){
+  if(!key) return len;
+  const def = SHIP_TYPES.find(d=>d.key === key);
+  return def ? def.len : len;
 }
 // ALLE Wracks einer Zelle. Reihenfolge und Inhalt sind allein aus (cx,cz) bestimmt — Aufrufer
 // duerfen das Ergebnis also zwischenspeichern, muessen aber nichts pflegen.
@@ -2795,11 +2878,51 @@ function wreckLen(info){
   const def = SHIP_TYPES.find(d=>d.key === info.key);
   return def ? def.len : info.len;
 }
+// Wieviel der Grund zwischen Bug und Heck von der GERADEN abweichen darf. Eine Neigung kann ein
+// starrer Rumpf mitmachen (dafuer sorgt wreckPitch), eine WOELBUNG nicht: liegt eine Delle oder ein
+// Buckel dazwischen, beruehrt er den Grund nur an zwei von drei Punkten — in welchem Winkel auch
+// immer er liegt. Das sind die Faelle, die nach dem Neigungs-Fix als Rest uebrig blieben.
+//
+// NACHGEMESSEN (C:/tmp/wr11.js), Frachter mit 135 m Rumpf, Anteil mit mehr als 1 m Schwebespalt:
+//   ohne Schwelle   24,0 %   (90-%-Wert 6,35 m)
+//   3 m              5,0 %   (90-%-Wert 0,14 m), 20,5 % der Stellen entfallen
+//   2 m              2,3 %   (90-%-Wert -0,18 m), 23,0 % der Stellen entfallen
+// 3 m ist der Knick: es holt vier Fuenftel der schlechten Faelle und kostet ein Fuenftel der
+// Stellen. Von 2 m auf 3 m gehen nur 2,5 Prozentpunkte mehr Stellen verloren, aber die Ausbeute
+// steigt kaum noch — und Wracks sollen zu finden sein.
+//
+// Dass Stellen wegfallen, kostet nichts: WRECK_CHANCE liegt bei 0,55 mit zwei Wuerfen je Zelle,
+// es bleiben also reichlich. Und wo eines wegfaellt, faellt es DETERMINISTISCH weg — die
+// Ortstreue bleibt, weil seabedY nur von der Position abhaengt.
+const WRECK_WOELB_MAX = 3;
+// Traegt die Stelle einen starren Rumpf? Prueft die Woelbung zwischen Bug, Mitte und Heck.
+function wreckPasst(info){
+  const L = wreckLen(info);
+  const fx = -Math.sin(info.rot), fz = -Math.cos(info.rot);
+  const yBug  = seabedY(info.wx + fx*L/2, info.wz + fz*L/2);
+  const yHeck = seabedY(info.wx - fx*L/2, info.wz - fz*L/2);
+  return Math.abs(info.y - (yBug + yHeck)/2) <= WRECK_WOELB_MAX;
+}
+// Gecacht wie die Inseln, Parkplaetze und Rampen (_islandCache, _parkCache, _rockCache), und seit
+// dem Neigungs-Fix lohnt es deutlicher: wreckInfos wird im Periskop und im Sonar JE FRAME ueber 49
+// Zellen aufgerufen, und jedes Wrack kostet jetzt fuenf seabedY statt einem (Tiefe + Neigung +
+// Woelbung). Gemessen sind das 0,19 ms je Frame ohne Cache — vertretbar, aber unnoetig, denn das
+// Ergebnis haengt allein an (cx,cz) und aendert sich nie.
+const _wreckCache = new Map();
 function wreckInfos(cx, cz){
+  const key = cx + ',' + cz;
+  const hit = _wreckCache.get(key);
+  if(hit) return hit;
+  const r = _wreckInfosCalc(cx, cz);
+  _wreckCache.set(key, r);
+  return r;
+}
+function _wreckInfosCalc(cx, cz){
   const out = [];
   for(let k=0;k<WRECK_TRIES;k++){
     const wi = wreckInfo1(cx, cz, k);
     if(!wi) continue;
+    if(!wreckPasst(wi)) continue;         // gewoelbter Grund: kein Rumpf liegt dort auf
     const lw = wreckLen(wi);
     let frei = true;
     for(const alt of out){
@@ -2854,7 +2977,7 @@ function makeWreck(info){
     // Geometrie suchen und um ihn anheben. Die alte Rechnung (|sin(roll)| mal Rumpfradius) liess
     // Aufbauten, Schornstein und Masten aussen vor und setzte damit zu tief oder zu hoch an.
     g0.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
-    g0.position.set(info.wx, info.y - lowestPointY(g0) - 0.4, info.wz);   // 0,4 m im Sand
+    g0.position.set(info.wx, wreckRestY(info) - lowestPointY(g0), info.wz);
     return g0;
   }
   const tpl = shipTemplates[info.key];
@@ -2895,10 +3018,32 @@ function makeWreck(info){
   // jedes Modell und jede Kraengung richtig, ohne Sonderfall — und die Masten des Seglers fallen
   // dabei einfach mit hinein.
   g.rotation.set(info.pitch, info.rot, info.roll, 'YXZ');
-  // 0,4 m Einsinken: ein Wrack liegt seit Jahrzehnten im Sand, es steht nicht darauf. Ohne das
-  // beruehrt es den Grund an genau einem Punkt und sieht aus wie hingestellt.
-  g.position.set(info.wx, info.y - lowestPointY(g) - 0.4, info.wz);
+  g.position.set(info.wx, wreckRestY(info) - lowestPointY(g), info.wz);
   return g;
+}
+// Auf WELCHE Hoehe das Wrack aufsetzt. Das war vorher info.y minus 0,4 m, also die Tiefe in der
+// MITTE — und damit nur bei ebenem Grund richtig. Seit die Neigung dem Gefaelle folgt (siehe
+// wreckPitch), liegt der Rumpf schraeg ueber drei verschiedenen Bodenhoehen: unter Bug, Mitte und
+// Heck. Der Bezug muss deshalb aus allen drei kommen.
+//
+// Genommen wird der MITTELWERT der drei Bedarfe und nicht der hoechste. Der hoechste hielte das
+// Wrack sicher aus dem Boden, liesse es dafuer aber an den anderen Punkten schweben: gemessen
+// (C:/tmp/wr9.js) 0,20 m Median Spalt statt 0,09 m, dabei nie Einsinken. Der Mittelwert halbiert
+// beides — es sinkt an der tiefsten Stelle etwas ein UND schwebt an der hoechsten weniger.
+//
+// Und das ist genau richtig: ein Wrack liegt seit Jahrzehnten im Sand, es steht nicht darauf.
+// Teilweise eingesunken sieht es aus wie gewachsen, schwebend wie ein Fehler. Deshalb kommen die
+// 0,4 m Einsinken von vorher noch dazu.
+const WRECK_SINK = 0.4;    // m, um die das Wrack im Sand steckt (siehe oben)
+function wreckRestY(info){
+  const L = wreckLen(info);
+  const fx = -Math.sin(info.rot), fz = -Math.cos(info.rot);
+  const yBug  = seabedY(info.wx + fx*L/2, info.wz + fz*L/2);
+  const yHeck = seabedY(info.wx - fx*L/2, info.wz - fz*L/2);
+  // Was Bug und Heck an Hoehe brauchen, ist um die Neigung zurueckzurechnen: der Bug sitzt
+  // sin(pitch)*L/2 UEBER dem Bezugspunkt, das Heck ebenso weit darunter.
+  const s = Math.sin(info.pitch) * L/2;
+  return (yBug - s + yHeck + s + info.y)/3 - WRECK_SINK;
 }
 // ---- VEGETATION: Seegras und Korallen auf dem Schelf -------------------------------------------
 // Nur im flachen Wasser am Inselsaum, wo Licht hinkommt — dort, wo auch echte Pflanzen wachsen.
@@ -3357,9 +3502,45 @@ function makeFishSchool(){
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   return im;
 }
+// Ein Winkel im VORDEREN Kegel, um die Fahrtrichtung herum. Das ist der Fix zu einem stillen
+// Missverhaeltnis: Schwaerme und Orcas werden bei DESPAWN (420 m) verworfen, aber nur bis
+// SPAWN_MAX (260 bzw. 220 m) neu ausgesetzt — und zwar RUNDHERUM. Jeder zweite landete damit
+// HINTER dem Fahrzeug und war sofort wieder faellig.
+//
+// NACHGEMESSEN (C:/tmp/fish4.js, 10 Minuten Vollfahrt mit dem U-Boot, 14 m/s):
+//   rundherum   28,0 Umsetzungen/min, im Mittel  4,6 von 14 Schwaermen in Sicht
+//   +-90 Grad   23,2                             5,8
+//   +-60 Grad   21,3                             6,8
+//   +-45 Grad   20,6                             7,2
+// Also 24 % weniger Umsetzungen UND die Haelfte mehr sichtbare Schwaerme: beides verbessert sich,
+// weil dieselbe Ursache hinter beidem steckt.
+//
+// +-60 Grad und nicht enger: bei +-45 Grad wird es kaum noch besser (0,7 Umsetzungen), aber der
+// Kegel wird so schmal, dass man die Schwaerme nur noch geradeaus findet — links und rechts waere
+// das Meer leer, und beim Drehen entstuende ein sichtbares Nachruecken.
+//
+// Im STAND (Tempo 0) hat der Kegel keine Richtung mehr und faellt auf Zufall zurueck; gemessen
+// bleibt es dort bei 3,1 Umsetzungen/min wie vorher, also ohne Nachteil.
+//
+// Die Radien bleiben ausdruecklich UNVERAENDERT. SPAWN_MAX auf die Sichtgrenze zu ziehen war der
+// naheliegende Gedanke, haette aber die DICHTE verfaelscht: dieselbe Zahl Schwaerme auf weniger
+// Flaeche ist bei den Fischen der Faktor 2,14 (C:/tmp/fish2.js) — aus einem lebendigen Meer wuerde
+// ein Aquarium.
+const SPAWN_KEGEL = Math.PI/3;     // halber Oeffnungswinkel (60 Grad)
+function spawnWinkel(){
+  // Fahrtrichtung aus der Geschwindigkeit — und zwar der des BEZUGSPUNKTS, also derselben Logik wie
+  // worldFocus: waehrend der EVA gehoert state.vel dem stehenden Fahrzeug und ist 0. Im
+  // SCHLAUCHBOOT faehrt man aber, und dessen Fahrt steht in eva.boatVel (siehe stepDinghy).
+  // Zu Fuss bleibt es bei 0 und damit beim Zufall, was richtig ist: ein Astronaut laeuft 3 m/s,
+  // da wird ohnehin kaum etwas faellig.
+  const v = (typeof eva !== 'undefined' && eva) ? eva.boatVel : state.vel;
+  // Unter 0,5 m/s ist keine Richtung erkennbar (man steht) — dann rundherum wie vorher.
+  if(!v || Math.hypot(v.x, v.z) < 0.5) return Math.random()*Math.PI*2;
+  return Math.atan2(v.z, v.x) + (Math.random()-0.5)*2*SPAWN_KEGEL;
+}
 function placeFishSchool(f, fx, fz){
   for(let t=0;t<16;t++){
-    const a = Math.random()*Math.PI*2;
+    const a = spawnWinkel();
     const d = FISH_SPAWN_MIN + Math.random()*(FISH_SPAWN_MAX-FISH_SPAWN_MIN);
     const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
     if(isOnLand(x, z) || isOnBeach(x, z)) continue;
@@ -3792,6 +3973,46 @@ const ORCA_JUMP_CYCLE = ORCA_RUNUP_T + ORCA_JUMP_T + ORCA_UNDER_T + 7;
 // was Orcas tun: 20 bis 40 s tauchen, dann zum Blasen hoch.
 const ORCA_DIVE   = 7;      // Tauchtiefe: doppelte Wellenhoehe unter Wasser, sicher weg
 const ORCA_PERIOD = 22;     // ein ganzer Zyklus (unten -> oben -> unten)
+// ---- TIEFSEE-SCHULE: die dritte Rolle, fuer das U-Boot -----------------------------------------
+// Aus den offenen Punkten: "Die Orcas tauchen nur 7 m. Von unten sieht man sie jetzt, aber sie
+// bleiben knapp unter der Oberflaeche. Waere schoen, wenn eine Schule mal am U-Boot vorbeizieht."
+//
+// Warum ORCA_DIVE dafuer NICHT einfach groesser werden darf: seine 7 m sind begruendet (doppelte
+// Wellenhoehe, damit das Abtauchen bei jeder Duenung sichtbar ist), und ein Tier, das 60 m tief
+// geht, waere von einem BOOT aus nie mehr zu sehen. Die Oberflaechen-Schule soll bleiben, wie sie
+// ist — es fehlt eine eigene Rolle.
+//
+// NACHGERECHNET (C:/tmp/orca1.js), warum die vorhandene Schule das nicht leistet: das U-Boot faehrt
+// zwischen 0 und 88 m (SEA_DEPTH 100 minus SUB_FLOOR_CLR 12). Bei 50 m Reisetiefe ist ein Orca auf
+// 7 m Tiefe 43 m UEBER dem Boot — man muesste senkrecht nach oben schauen, um ihn zu sehen. Am
+// Grund sind es 81 m, also mehr als die halbe Sichtweite, und das senkrecht nach oben.
+//
+// Die Tiefsee-Schule zieht deshalb auf der Tiefe, auf der das BOOT gerade faehrt. Damit begegnet man
+// ihr seitlich und auf Augenhoehe, und sie ist bis zur Sichtgrenze (UW_FOG_DEEP, 165 m) sichtbar.
+// Sie folgt der Bootstiefe traege nach (ORCA_DEEP_VY): ein Tier, das jeder Tiefenaenderung sofort
+// folgt, klebte am Boot wie ein Anhaenger. So zieht es seine Bahn und man begegnet ihm.
+const ORCA_DEEP_N    = 3;    // so viele der ORCA_COUNT Tiere sind Tiefsee-Tiere (die Haelfte)
+const ORCA_DEEP_BAND = 18;   // m Streuung um die Bootstiefe, damit sie nicht auf einer Linie ziehen
+// Wie STEIL ein Tiefsee-Tier hoechstens steigt oder sinkt. Das ist die entscheidende Groesse, und
+// sie ist aus derselben Formel wie bei der Oberflaechen-Schule genommen statt geraten: dort ist der
+// Bahnwinkel hergeleitet zu atan2(1,50 m/s; 3,2 m/s) = 25 Grad, und ein Wal bewegt sich nicht
+// steiler, weil er tiefer schwimmt.
+//
+// Ein erster Versuch war ein Anteil je Sekunde ("folge der Bootstiefe mit 6 % pro Frame"), und der
+// war nachgerechnet falsch: er holte 50 m Tiefenunterschied in 0,6 s auf, mit 180 m/s Sinkrate im
+// ersten Moment und 89 Grad Nickwinkel (C:/tmp/orca2.js). Das Tier haette senkrecht nach unten
+// gestanden und waere in einer halben Sekunde am Ziel gewesen — beides sieht nach Fehler aus, nicht
+// nach Wal. Der Fehler steckte in der Form: ein Anteil je Zeit hat keine Geschwindigkeitsgrenze.
+//
+// Mit einer festen Sinkrate folgt das Tier dem Boot in 33 s ueber 50 m. Das ist genau das traege
+// Nachziehen, das gewuenscht war: die Schule klebt nicht am Boot, sondern zieht ihre eigene Bahn und
+// kommt mit der Zeit auf Tiefe.
+const ORCA_DEEP_PMAX = 25 * Math.PI/180;            // hoechster Bahnwinkel (wie die Schule oben)
+const ORCA_DEEP_VY   = ORCA_SPD * Math.tan(ORCA_DEEP_PMAX);   // 1,49 m/s senkrecht
+// Nicht hoeher als hier: darueber liegt die Zone der Oberflaechen-Schule und der Springer, und ein
+// Tiefsee-Tier, das in den Wellenhub geraet, ragte heraus. ORCA_DIVE + ORCA_H ist genau die
+// Unterkante der Springer-Zone.
+const ORCA_DEEP_MIN  = ORCA_DIVE + ORCA_H;
 const ORCA_SURF   = 0.45;   // Ruecken so weit ueber Wasser, wenn oben (ein Wal liegt flach)
 // Wie viele, wie weit weg, wie schnell.
 // Die Herde begleitet den Spieler wie die Handelsflotte, aber viel naeher: die Schiffe tauchen erst
@@ -3907,7 +4128,7 @@ function buildOrcaBody(o){
 // Geprueft wird nur, dass es im offenen Wasser landet und nicht in einem Rumpf steckt.
 function placeOrca(o, fx, fz){
   for(let tries=0; tries<20; tries++){
-    const a = Math.random()*Math.PI*2;
+    const a = spawnWinkel();          // vorderer Kegel, siehe SPAWN_KEGEL bei den Fischen
     const d = ORCA_SPAWN_MIN + Math.random()*(ORCA_SPAWN_MAX-ORCA_SPAWN_MIN);
     const x = fx + Math.cos(a)*d, z = fz + Math.sin(a)*d;
     if(isOnLand(x, z) || isOnBeach(x, z) || isOnCarrier(x, z)) continue;
@@ -3916,8 +4137,17 @@ function placeOrca(o, fx, fz){
     o.heading = Math.random()*Math.PI*2;
     // Wer springt und wer nur taucht: jedes dritte Tier ist ein Springer. Alle springen zu lassen
     // waere Zirkus; keiner waere schade. Der Rest bildet die Schule.
-    o.jumper = (Math.random() < 0.34);
+    // ...aber ein Tiefsee-Tier bleibt eines, auch nach dem Umsetzen (siehe spawnOrcas: Springen und
+    // Tiefsee schliessen sich aus). Ohne dieses o.deep waere jedes umgesetzte Tier mit 34 %
+    // Wahrscheinlichkeit wieder Springer geworden, und nach einigen Minuten Fahrt haette die Herde
+    // keine Tiefsee-Tiere mehr gehabt — ein stiller Ausfall, der erst im Spiel aufgefallen waere.
+    o.jumper = !o.deep && (Math.random() < 0.34);
     o.t = Math.random() * (o.jumper ? ORCA_JUMP_CYCLE : ORCA_PERIOD);
+    // Die Tiefsee-Rolle wird HIER NICHT gewuerfelt, sondern in spawnOrcas fest zugeteilt (siehe
+    // dort): sonst haette eine Herde zufaellig gar kein Tiefsee-Tier oder nur solche.
+    // Ihre Bandlage (Versatz zur Bootstiefe) wird hier aber neu gezogen, damit eine Schule nach dem
+    // Umsetzen nicht auf derselben Linie wie vorher zieht.
+    o.band = (Math.random()-0.5)*2*ORCA_DEEP_BAND;
     if(o.group) o.group.position.set(o.x, 0, o.z);
     return true;
   }
@@ -3928,7 +4158,10 @@ function spawnOrcas(){
   // Sie kommen in Gruppen: ein Leittier setzt die Stelle, die naechsten zwei bleiben in ORCA_POD
   // Metern daneben. So schwimmen sie als Rudel und nicht als sechs Einzelgaenger im Kreis.
   for(let i=0; i<ORCA_COUNT; i++){
-    const o = { group:null, mixer:null, x:0, z:0, heading:0, t:0, jumper:false, y:0, pitch:0, placed:false };
+    const o = { group:null, mixer:null, x:0, z:0, heading:0, t:0, jumper:false, y:0, pitch:0, placed:false,
+                // Tiefsee-Tier? Die ERSTEN ORCA_DEEP_N der Herde sind es, fest und nicht gewuerfelt
+                // (siehe ORCA_DEEP_N): so hat jede Herde verlaesslich beide Rollen.
+                deep: i < ORCA_DEEP_N, band: 0, deepY: 0 };
     const lead = orcas.length ? orcas[orcas.length-1] : null;
     if(i % 3 === 0 || !lead || !lead.placed){
       o.placed = placeOrca(o, F.x, F.z);
@@ -3938,9 +4171,16 @@ function spawnOrcas(){
       o.heading = lead.heading + (Math.random()-0.5)*0.5;
       o.jumper = (Math.random() < 0.34);
       o.t = Math.random() * (o.jumper ? ORCA_JUMP_CYCLE : ORCA_PERIOD);
+      o.band = (Math.random()-0.5)*2*ORCA_DEEP_BAND;   // wie in placeOrca, das hier nicht laeuft
       o.placed = !isOnLand(o.x, o.z) && !isOnBeach(o.x, o.z) && !isOnCarrier(o.x, o.z);
       if(!o.placed) o.placed = placeOrca(o, F.x, F.z);
     }
+    // Ein TIEFSEE-Tier springt nicht. Beides zusammen waere ein Widerspruch: der Springer-Zweig in
+    // updateOrcas rechnet seine ganze Bahn gegen die Wasseroberflaeche (swimY), ein Tier auf 60 m
+    // Tiefe wuerde also fuer den Anlauf schlagartig nach oben schnappen. Und ein Wal, der aus 60 m
+    // heraufschiesst, um zu springen, waere ohnehin kein Tiefseetier mehr.
+    // Die Zuweisung steht NACH beiden Zweigen, weil o.jumper in jedem von ihnen gesetzt wird.
+    if(o.deep) o.jumper = false;
     if(o.placed) buildOrcaBody(o);
     orcas.push(o);
   }
@@ -3988,7 +4228,48 @@ function updateOrcas(dt){
     // der Ruecken liegt ORCA_BACK darueber. Soll er ORCA_SURF herausschauen, muss der Ursprung
     // (ORCA_BACK - ORCA_SURF) unter die Oberflaeche.
     const swimY = surf - (ORCA_BACK - ORCA_SURF);
-    if(o.jumper){
+    if(o.deep){
+      // ---- TIEFSEE-SCHULE: zieht auf der Tiefe, auf der das U-BOOT faehrt (siehe ORCA_DEEP_N).
+      // Ohne Boot in der Tiefe gibt es nichts zu begleiten: dann zieht sie auf ihrer Bandlage unter
+      // der Oberflaechen-Zone weiter. Das kostet nichts (man sieht sie von oben ohnehin nicht) und
+      // haelt ihre Tiefe stetig, damit sie beim Abtauchen nicht erst von 10 m heruntersinkt.
+      const bootTief = (isSub() && !eva) ? state.pos.y : (surf - ORCA_DEEP_MIN);
+      let ziel = bootTief + o.band;
+      // ZWEI Grenzen, und beide wandern: oben die Oberflaechen-Zone, unten der Meeresboden.
+      //
+      // Der Grund wird VORAUS gelesen und nicht unter dem Tier. Das ist nachgerechnet noetig
+      // (C:/tmp/orca4.js): der Schelf steigt vom offenen Wasser (-100 m) ueber SHELF_W = 180 m auf
+      // SEABED_SHORE_Y (-1,2 m), also bis 0,55 m Anstieg je Meter. Mit 1,49 m/s Steigrate bei
+      // 3,2 m/s Fahrt (ORCA_DEEP_VY) schafft das Tier 0,47 m je Meter — es kaeme also NICHT hinterher
+      // und wuerde in den Hang laufen. Die Vorausschau ist 40 m, das sind bei ORCA_SPD 12,5 s.
+      const grund = Math.max(seabedY(o.x, o.z), seabedY(o.x + fx*40, o.z + fz*40));
+      const obenMax = surf - ORCA_DEEP_MIN;         // nicht in die Springer-/Schulzone hinauf
+      const untenMin = grund + ORCA_H + 1;          // nicht in den Sand (Modellhoehe plus 1 m Luft)
+      if(ziel > obenMax) ziel = obenMax;
+      if(ziel < untenMin) ziel = untenMin;
+      // Traegt die Stelle beides nicht mehr — flaches Wasser am Inselsaum, wo Grund und Oberflaeche
+      // naeher zusammenliegen als das Tier hoch ist —, dann gilt WEDER das eine noch das andere:
+      // untenMin waere der Sand, obenMax liesse den Ruecken herausragen. Gemessen ist das ab rund
+      // 6 m Wassertiefe der Fall, und dort ragte der Ruecken 1,19 m aus dem Wellental.
+      //
+      // Ein Tiefseetier hat dort ohnehin nichts zu suchen: es DREHT AB. Das ist derselbe Weg, den es
+      // vor Land, Schiffen und dem Traeger schon geht (siehe die Vorausschau oben), nur gegen die
+      // Wassertiefe statt gegen ein Hindernis — und er braucht keine neue Mechanik.
+      if(untenMin > obenMax){
+        ziel = obenMax;                             // so tief wie moeglich, waehrend es abdreht
+        o.heading += 1.2 * dt * (1 + Math.random());
+      }
+      // Mit BEGRENZTER Sinkrate folgen (siehe ORCA_DEEP_VY): so zieht das Tier seine Bahn und wird
+      // nicht vom Boot gezogen — und der Nickwinkel bleibt dabei von selbst unter ORCA_DEEP_PMAX,
+      // weil beides aus derselben Rechnung kommt.
+      const rest = ziel - o.y;
+      const schritt = Math.min(Math.abs(rest), ORCA_DEEP_VY*dt) * Math.sign(rest);
+      o.y += schritt;
+      // Nase in die Bewegungsrichtung — dieselbe Formel wie bei Sprung und Schule: atan2(vy, vHoriz).
+      // Gerechnet wird aus dem SOLL-Schritt und nicht aus (o.y - vorher)/dt: das ist derselbe Wert,
+      // aber ohne die Division, die bei dt = 0 (erster Frame) NaN ergeben haette.
+      o.pitch = Math.atan2(dt > 0 ? schritt/dt : 0, ORCA_SPD);
+    } else if(o.jumper){
       // ---- SPRINGER: schwimmen, Anlauf, Bogen durch die Luft, ganz unter Wasser, wieder hoch.
       // Der Zyklus hat VIER Abschnitte, hintereinander am Ende von ORCA_JUMP_CYCLE:
       //   ... 7 s schwimmen ... | ORCA_RUNUP_T Anlauf | ORCA_JUMP_T Flug | ORCA_UNDER_T unter Wasser |

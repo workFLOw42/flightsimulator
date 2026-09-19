@@ -2355,9 +2355,9 @@ Sofort-Umstieg, kein Absturz.
 
 ## Offen geblieben
 
-- **Die Orcas tauchen nur 7 m.** Von unten sieht man sie jetzt, aber sie bleiben knapp unter der
-  Oberfläche — ihr Modell ist nur 3,19 m hoch, ein tieferes Tauchen bräuchte die Begründung von
-  `ORCA_DIVE` neu. Wäre schön, wenn eine Schule mal am U-Boot vorbeizieht.
+- ~~**Die Orcas tauchen nur 7 m.**~~ — erledigt 19.09.: `ORCA_DIVE` bleibt bei 7 m (die Begründung
+  gilt weiter), stattdessen gibt es eine dritte Rolle. Die halbe Herde (`ORCA_DEEP_N`) zieht auf
+  Bootstiefe. Siehe unten.
 - **Wracks sind reine Kulisse.** Man kann hineinfahren (der Rumpf sperrt nicht, weil `hitsSeaShip` nur
   die fahrenden Schiffe kennt). Ob das ein Fehler ist, muss man im Spiel entscheiden — durch ein
   offenes Wrack zu tauchen wäre auch schön.
@@ -3074,7 +3074,334 @@ Mehrere gleichzeitig fällige Rampen können sich damit nicht mehr in einem Fram
 
 ### Offen
 
-- **Liberty-Wrack liegt schief im Sand** — „eine stelle liegt am grund, die andere schwebt in der
-  luft" (Screenshot 16.09.). Als Nächstes dran.
-- **Fisch/Orca-Neuplatzierung**: Spawn-Radius (260 bzw. 220 m) kleiner als Despawn-Radius (420 m).
-  Kostet kaum Zeit, ist aber unsauber — bei Tempo werden Schwärme sofort wieder verworfen.
+- ~~**Liberty-Wrack liegt schief im Sand**~~ — erledigt 19.09.: `pitch` war gewürfelt statt aus dem
+  Gefälle gelesen. Median-Schwebespalt 6,34 m → -0,33 m. Siehe unten.
+- ~~**Fisch/Orca-Neuplatzierung**~~ — erledigt 19.09.: nicht die Radien waren das Problem, sondern
+  die Richtung (rundherum statt voraus). Siehe unten.
+
+❯ viel besser geworden... danke. beim alpha zittert es noch manchmal, gerade bei übergägnen (höhe, übergang zur schallgeschwindigkeit, solche dinge)  ist aber schon wirklich ruhig. beim xwing mit march 2.5 schon noch sehr deutlich. höhe nicht entscheidend.
+
+Sehr guter Hinweis: „gerade bei Übergängen" klingt nach Schwellen, die hin- und herschalten. Ich prüfe alle Schwellen im Loop auf fehlende Hysterese.
+
+  Ran 3 shell commands
+
+Der Alpha-Jet-Punkt und der X-Wing sind unterschiedlich. Beim X-Wing bleibt der Zellbau: alle 1,24 s eine neue Zelle, und der Kommentar nennt 17 ms dafür. Das messe ich jetzt echt.
+
+  Ran 1 shell command
+
+Die Palmen sind der größte Posten: 2,1 ms für 210 Meshes. Und entscheidend — jede Insel erzeugt neue Geometrie, die die GPU beim ersten Zeichnen hochladen muss. Ich sehe mir an, ob geteilt wird.
+
+  Ran 3 shell commands
+
+Palmen gibt es gar nicht — der Kommentar (und meine Messung) waren falsch. Ich sehe nach, was eine Zelle wirklich baut.
+
+  Ran 2 shell commands
+
+Jetzt der entscheidende Punkt: eine Stadt-Insel baut Wolkenkratzer. Ich prüfe, ob dort Geometrie geteilt wird — und wie viele es sind.
+
+  Ran 2 shell commands
+
+Jedes Haus und jeder Turm erzeugt eigene BoxGeometry — nichts wird geteilt. Bei einer Stadt sind das viele. Ich zähle, wie viele Gebäude eine Stadt-Insel hat.
+
+  Ran 2 shell commands
+
+Hier ist die Zahl, die ich brauche: ein Turmraster über die ganze Insel. Ich rechne es aus, mit echten Inselradien.
+
+  Ran 1 shell command
+
+Das ist der Rest-Ruckler: bis zu 528 neue GPU-Buffer in einem Frame. Jeder Turm erzeugt eigene Geometrie, obwohl alle Türme Boxen sind. Der Fix ist geteilte Geometrie mit scale.
+
+  Ran 2 shell commands
+
+Materialien werden schon geteilt — nur die Geometrie nicht. Ich messe erst, was geteilte Geometrie bringt, bevor ich sie einbaue.
+
+  Ran 1 shell command
+
+3,3× schneller und statt 528 GPU-Uploads nur einer. Ich baue geteilte Geometrie für Türme, Häuser und Hügel ein.
+
+  Ran 3 shell commands
+
+Wichtig: die Kollision liest w/h aus dem Rückgabewert, nicht aus der Geometrie. Das prüfe ich, bevor ich weitergehe.
+
+  Ran 2 shell commands
+
+Die Rückgabewerte sind unverändert — Kollision und aiObstacleTopAt rechnen weiter mit denselben Maßen. Jetzt prüfe ich, ob noch andere Stellen eigene Geometrie pro Objekt bauen.
+
+  Ran 2 shell commands
+
+Die Unterwasser-Vegetation (Zeilen 3064–3099) läuft pro Objekt und der Code nennt 616 Meshes je Zelle. Das prüfe ich.
+
+  Ran 1 shell command
+
+Die Unterwasserwelt nutzt bereits mergeGroup und läuft nur unter 120 m — die ist schon optimiert. Ich verifiziere meine drei Änderungen und committe.
+
+  Ran 3 shell commands
+
+Maße unverändert, Geometrien geteilt, keine negativen Scales. Ich prüfe noch die restlichen Geometrien pro Insel — die Bahnmarkierungen sind alle gleich groß.
+
+  Ran 1 shell command
+
+Zwei Schleifen bauen identische Geometrie neu: die Mittellinien-Striche (1,2×8) und die Stellplatz-Markierungen. Die stelle ich auch um.
+
+  Ran 4 shell commands
+
+Alle Schleifen-Geometrien sind jetzt geteilt; die 7 verbleibenden entstehen genau einmal pro Insel. Ich committe und pushe.
+
+● Bash(cd "C:/Users/flori/Documents/Software/Github/Flugspiel" && git add -A && git commit -F - <<'EOF'
+      Bis zu 558 neue GPU-Buffer in einem Frame: Geometrie wird jetzt…)
+PWA-Cache: flugspiel-v138 -> flugspiel-v139 (Tablets erhalten das Update)
+[main d58b3bb] Bis zu 558 neue GPU-Buffer in einem Frame: Geometrie wird jetzt geteilt
+ 2 files changed, 45 insertions(+), 9 deletions(-)
+… +2 lines
+Updated sw.js (+1 -1)
+/* Flugspiel Service Worker – Offline-Cache
+   Version bei jedem Inhalts-Update hochzaehlen, damit alte Caches ersetzt werden. */
+const CACHE = 'flugspiel-v138';
+const CACHE = 'flugspiel-v139';
+
+/* Kern-Dateien: klein genug, um sie sofort bei der Installation zu cachen. */
+const CORE = [
+
+Gepusht (d58b3bb, Cache v139). Bitte den X-Wing bei Mach 2,5 nochmal — vor allem über einer Stadt-Insel, dort war der Effekt am größten.
+
+Was der Rest war
+
+Nicht die Rechenzeit — die liegt beim Zellbau bei 3,9 ms und passt ins Budget. Es ist der GPU-Upload danach.
+
+Jede eigene Geometrie braucht ein eigenes Buffer-Paar im Grafikspeicher, und das legt Three.js beim ersten Zeichnen an: im Frame nach dem Bau, mitten im renderer.render(). Gemessen hat eine Wolkenkratzer-Stadt bis zu 132 Türme (Median 78) mit je 4 Meshes aus je eigener BoxGeometry — 528 neue Buffer in einem Frame, plus bis zu 30 identische Bahnmarkierungen.
+
+Häuser, Türme, Hügel und Markierungen nutzen jetzt vier geteilte Einheitsgeometrien, auf Größe gebracht über mesh.scale. buildIsland erzeugt damit nur noch 7 eigene Geometrien je Insel statt bis zu 558, jede genau einmal.
+
+Verifiziert mit den Funktionen aus der Datei: 14 Meshes teilen sich 3 Geometrien, und die zurückgegebenen Maße sind unverändert — Oberkanten bei 11,88 / 13,42 / 106,30 / 151,30 / 40,30 m. Das war der Punkt, an dem es hätte schiefgehen können: Kollision und aiObstacleTopAt rechnen mit diesen Werten, nicht mit der Geometrie. Keine negativen Scales, die Normalen kippen also nicht.
+
+Dass es beim X-Wing am stärksten war, passt: 5,6 neue Zellen pro Sekunde gegen 3,0 beim Alpha Jet. Und die Höhe ist dabei erwartungsgemäß egal.
+
+Zwei Sackgassen unterwegs: eine Messung von „Palmen" lief ins Leere (die gibt es nicht, der Kommentar in updateIslands nennt sie falsch), und die Unterwasser-Vegetation nutzt schon mergeGroup — dort war nichts zu holen.
+
+Wenn es noch zittert
+
+Dann sind zwei Dinge noch offen, die ich gezielt angehen könnte: die Bahnmarkierungen sind erledigt, aber Sand und Wiese sind pro Insel noch eigene CircleGeometry mit 48 Segmenten. Und beim Alpha Jet an Übergängen habe ich updateSonic geprüft — die Flanke dort ist saubere Kantenerkennung, kein Flattern.
+
+Vom Wrack liegen die Messungen fertig da (Median 6,30 m Schwebespalt, Fix bringt 0,12 m). Sag mir, ob ich beim Ruckeln weitermache oder das Wrack, die Orcas und das TODO dran sind.
+
+✻ Brewed for 6m 22s · done 9:12 AM
+
+※ recap: Wir arbeiten das Flugspiel-TODO ab; aktuell das Ruckeln bei schnellen Flugzeugen, wo Kamera- und Geometrie-Fixes gepusht sind (v139). Du müsstest jetzt den X-Wing bei Mach 2,5 über einer Stadt-Insel testen. (disable recaps in /config)
+
+❯ sehr sehr viel besser... beim x wing noch ein wenig ruckeln bei high speed. alpha fast nix mehr, nur noch ganz wenig wenn man tief highspeed fliegt und viel drum herum passiert. der rest ist praktisch perfekt. schau mal ob noch was geht... du kannst parallel das wrack und die fische/oracs und die tiefsee orcas angehen... dann c&p und dann selbständig mit der todo weitermachen
+
+Vier Aufgaben. Ich fange beim Ruckeln an — Sand und Wiese sind noch eigene Geometrie pro Insel.
+
+● Sand und Wiese lesen
+  ⎿  $ cd "C:/Users/flori/Documents/Software/Github/Flugspiel" && sed -n '/^function buildIsland/,/^ const rwLen/p' Flugspiel.html | head -32
+Sand und Wiese sind nicht der Rest-Ruckler. Ich habe stattdessen jedes Modell der Welt vermessen,
+und dabei kam ein Posten heraus, der alles andere in den Schatten stellt.
+
+### Das Feuerwehrboot am Strand: 461.941 Punkte fuer 16 Meter Boot
+
+Gemessen wurden alle 44 GLBs im Projekt. Das Boot am Kai ist mit Abstand das schwerste Modell im
+ganzen Spiel — schwerer als der Containerfrachter (264.447), der Transall (66.272) und der
+Flugzeugtraeger (3.362) **zusammen**. Die ausgelieferte `boat_glb.js` ist 30,5 MB gross, entpackt
+22,9 MB; allein zwei Meshes darin haben je 65.532 Punkte.
+
+Und an **jedem** Hafen liegt eines, also auf jeder Insel. Ohne LOD.
+
+| Was                    | Punkte  | je Insel | bei 26 Inseln in Sicht |
+|------------------------|---------|----------|------------------------|
+| Feuerwehrboot am Kai   | 461.941 | 1x       | **12,01 Mio**          |
+| U-Boot am Strand       |  63.963 | 1x       | 1,66 Mio               |
+| geparkter X-Wing       |  36.534 | 1x       | 0,95 Mio               |
+| Hafen                  |   7.004 | 1x       | 0,18 Mio               |
+
+Die Feuerwehrboote sind damit **81 %** von allem, was nach dem Vorfeld-LOD ueberhaupt noch in der
+Szene stand. Auf 2.550 m (Sichtrand) ist so ein Boot **6 px** gross — 460.000 Punkte fuer sechs
+Pixel. Genau das ist der Rest-Ruckler beim X-Wing: er legt 2.550 m in 3,6 s zurueck, das Gepaeck
+wird im Sekundentakt aus- und eingeladen.
+
+Die Grenzen sind mit demselben Kriterium gerechnet wie `PARK_LOD_D` (21 px, "gerade noch
+erkennbar", 60 Grad FOV, 1080p): Boot 16 m -> 786 m, X-Wing 13 m -> 638 m. Aufgerundet auf
+`BEACH_LOD_D` 800 und `XPARK_LOD_D` 700.
+
+Das **U-Boot bleibt ohne Grenze**: 95 m lang, am Sichtrand noch 38 px — eine Grenze waere dort
+sichtbares Verschwinden bei einem Siebtel der Ersparnis. Der Hafen mit 7.004 Punkten lohnt es nicht.
+
+Zwei Dinge waren dabei zu pruefen und stimmen: die Strandfahrzeuge werden **vor** dem
+`if(!parked) continue` geschaltet (sonst waeren sie auf Stadt-Inseln, die kein Vorfeld haben, nie
+abgeschaltet worden), und das **Einsteigen bleibt unberuehrt** — `harborBoatNear` prueft 12 m
+Abstand und liest `harborBoatLocal`, nicht die Sichtbarkeit.
+
+### Das Wrack lag schief, weil `pitch` gewuerfelt war
+
+`wreckInfo1` zog die Neigung aus `cellRnd` — der Rumpf lag also in einem Winkel, der mit dem
+Gefaelle unter ihm nichts zu tun hatte. Bei 135 m Rumpflaenge auf dem Schelfhang rutschte damit ein
+Ende weit weg vom Sand. Nachgemessen (`C:/tmp/wr11.js`, 25.000 Stellen):
+
+| Variante                          | Spalt Median | 90 % | max   | >1 m  | steckt Median |
+|-----------------------------------|--------------|------|-------|-------|---------------|
+| IST: pitch gewuerfelt, y = Mitte  | **6,34 m**   | 14,73| 63,55 | 87,5 %| 7,55 m        |
+| pitch aus dem Gefaelle + Auflage  | -0,31 m      |  6,35| 34,27 | 24,0 %| 0,49 m        |
+| dazu Woelbung < 3 m               | -0,33 m      |  0,14| 11,29 |  5,0 %| 0,47 m        |
+
+Drei Aenderungen, jede mit eigener Begruendung:
+
+1. **`wreckPitch`** liest Bug- und Heckhoehe mit `seabedY` und nimmt den Winkel dazwischen. Weil
+   `seabedY` dieselbe Funktion ist, die den Grund zeichnet, passt die Neigung genau — und weil sie
+   nur von der Position abhaengt, bleibt das Wrack ortstreu.
+2. **`wreckRestY`** setzt auf den **Mittelwert** der drei Bedarfe (Bug, Mitte, Heck) auf, nicht auf
+   den hoechsten. Der hoechste hielte es sicher aus dem Boden, liesse es dafuer anderswo schweben
+   (0,20 m Median statt 0,09 m). Der Mittelwert halbiert beides — und ein Wrack, das teilweise im
+   Sand steckt, ist genau richtig. Es liegt seit Jahrzehnten dort.
+3. **`WRECK_WOELB_MAX` = 3 m.** Eine Neigung kann ein starrer Rumpf mitmachen, eine **Woelbung**
+   nicht: liegt eine Delle zwischen Bug und Heck, beruehrt er den Grund nur an zwei von drei
+   Punkten, in welchem Winkel auch immer. 3 m ist der Knick der Messreihe — es holt vier Fuenftel
+   der schlechten Faelle und kostet ein Fuenftel der Stellen. Bei `WRECK_CHANCE` 0,55 mit zwei
+   Wuerfen je Zelle bleiben reichlich, und es faellt **deterministisch** weg.
+
+`wreckInfos` hat dabei einen Cache bekommen (`_wreckCache`, wie `_parkCache`): es laeuft im Periskop
+und im Sonar je Frame ueber 49 Zellen, und jedes Wrack kostet jetzt fuenf `seabedY` statt einem.
+Gemessen 0,19 ms je Frame ohne Cache — vertretbar, aber unnoetig.
+
+### Fische und Orcas wurden nach HINTEN ausgesetzt
+
+Der gemeldete Punkt war "Spawn-Radius kleiner als Despawn-Radius". Der eigentliche Fehler ist die
+**Richtung**: neu ausgesetzt wurde rundherum, also mit gleicher Wahrscheinlichkeit hinter dem
+Fahrzeug — und ein Schwarm hinten ist sofort wieder faellig. Gemessen ueber 10 Minuten Vollfahrt
+mit dem U-Boot (`C:/tmp/fish4.js`):
+
+| Kegel            | Umsetzungen/min | sichtbar (von 14) |
+|------------------|-----------------|-------------------|
+| rundherum (IST)  | 28,0            | 4,6               |
+| +-90 Grad        | 23,2            | 5,8               |
+| **+-60 Grad**    | **21,3**        | **6,8**           |
+| +-45 Grad        | 20,6            | 7,2               |
+
+24 % weniger Umsetzungen **und** die Haelfte mehr sichtbare Schwaerme: beides verbessert sich, weil
+dieselbe Ursache hinter beidem steckt. +-60 Grad und nicht enger, damit das Meer links und rechts
+nicht leer wirkt. Im Stand faellt es auf Zufall zurueck (gemessen ohne Nachteil).
+
+Die **Radien bleiben unveraendert.** `SPAWN_MAX` auf die Sichtgrenze zu ziehen war der naheliegende
+Gedanke, haette aber die Dichte verfaelscht: dieselbe Zahl Schwaerme auf weniger Flaeche ist bei den
+Fischen Faktor **2,14** — aus einem lebendigen Meer wuerde ein Aquarium.
+
+### Tiefsee-Orcas: die dritte Rolle
+
+Aus den offenen Punkten: "Waere schoen, wenn eine Schule mal am U-Boot vorbeizieht." `ORCA_DIVE`
+einfach zu erhoehen geht nicht — seine 7 m sind begruendet (doppelte Wellenhoehe, damit das
+Abtauchen bei jeder Duenung sichtbar ist), und ein Tier auf 60 m waere von einem Boot aus nie mehr
+zu sehen. Es fehlte eine eigene Rolle.
+
+Nachgerechnet, warum die vorhandene Schule das nicht leistet: das U-Boot faehrt zwischen 0 und 88 m
+(`SEA_DEPTH` 100 minus `SUB_FLOOR_CLR` 12). Bei 50 m Reisetiefe ist ein Orca auf 7 m Tiefe **43 m
+ueber** dem Boot — man muesste senkrecht nach oben schauen. Am Grund sind es 81 m.
+
+Die Haelfte der Herde (`ORCA_DEEP_N` 3 von 6) zieht deshalb auf **Bootstiefe**. Zwei Dinge musste
+ich dabei korrigieren, beide erst im Nachrechnen aufgefallen:
+
+- Mein erster Ansatz war ein Anteil je Zeit ("folge mit 6 % pro Frame"). Der war falsch, weil ein
+  Anteil **keine Geschwindigkeitsgrenze hat**: er holte 50 m in 0,6 s auf, mit 180 m/s Sinkrate und
+  **89 Grad** Nickwinkel (`C:/tmp/orca2.js`). Das Tier haette senkrecht gestanden. Jetzt begrenzt
+  `ORCA_DEEP_VY` die Sinkrate, hergeleitet aus demselben Bahnwinkel wie die Oberflaechen-Schule
+  (25 Grad): 1,49 m/s, also 33 s fuer 50 m — genau das traege Nachziehen, das gewuenscht war. Und
+  framerate-unabhaengig (bei 20 bis 120 FPS dieselben 33,2 s).
+- Der Grund wird **voraus** gelesen, nicht unter dem Tier. Der Schelf steigt bis 0,82 m je Meter,
+  das Tier schafft nur 0,47 m/m — es waere in den Hang gelaufen. Mit 40 m Vorausschau greift die
+  Grenze 70 m vor dem Ufer, und wo Grund und Oberflaeche naeher zusammenliegen als das Tier hoch
+  ist (ab rund 6 m Wassertiefe ragte der Ruecken 1,19 m aus dem Wellental), **dreht es ab** — auf
+  demselben Weg, den es vor Land und Schiffen schon geht.
+
+Ein Tiefseetier springt nicht: `spawnOrcas` und `placeOrca` setzen `jumper` beide zurueck. Ohne das
+zweite waere jedes umgesetzte Tier mit 34 % wieder Springer geworden, und nach einigen Minuten Fahrt
+haette die Herde keine Tiefsee-Tiere mehr gehabt — ein stiller Ausfall, der erst im Spiel
+aufgefallen waere.
+
+### Offen
+
+- **Ruckeln beim X-Wing**: Sand und Wiese sind noch eigene `CircleGeometry` je Insel (2 Stueck, mit
+  24 bzw. 48 Segmenten). Das war der urspruengliche Verdacht und ist der naechste Schritt, falls es
+  nach dem Boot-LOD noch zittert — nach den Zahlen oben ist es aber eine Nachkommastelle.
+- **`boat_glb.js` ist 30,5 MB.** Das LOD verhindert das Zeichnen, aber die Datei wird trotzdem
+  geladen und liegt im Speicher. Eine Verkleinerung wie bei den Schiffen (54 -> 4,7 MB) waere der
+  groesste Einzelgewinn fuer die Ladezeit im ganzen Projekt.
+
+  ❯ bitte prüfe die todo auch auf überflüssige terminal/chat kommunikation zwischen uns, die ich rein kopiert habe, wenn eine aufgabe abbrach
+
+Verstanden — ich prüfe die TODO.md auf reinkopierte Terminal-/Chat-Reste. Zuerst die README, dann das.
+
+  Ran 3 shell commands
+
+Jetzt das LOD in der README. Ich suche, wo PARK_LOD_D dokumentiert ist.
+
+  Ran 5 shell commands
+
+Jetzt die TODO.md auf reinkopierte Terminal-/Chat-Reste prüfen, wie du gebeten hast.
+
+  Ran 1 shell command
+
+Da ist viel Terminal-Rauschen drin. Ich verschaffe mir erst den vollen Überblick, bevor ich lösche.
+
+  Ran 2 shell commands
+
+Ich sehe das Muster. Jetzt die anderen Cluster — dort ist der Anteil noch höher.
+
+  Ran 2 shell commands
+
+Ich sehe das Muster. Ich baue eine präzise Analyse, welche Zeilen UI-Chrome sind und welche Inhalt tragen.
+
+  Ran 2 shell commands
+
+The heredoc strips backslashes — same trap as before. I avoid backslashes in the patterns entirely.
+
+  Ran 1 shell command
+
+91 Chrome-Zeilen in vier Clustern. Entscheidend ist, was dazwischen steht — ich sehe mir jeden Cluster ganz an.
+
+  Ran 2 shell commands
+
+Cluster 2 wird von einem ordentlichen Abschnitt „## Küstenlinie" abgelöst — die Transkript-Zeilen davor sind also redundant. Ich prüfe Cluster 3 und 4.
+
+  Ran 2 shell commands
+
+Cluster 3 wird von der Prosa „Was der Rest war" abgelöst. Ich prüfe, ob Cluster 1 (Sound) ebenfalls eine Prosa-Fassung hat — sonst wäre er die einzige Aufzeichnung.
+
+  Ran 3 shell commands
+
+Cluster 1 enthält Code-Kommentare. Ich prüfe, ob die im Code stehen — dann sind sie in der TODO redundant.
+
+  Ran 2 shell commands
+
+Beide Kommentare stehen im Code. Ich prüfe, ob das Sound-Feature selbst irgendwo in Prosa dokumentiert ist — sonst wäre Cluster 1 die einzige Aufzeichnung.
+
+  Ran 1 shell command
+
+Beide Kommentare stehen im Code, die Lautstärken in „### Kulisse". Ich baue das Aufräumen mit Vorschau — erst ansehen, dann löschen.
+
+  Ran 1 shell command
+
+Ein Punkt zum Prüfen: die Zeilen 2735–2741 sehen nach einer echten ASCII-Tabelle aus, nicht nach Chrome. Ich sehe nach.
+
+  Ran 2 shell commands
+
+Wichtiger Fund: 2735–2741 ist eine echte Inhaltstabelle mit Messwerten, kein Chrome. Meine Box-Zeichen-Erkennung hätte sie zerstört. Ich korrigiere das.
+
+  Ran 2 shell commands
+
+Nur drei echte Tool-Ausgabe-Zeilen mit ⎿, die Tabelle bleibt. Ich baue das Löschskript sauber und prüfe, was in Cluster 1 und 4 übrig bleibt.
+
+  Ran 2 shell commands
+
+Wichtig: die ❯-Zeilen sind deine eigenen Anfragen — die bleiben, sie sind der historische Auftrag. Ich sehe mir die restlichen Blöcke genau an.
+
+  Ran 1 shell command
+
+Das sind zusammenhängende Blöcke. Ich lösche sie als Ganzes mit exakten Grenzen, statt zeilenweise — und die ❯-Zeilen bleiben.
+
+  Ran 1 shell command
+
+Ich habe die Grenzen. Der Sound-Block hat keine Prosa-Fassung — ich ersetze ihn durch eine kurze Zusammenfassung statt ihn nur zu löschen.
+
+● Confirming block A indices
+  ⎿  $ $p = "c:\Users\flori\Documents\Software\Github\Flugspiel\TODO.md"
+     $L = [IO.File]::ReadAllLines($p)
+     Write-Output "Zeilen: $($L.Count)"
+     # Block A: 2369 bis 2455 (1-basiert) = Index 2368..2454 -> Transkript zwischen den beiden ❯-Zeilen
+     Write-Output "--- A Start (2369): $($L[2368].Substring(0,[Math]:…
