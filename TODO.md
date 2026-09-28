@@ -3045,3 +3045,15 @@ nächsten Zeichnen neu hochzuladen.
 Offen, klein: die Wrack-Materialklone (Großfund) werden nicht freigegeben; Materialien kosten keinen
 Puffer, und die Programmzahl bleibt konstant. Die Info-Caches (`_islandCache` u. a.) wachsen mit
 ~4 Einträgen/s, das sind Bytes — kein Handlungsbedarf.
+
+### Nachmessung: nach dem Fix waechst nichts mehr (28.09.)
+
+Rueckmeldung: "jetzt fängt es erst nach ca 2 bis 3 minuten zu ruckeln an". Gemessen in echtem Chrome
+(Iris Xe, `C:/tmp/leak4.js`/`leak5.js`, je ~5 min Dauerflug): Geometrien 1.000–1.300, Texturen 138,
+Programme 31, Knoten 11–15 Tsd., Heap 240–540 MB mit sichtbarer GC — **kein Wachstum mehr**. Ein fester
+Rechentest im selben Takt schwankte dagegen zwischen 141 und 587 ms: der **Rechner** wird langsamer,
+nicht das Spiel. Dort sind viele Programme offen (und bleiben es); auf den Android-Tablets laeuft es
+fluessiger. Kein Handlungsbedarf.
+
+Reserve, falls es auf den Tablets doch einmal eng wird: `updateSea` ist mit 6–8 ms je Frame der
+groesste Rechenposten (Zeichnen 11–15 ms). Ferne Wellen seltener/grober rechnen waere der Hebel.
