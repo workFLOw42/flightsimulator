@@ -3019,3 +3019,29 @@ war"). Der vierte, **Meereskulisse und U-Boot-Motor**, hatte keine Prosa-Fassung
 Code-Kommentare, die inzwischen in `Flugspiel.html` stehen (Zeile 10811 und 10871). Der Block wurde
 deshalb nicht gelöscht, sondern durch einen eigenen Abschnitt ersetzt — sonst wäre mit dem
 Aufräumen das Feature aus der Dokumentation verschwunden.
+
+## Ruckeln nach einer Weile: der Grafikspeicher lief voll (28.09.)
+
+Auftrag: "zu 90% ists sehr sehr gut. Außer wenn man eine Weile einfach fliegt, dann fängt es an zu
+ruckeln. ggf ein cache problem, weil speicher mit altem zeug voll?" — die Vermutung stimmte.
+
+Kein einziger Abbau im Spiel rief `dispose()`. `scene.remove()` nimmt nur aus dem Bild; Puffer und
+Vertex-Array-Objekt jeder Geometrie blieben im Grafikspeicher. Gemessen im Browser (Playwright,
+`C:/tmp/leak2.js`, 5 min Dauerflug auf 60 m, 200 m/s):
+
+| | Start | nach 5 min | Verlauf |
+|---|---|---|---|
+| vorher `renderer.info.memory.geometries` | 709 | **8.900** | steigt stetig, ~30/s |
+| nachher | 292 | 668 | pendelt 600–900 |
+
+Texturen (127) und Shader-Programme (29) waren schon vorher stabil, dort wächst nichts.
+
+Freigegeben wird jetzt beim Abbau von Insel-, Träger- und Unterwasserzellen, Raketen, KI-Fliegern
+und dem Vorbeiflug (`dropFromScene`, `disposeTree`). **Nicht** freigegeben wird Geteiltes
+(`sharedGeos`): Einheitsgeometrien, Fisch-Geometrie und alles aus den GLB-Vorlagen, weil `clone(true)`
+die Geometrie mit der Vorlage teilt — sie freizugeben hieße, das Feuerwehrboot (460.000 Punkte) beim
+nächsten Zeichnen neu hochzuladen.
+
+Offen, klein: die Wrack-Materialklone (Großfund) werden nicht freigegeben; Materialien kosten keinen
+Puffer, und die Programmzahl bleibt konstant. Die Info-Caches (`_islandCache` u. a.) wachsen mit
+~4 Einträgen/s, das sind Bytes — kein Handlungsbedarf.

@@ -1083,6 +1083,19 @@ Neuaufbauen wäre genau der Ruckler, den der häppchenweise Zellbau gerade loswi
 ist davon unberührt**: `harborBoatNear` prüft 12 m Abstand und liest die Position, nicht die
 Sichtbarkeit — wer nah genug zum Einsteigen ist, sieht das Boot ohnehin.
 
+### Grafikspeicher: was wegfällt, wird freigegeben
+
+`scene.remove()` nimmt ein Objekt nur aus dem Bild — seine Geometrie bleibt im Grafikspeicher, bis
+`dispose()` gerufen wird. Das tat lange niemand, und so lief der Speicher beim Dauerflug voll:
+gemessen stieg die Zahl der Geometrien in 5 Minuten von 709 auf 8.900 (rund 30 je Sekunde), obwohl
+nur ein Bruchteil davon in der Szene stand. Es ruckelte deshalb erst **nach einer Weile**.
+
+Jetzt geben Insel-, Träger- und Unterwasserzellen, Raketen, KI-Flieger und der Vorbeiflug ihre
+eigenen Geometrien beim Abbau frei (`dropFromScene` / `disposeTree`). Ausgenommen bleibt alles
+Geteilte: die Einheitsgeometrien, die Fisch-Geometrie und alles aus den GLB-Vorlagen — `clone(true)`
+teilt Geometrie mit der Vorlage, und eine freigegebene Vorlage müsste beim nächsten Zeichnen neu
+hochgeladen werden. Nachgemessen bleibt der Wert über 5 Minuten stabil zwischen 600 und 900.
+
 ## 🙏 Danksagungen
 
 Dieses Spiel wäre ohne die großartige Arbeit vieler Künstlerinnen und Künstler nicht möglich.

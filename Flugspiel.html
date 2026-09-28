@@ -872,6 +872,46 @@ const UNIT_CONE16 = new THREE.ConeGeometry(1, 1, 16);
 // sind ALLE gleich geformt — je Insel waren das bis zu 30 identische Geometrien.
 const UNIT_PLANE = new THREE.PlaneGeometry(1, 1);
 
+// ---- Grafikspeicher freigeben, wenn eine Zelle verschwindet ------------------------------------
+// scene.remove() nimmt ein Objekt nur aus dem Bild. Seine Geometrie behaelt Three.js trotzdem im
+// Grafikspeicher (Puffer plus ein Vertex-Array-Objekt je Geometrie), bis jemand dispose() ruft —
+// und das tat hier niemand. Gemessen im Browser (C:/tmp/leak2.js, 5 min Dauerflug auf 60 m Hoehe):
+// renderer.info.memory.geometries stieg von 709 auf 8.900, rund 30 je Sekunde, und fiel nie. In der
+// Szene standen dabei nur 3.000 bis 8.000 Knoten. Das ist das "nach einer weile faengt es an zu
+// ruckeln": die ersten Minuten sind sauber, dann laeuft der Grafikspeicher voll.
+//
+// NICHT freigegeben werden darf, was geteilt ist: die Einheitsgeometrien oben, die Fisch-Geometrie
+// und alles aus den GLB-Vorlagen — clone(true) kopiert die Knoten, teilt aber Geometrie und
+// Material mit der Vorlage. Wuerde man die freigeben, laedt Three.js sie beim naechsten Zeichnen neu
+// hoch (dispose loescht nur den GPU-Teil) — beim Feuerwehrboot 460.000 Punkte, genau der Ruckler,
+// den das hier loswerden soll. Deshalb wird vorher gesammelt, was die Vorlagen benutzen.
+// Materialien bleiben stehen: fast alle sind geteilt, und die Programmzahl blieb in der Messung
+// konstant (29) — dort waechst nichts.
+function sharedGeos(){
+  const s = new Set([UNIT_BOX, UNIT_CONE4, UNIT_CONE16, UNIT_PLANE]);
+  if(reefFishGeo) s.add(reefFishGeo);
+  const tpls = [boatTemplate, truckTemplate, harborTemplate, rocketTemplate, padTemplate,
+                xwingParkTpl, fordTemplate, orcaTpl, dinghyTemplate, chute2Template, parachuteTemplate,
+                astronautTemplate, ...Object.values(glbTemplates), ...Object.values(shipTemplates)];
+  for(const tp of tpls) if(tp) tp.traverse(o=>{ if(o.geometry) s.add(o.geometry); });
+  return s;
+}
+function disposeTree(obj, shared){
+  if(!obj) return;
+  const keep = shared || sharedGeos();
+  obj.traverse(o=>{
+    if(o.geometry && !keep.has(o.geometry)) o.geometry.dispose();
+    // Eine InstancedMesh hat zusaetzlich ihren eigenen Matrix-Puffer (die Riff-Schwaerme).
+    if(o.isInstancedMesh) o.dispose();
+  });
+}
+// Aus der Szene nehmen UND freigeben — fuer die Zell-Pools.
+function dropFromScene(obj, shared){
+  if(!obj) return;
+  scene.remove(obj);
+  disposeTree(obj, shared);
+}
+
 // baut ein Haus an (x,z). rnd steuert Größe/Farbe. Gibt {mesh, w, d, h} zurück (für Kollision).
 function makeHouse(x, z, rnd, rnd2) {
   const g = new THREE.Group();
@@ -1898,9 +1938,10 @@ function updateIslands() {
     }
   }
   // nicht mehr benötigte Zellen entfernen
+  let shared = null;     // erst sammeln, wenn wirklich etwas wegfaellt (siehe sharedGeos)
   for (const [key, isl] of islandCells) {
     if (!needed.has(key)) {
-      if (isl) scene.remove(isl);
+      if (isl) dropFromScene(isl, shared || (shared = sharedGeos()));
       islandCells.delete(key);
     }
   }
@@ -1916,7 +1957,8 @@ function updateIslands() {
 // innen nach aussen, die eigene Zelle also im naechsten Frame. Nebeneffekt: die Baulogik steht
 // jetzt nur noch an EINER Stelle.
 function refreshIslands(){
-  for(const [, isl] of islandCells) if(isl) scene.remove(isl);
+  const shared = sharedGeos();
+  for(const [, isl] of islandCells) if(isl) dropFromScene(isl, shared);
   islandCells.clear();
 }
 
@@ -1956,7 +1998,7 @@ function updateCarriers(pcx, pcz, needed){
     carrierCells.set(key, grp);
   }
   for(const [key, grp] of carrierCells){
-    if(!needed.has(key)){ if(grp) scene.remove(grp); carrierCells.delete(key); }
+    if(!needed.has(key)){ if(grp) dropFromScene(grp); carrierCells.delete(key); }
   }
 }
 // Nach dem Nachladen des GLB: bereits gebaute Platzhalter-Träger durch echtes Modell ersetzen.
@@ -1965,7 +2007,7 @@ function refreshCarriers(){
     if(!grp) continue;
     const [cx,cz] = key.split(',').map(Number);
     const info = carrierInfo(cx, cz);
-    scene.remove(grp);
+    dropFromScene(grp);
     const ng = info ? makeCarrier(info) : null;
     if(ng) scene.add(ng);
     carrierCells.set(key, ng);
@@ -2385,7 +2427,7 @@ function updateRockets(dt){
       // Kollisionshülle weiter im Weg.
       if(rs.y > SPACE_Y){
         rs.phase = 'gone'; rs.t = REGROW_T;
-        if(r){ isl.remove(r); isl.userData.rocket = null; }
+        if(r){ isl.remove(r); disposeTree(r); isl.userData.rocket = null; }
       }
       continue;
     }
@@ -2409,7 +2451,7 @@ function updateRockets(dt){
       //
       // Ueber das Loeschen laeuft dieser Neubau durch dieselbe Drossel wie jede andere neue Zelle,
       // und mehrere gleichzeitig faellige Rampen koennen sich nicht mehr in einem Frame stapeln.
-      scene.remove(isl);
+      dropFromScene(isl);
       islandCells.delete(key);
     }
   }
@@ -3447,12 +3489,14 @@ function updateUwCells(){
     uwCells.set(key, grp);
     gebaut++;
   }
+  let shared = null;
   for(const [key, grp] of uwCells){
-    if(!needed.has(key)){ if(grp) scene.remove(grp); uwCells.delete(key); }
+    if(!needed.has(key)){ if(grp) dropFromScene(grp, shared || (shared = sharedGeos())); uwCells.delete(key); }
   }
 }
 function clearUwCells(){
-  for(const [, grp] of uwCells) if(grp) scene.remove(grp);
+  const shared = sharedGeos();
+  for(const [, grp] of uwCells) if(grp) dropFromScene(grp, shared);
   uwCells.clear();
 }
 // ---- FISCHSCHWAERME ----------------------------------------------------------------------------
@@ -8972,9 +9016,10 @@ function earthWorldVisible(on){
   seabedMesh.visible = on;
   for(const cl of clouds) cl.visible = on;
   if(!on){
-    for(const [,isl] of islandCells) if(isl) scene.remove(isl);
+    const shared = sharedGeos();
+    for(const [,isl] of islandCells) if(isl) dropFromScene(isl, shared);
     islandCells.clear();
-    for(const [,grp] of carrierCells) if(grp) scene.remove(grp);
+    for(const [,grp] of carrierCells) if(grp) dropFromScene(grp, shared);
     carrierCells.clear();
     for(const e of fleet) removePlane(e);
     fleet.length = 0; clearFlyby(); clearAiEffects();
@@ -13285,8 +13330,10 @@ function assignMission(e){
   else                          e.state='cruise';   // Mustang / AlphaJet
 }
 function removePlane(e){
-  scene.remove(e.group);
-  if(e.trail) scene.remove(e.trail.line);
+  // Freigeben wie die Zellen: Kondensstreifen, Sprueh- und Abwurfkegel sind eigene Geometrien je
+  // Maschine, das Modell selbst ist geteilt (siehe disposeTree).
+  dropFromScene(e.group);
+  if(e.trail) dropFromScene(e.trail.line);
   clearAiFire(e);
   if(e.chute){ clearChuteBoat(e.chute); scene.remove(e.chute.group); e.chute=null; }
   if(e.crashFire){ scene.remove(e.crashFire); e.crashFire=null; }
@@ -13936,7 +13983,7 @@ function flybyStepCrash(dt){
 }
 function clearFlyby(){
   if(!flyby) return;
-  scene.remove(flyby.group); scene.remove(flyby.cone);
+  dropFromScene(flyby.group); dropFromScene(flyby.cone);   // der Vapor-Kegel ist je Vorbeiflug neu
   if(flyby.chute){ clearChuteBoat(flyby.chute); scene.remove(flyby.chute.group); }
   if(flyby.crashFire){ scene.remove(flyby.crashFire); }
   if(flyby.rescue){ for(const r of flyby.rescue){ scene.remove(r.group); scene.remove(r.jet); } }
